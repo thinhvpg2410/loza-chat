@@ -1,0 +1,144 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum FriendRequestStatus {
+  pending
+  accepted
+  rejected
+  cancelled
+}
+
+model User {
+  id             String   @id @default(uuid())
+  phoneNumber    String   @unique @map("phone_number")
+  username       String?  @unique
+  displayName    String   @default("") @map("display_name")
+  avatarUrl      String?  @map("avatar_url")
+  statusMessage  String?  @map("status_message")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  devices            UserDevice[]
+  refreshTokens      RefreshToken[]
+  sentFriendRequests     FriendRequest[] @relation("SentFriendRequests")
+  receivedFriendRequests FriendRequest[] @relation("ReceivedFriendRequests")
+  friendshipsAsOne       Friendship[]    @relation("FriendshipsUserOne")
+  friendshipsAsTwo       Friendship[]    @relation("FriendshipsUserTwo")
+  blocksInitiated        Block[]         @relation("BlocksInitiated")
+  blocksReceived         Block[]         @relation("BlocksReceived")
+
+  @@map("users")
+}
+
+model OtpRequest {
+  id          String    @id @default(uuid())
+  phoneNumber String    @map("phone_number")
+  otpCodeHash String    @map("otp_code_hash")
+  purpose     String
+  expiredAt   DateTime  @map("expired_at")
+  verifiedAt  DateTime? @map("verified_at")
+  attempts    Int       @default(0)
+  resendCount Int       @default(0) @map("resend_count")
+  ipAddress   String?   @map("ip_address")
+  userAgent   String?   @map("user_agent")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([phoneNumber, createdAt])
+  @@map("otp_requests")
+}
+
+model UserDevice {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  deviceId   String   @map("device_id")
+  platform   String
+  appVersion String   @map("app_version")
+  deviceName String?  @map("device_name")
+  lastSeenAt DateTime @default(now()) @map("last_seen_at")
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokens RefreshToken[]
+
+  @@unique([userId, deviceId])
+  @@index([userId])
+  @@map("user_devices")
+}
+
+model RefreshToken {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  userDeviceId String    @map("user_device_id")
+  tokenHash    String    @unique @map("token_hash")
+  expiresAt    DateTime  @map("expires_at")
+  revokedAt    DateTime? @map("revoked_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userDevice UserDevice @relation(fields: [userDeviceId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userDeviceId])
+  @@map("refresh_tokens")
+}
+
+model FriendRequest {
+  id          String              @id @default(uuid())
+  senderId    String              @map("sender_id")
+  receiverId  String              @map("receiver_id")
+  status      FriendRequestStatus
+  message     String?
+  respondedAt DateTime?           @map("responded_at")
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+
+  sender   User @relation("SentFriendRequests", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("ReceivedFriendRequests", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@index([senderId, status])
+  @@index([receiverId, status])
+  @@index([senderId, receiverId, status])
+  @@map("friend_requests")
+  // DB: partial unique index friend_requests_one_pending_per_pair (see migrations) — one pending per unordered pair
+}
+
+/// Invariant: userOneId < userTwoId (lexicographic). Enforced by DB CHECK + sortUserPair().
+/// When adding direct-message conversations, prefer linking via friendshipId or a dedicated conversation table.
+model Friendship {
+  id        String   @id @default(uuid())
+  userOneId String   @map("user_one_id")
+  userTwoId String   @map("user_two_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  userOne User @relation("FriendshipsUserOne", fields: [userOneId], references: [id], onDelete: Cascade)
+  userTwo User @relation("FriendshipsUserTwo", fields: [userTwoId], references: [id], onDelete: Cascade)
+
+  @@unique([userOneId, userTwoId])
+  @@index([userOneId])
+  @@index([userTwoId])
+  @@map("friendships")
+}
+
+model Block {
+  id        String   @id @default(uuid())
+  blockerId String   @map("blocker_id")
+  blockedId String   @map("blocked_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  blocker User @relation("BlocksInitiated", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("BlocksReceived", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
+  @@map("blocks")
+}
