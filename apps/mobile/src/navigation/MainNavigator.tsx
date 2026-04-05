@@ -1,4 +1,4 @@
-import { ChatDetailScreen } from "@/screens/home/ChatDetailScreen";
+import { ChatDetailScreen } from "@/screens/chat/ChatDetailScreen";
 import { SearchScreen } from "@/screens/home/SearchScreen";
 import { useAuthStore } from "@/store/authStore";
 import { useUserStore } from "@/store/userStore";
@@ -29,14 +29,7 @@ export function MainNavigator() {
         component={SearchScreen}
         options={{ title: "Tìm kiếm", headerBackTitle: "" }}
       />
-      <Stack.Screen
-        name="ChatDetail"
-        component={ChatDetailScreen}
-        options={({ route }) => ({
-          title: route.params.title,
-          headerBackTitle: "",
-        })}
-      />
+      <Stack.Screen name="ChatDetail" component={ChatDetailScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
   );
 }

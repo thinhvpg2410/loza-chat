@@ -36,7 +36,13 @@ export function MessagesScreen() {
 
   const openChat = useCallback(
     (item: MockConversation) => {
-      mainNav.navigate("ChatDetail", { conversationId: item.id, title: item.name });
+      mainNav.navigate("ChatDetail", {
+        conversationId: item.id,
+        title: item.name,
+        peerAvatarUrl: item.avatarUrl,
+        peerId: `user-${item.id}`,
+        isOnline: Number(item.id) % 3 !== 0,
+      });
     },
     [mainNav],
   );

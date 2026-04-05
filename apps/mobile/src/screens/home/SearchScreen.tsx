@@ -46,7 +46,13 @@ export function SearchScreen() {
   }, [conversations, friends, query]);
 
   const openConversation = (item: MockConversation) => {
-    navigation.navigate("ChatDetail", { conversationId: item.id, title: item.name });
+    navigation.navigate("ChatDetail", {
+      conversationId: item.id,
+      title: item.name,
+      peerAvatarUrl: item.avatarUrl,
+      peerId: `user-${item.id}`,
+      isOnline: Number(item.id) % 3 !== 0,
+    });
   };
 
   return (
@@ -92,6 +98,9 @@ export function SearchScreen() {
                 navigation.navigate("ChatDetail", {
                   conversationId: `friend-${item.item.id}`,
                   title: item.item.name,
+                  peerAvatarUrl: item.item.avatarUrl,
+                  peerId: item.item.id,
+                  isOnline: item.item.isOnline,
                 })
               }
             >

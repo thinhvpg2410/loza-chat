@@ -22,7 +22,13 @@ export type TabParamList = {
 export type MainStackParamList = {
   MainTabs: undefined;
   Search: undefined;
-  ChatDetail: { conversationId: string; title: string };
+  ChatDetail: {
+    conversationId: string;
+    title: string;
+    peerAvatarUrl?: string;
+    peerId?: string;
+    isOnline?: boolean;
+  };
 };
 
 export type RootStackParamList = {
