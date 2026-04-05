@@ -344,6 +344,19 @@ export class FriendsService {
     return out;
   }
 
+  /** Friend user ids for realtime presence fan-out (includes inactive users; clients may filter). */
+  async listFriendUserIds(userId: string): Promise<string[]> {
+    const rows = await this.prisma.friendship.findMany({
+      where: {
+        OR: [{ userOneId: userId }, { userTwoId: userId }],
+      },
+      select: { userOneId: true, userTwoId: true },
+    });
+    return rows.map((row) =>
+      row.userOneId === userId ? row.userTwoId : row.userOneId,
+    );
+  }
+
   async unfriend(currentUserId: string, otherUserId: string): Promise<void> {
     if (currentUserId === otherUserId) {
       throw new BadRequestException('Invalid target user');

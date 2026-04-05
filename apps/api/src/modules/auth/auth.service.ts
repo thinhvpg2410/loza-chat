@@ -82,7 +82,9 @@ export class AuthService {
       return { user: u, device: d };
     });
 
-    const accessToken = await this.tokens.signAccessToken(user.id);
+    const accessToken = await this.tokens.signAccessToken(user.id, {
+      deviceId: device.deviceId,
+    });
 
     return {
       accessToken,
@@ -108,10 +110,10 @@ export class AuthService {
     const expiresAt = this.tokens.getRefreshExpiresAt();
     const now = new Date();
 
-    const { userId } = await this.prisma.$transaction(async (tx) => {
+    const { userId, deviceId } = await this.prisma.$transaction(async (tx) => {
       const existing = await tx.refreshToken.findUnique({
         where: { tokenHash },
-        include: { user: true },
+        include: { user: true, userDevice: true },
       });
 
       if (
@@ -145,10 +147,15 @@ export class AuthService {
         data: { lastSeenAt: new Date() },
       });
 
-      return { userId: existing.userId };
+      return {
+        userId: existing.userId,
+        deviceId: existing.userDevice.deviceId,
+      };
     });
 
-    const accessToken = await this.tokens.signAccessToken(userId);
+    const accessToken = await this.tokens.signAccessToken(userId, {
+      deviceId,
+    });
 
     return {
       accessToken,

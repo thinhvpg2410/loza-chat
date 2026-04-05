@@ -19,8 +19,14 @@ export class TokenService {
     return randomBytes(32).toString('hex');
   }
 
-  signAccessToken(userId: string): Promise<string> {
-    const payload: AccessTokenPayload = { sub: userId };
+  signAccessToken(
+    userId: string,
+    options?: { deviceId?: string },
+  ): Promise<string> {
+    const payload: AccessTokenPayload = {
+      sub: userId,
+      ...(options?.deviceId ? { deviceId: options.deviceId } : {}),
+    };
     return this.jwtService.signAsync(payload);
   }
 

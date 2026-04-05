@@ -11,6 +11,7 @@ import { DevicesModule } from './modules/devices/devices.module';
 import { ConversationsModule } from './modules/conversations/conversations.module';
 import { FriendsModule } from './modules/friends/friends.module';
 import { MessagesModule } from './modules/messages/messages.module';
+import { RealtimeModule } from './modules/realtime/realtime.module';
 import { UsersModule } from './modules/users/users.module';
 import { PrismaModule } from './prisma/prisma.module';
 
@@ -30,6 +31,7 @@ import { PrismaModule } from './prisma/prisma.module';
     FriendsModule,
     ConversationsModule,
     MessagesModule,
+    RealtimeModule,
     UsersModule,
   ],
   controllers: [AppController],
