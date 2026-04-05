@@ -5,6 +5,8 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './modules/auth/auth.module';
+import { FriendsModule } from './modules/friends/friends.module';
+import { UsersModule } from './modules/users/users.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 
@@ -17,6 +19,8 @@ import { RedisModule } from './redis/redis.module';
     PrismaModule,
     RedisModule,
     AuthModule,
+    UsersModule,
+    FriendsModule,
   ],
   controllers: [AppController],
   providers: [

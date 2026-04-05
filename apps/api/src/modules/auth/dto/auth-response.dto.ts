@@ -15,6 +15,9 @@ export class AuthUserResponseDto {
   @ApiProperty({ example: 'Alex', nullable: true })
   name!: string | null;
 
+  @ApiProperty({ nullable: true })
+  avatar!: string | null;
+
   @ApiProperty({ type: String, format: 'date-time' })
   createdAt!: Date;
 }

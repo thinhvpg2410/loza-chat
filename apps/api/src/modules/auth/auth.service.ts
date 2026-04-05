@@ -96,6 +96,7 @@ export class AuthService {
         id: user.id,
         phone: user.phone,
         name: user.name,
+        avatar: user.avatar,
         createdAt: user.createdAt,
       },
     };
