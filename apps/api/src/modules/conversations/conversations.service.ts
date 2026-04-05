@@ -10,11 +10,13 @@ import {
   Prisma,
   type User,
 } from '@prisma/client';
+import { messageContentPreview } from '../../common/utils/message-content-preview';
 import { toPublicUserProfile } from '../../common/types/public-user-profile';
 import { sortUserPair } from '../../common/utils/sort-user-pair';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FriendsService } from '../friends/friends.service';
 import { ConversationMembershipService } from './conversation-membership.service';
+import { ConversationUnreadService } from './conversation-unread.service';
 import type {
   ConversationDetailView,
   ConversationListItemView,
@@ -26,6 +28,7 @@ export class ConversationsService {
     private readonly prisma: PrismaService,
     private readonly friends: FriendsService,
     private readonly membership: ConversationMembershipService,
+    private readonly unread: ConversationUnreadService,
   ) {}
 
   async createOrGetDirect(
@@ -155,7 +158,7 @@ export class ConversationsService {
     });
 
     const conversationIds = memberships.map((m) => m.conversationId);
-    const unreadMap = await this.unreadCountsForConversations(
+    const unreadMap = await this.unread.countsForConversations(
       userId,
       conversationIds,
     );
@@ -176,6 +179,9 @@ export class ConversationsService {
         conversationId: c.id,
         type: c.type,
         updatedAt: c.updatedAt,
+        mutedUntil: row.mutedUntil,
+        lastReadMessageId: row.lastReadMessageId,
+        lastDeliveredMessageId: row.lastDeliveredMessageId,
         otherParticipant:
           otherUser && otherUser.isActive
             ? toPublicUserProfile(otherUser)
@@ -183,7 +189,8 @@ export class ConversationsService {
         lastMessage: last
           ? {
               id: last.id,
-              content: last.content,
+              type: last.type,
+              contentPreview: messageContentPreview(last.type, last.content),
               createdAt: last.createdAt,
               senderId: last.senderId,
             }
@@ -244,41 +251,5 @@ export class ConversationsService {
     }
     const others = users.filter((u) => u.id !== viewerId);
     return others[0] ?? null;
-  }
-
-  private async unreadCountsForConversations(
-    userId: string,
-    conversationIds: string[],
-  ): Promise<Map<string, number>> {
-    const map = new Map<string, number>();
-    if (conversationIds.length === 0) {
-      return map;
-    }
-
-    const rows = await this.prisma.$queryRaw<
-      { conversation_id: string; cnt: bigint }[]
-    >`
-      SELECT m.conversation_id, COUNT(*)::bigint AS cnt
-      FROM messages m
-      INNER JOIN conversation_members cm
-        ON cm.conversation_id = m.conversation_id AND cm.user_id = ${userId}::uuid
-      LEFT JOIN messages lr ON lr.id = cm.last_read_message_id
-      WHERE m.deleted_at IS NULL
-        AND m.sender_id <> ${userId}::uuid
-        AND m.conversation_id IN (${Prisma.join(
-          conversationIds.map((id) => Prisma.sql`${id}::uuid`),
-        )})
-        AND (
-          cm.last_read_message_id IS NULL
-          OR m.created_at > lr.created_at
-          OR (m.created_at = lr.created_at AND m.id > lr.id)
-        )
-      GROUP BY m.conversation_id
-    `;
-
-    for (const row of rows) {
-      map.set(row.conversation_id, Number(row.cnt));
-    }
-    return map;
   }
 }

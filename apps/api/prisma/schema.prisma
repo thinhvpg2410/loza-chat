@@ -24,6 +24,27 @@ enum ConversationMemberRole {
 
 enum MessageType {
   text
+  image
+  file
+  voice
+  video
+  other
+}
+
+enum UploadSessionStatus {
+  pending
+  uploaded
+  failed
+  expired
+}
+
+/// Shared taxonomy for upload sessions and attachments (extensible for stickers, etc.)
+enum MediaKind {
+  image
+  file
+  voice
+  video
+  other
 }
 
 model User {
@@ -50,6 +71,8 @@ model User {
   messagesSent             Message[]
   directConversationsAsOne Conversation[]       @relation("DirectConversationsUserOne")
   directConversationsAsTwo Conversation[]       @relation("DirectConversationsUserTwo")
+  uploadSessions           UploadSession[]
+  attachmentsUploaded      Attachment[]
 
   @@map("users")
 }
@@ -177,6 +200,7 @@ model Conversation {
   lastMessage   Message?             @relation("ConversationLastMessage", fields: [lastMessageId], references: [id], onDelete: SetNull)
   members       ConversationMember[]
   messages      Message[]
+  attachments   Attachment[]
 
   @@index([updatedAt(sort: Desc)])
   @@map("conversations")
@@ -203,13 +227,71 @@ model ConversationMember {
   @@map("conversation_members")
 }
 
+/// Tracks a client-direct upload to object storage. Bytes never touch NestJS.
+model UploadSession {
+  id               String              @id @default(uuid())
+  userId           String              @map("user_id")
+  storageKey       String              @map("storage_key")
+  bucket           String
+  mimeType         String              @map("mime_type")
+  originalFileName String              @map("original_file_name")
+  fileSize         BigInt              @map("file_size")
+  uploadType       MediaKind           @map("upload_type")
+  status           UploadSessionStatus
+  expiresAt        DateTime            @map("expires_at")
+  completedAt      DateTime?           @map("completed_at")
+  metadataJson     Json?               @map("metadata_json")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attachment  Attachment?
+
+  @@index([userId, status])
+  @@index([expiresAt])
+  @@map("upload_sessions")
+}
+
+/// Binary metadata for a message. Bound to at most one message; reuse only before binding (explicit design).
+model Attachment {
+  id              String    @id @default(uuid())
+  conversationId  String?   @map("conversation_id")
+  messageId       String?   @map("message_id")
+  uploadedById    String    @map("uploaded_by_id")
+  uploadSessionId String?   @unique @map("upload_session_id")
+  storageKey      String    @map("storage_key")
+  bucket          String
+  mimeType        String    @map("mime_type")
+  originalFileName String   @map("original_file_name")
+  fileSize        BigInt    @map("file_size")
+  attachmentType  MediaKind @map("attachment_type")
+  width           Int?
+  height          Int?
+  durationSeconds Int?      @map("duration_seconds")
+  thumbnailKey    String?   @map("thumbnail_key")
+  sortOrder       Int       @default(0) @map("sort_order")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  conversation  Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  message       Message?      @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  uploadedBy    User          @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+  uploadSession UploadSession? @relation(fields: [uploadSessionId], references: [id], onDelete: SetNull)
+
+  @@index([uploadSessionId])
+  @@index([messageId])
+  @@index([uploadedById])
+  @@index([conversationId])
+  @@map("attachments")
+}
+
 model Message {
   id               String      @id @default(uuid())
   conversationId   String      @map("conversation_id")
   senderId         String      @map("sender_id")
   clientMessageId  String      @map("client_message_id")
   type             MessageType
-  content          String
+  content          String?
   replyToMessageId String?     @map("reply_to_message_id")
   deletedAt        DateTime?   @map("deleted_at")
   createdAt        DateTime    @default(now()) @map("created_at")
@@ -222,6 +304,7 @@ model Message {
   lastMessageFor         Conversation?        @relation("ConversationLastMessage")
   lastReadByMembers      ConversationMember[] @relation("MemberLastRead")
   lastDeliveredByMembers ConversationMember[] @relation("MemberLastDelivered")
+  attachments            Attachment[]
 
   @@unique([conversationId, senderId, clientMessageId])
   @@index([conversationId, createdAt(sort: Desc), id(sort: Desc)])

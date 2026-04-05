@@ -12,6 +12,8 @@ import { ConversationsModule } from './modules/conversations/conversations.modul
 import { FriendsModule } from './modules/friends/friends.module';
 import { MessagesModule } from './modules/messages/messages.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
+import { StorageModule } from './modules/storage/storage.module';
+import { UploadsModule } from './modules/uploads/uploads.module';
 import { UsersModule } from './modules/users/users.module';
 import { PrismaModule } from './prisma/prisma.module';
 
@@ -30,6 +32,8 @@ import { PrismaModule } from './prisma/prisma.module';
     BlocksModule,
     FriendsModule,
     ConversationsModule,
+    StorageModule,
+    UploadsModule,
     MessagesModule,
     RealtimeModule,
     UsersModule,
