@@ -1,11 +1,8 @@
 import { ONBOARDING_COMPLETE_KEY } from "@/constants/storageKeys";
-import { ForgotPasswordScreen } from "@/screens/auth/ForgotPasswordScreen";
-import { LoginScreen } from "@/screens/auth/LoginScreen";
+import { AuthStack } from "@/navigation/AuthStack";
+import { MainNavigator } from "@/navigation/MainNavigator";
+import { navigationRef } from "@/navigation/navigationRef";
 import { OnboardingScreen } from "@/screens/auth/OnboardingScreen";
-import { OTPScreen } from "@/screens/auth/OTPScreen";
-import { RegisterScreen } from "@/screens/auth/RegisterScreen";
-import { ResetPasswordScreen } from "@/screens/auth/ResetPasswordScreen";
-import { HomeScreen } from "@/screens/HomeScreen";
 import { useAuthStore } from "@/store/authStore";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { NavigationContainer, DefaultTheme } from "@react-navigation/native";
@@ -41,8 +38,8 @@ export default function RootNavigator() {
       const seen = await AsyncStorage.getItem(ONBOARDING_COMPLETE_KEY);
       const authed = useAuthStore.getState().isAuthenticated;
       if (cancelled) return;
-      if (authed) setInitialRoute("Home");
-      else if (seen === "true") setInitialRoute("Login");
+      if (authed) setInitialRoute("Main");
+      else if (seen === "true") setInitialRoute("Auth");
       else setInitialRoute("Onboarding");
       setReady(true);
     })();
@@ -60,7 +57,7 @@ export default function RootNavigator() {
   }
 
   return (
-    <NavigationContainer theme={navTheme}>
+    <NavigationContainer ref={navigationRef} theme={navTheme}>
       <Stack.Navigator
         initialRouteName={initialRoute}
         screenOptions={{
@@ -70,24 +67,8 @@ export default function RootNavigator() {
         }}
       >
         <Stack.Screen name="Onboarding" component={OnboardingScreen} options={{ headerShown: false }} />
-        <Stack.Screen
-          name="Login"
-          component={LoginScreen}
-          options={{ title: "Đăng nhập", headerBackTitle: "" }}
-        />
-        <Stack.Screen name="OTP" component={OTPScreen} options={{ title: "Xác thực OTP" }} />
-        <Stack.Screen name="Register" component={RegisterScreen} options={{ title: "Tạo tài khoản" }} />
-        <Stack.Screen
-          name="ForgotPassword"
-          component={ForgotPasswordScreen}
-          options={{ title: "Quên mật khẩu" }}
-        />
-        <Stack.Screen
-          name="ResetPassword"
-          component={ResetPasswordScreen}
-          options={{ title: "Đặt lại mật khẩu" }}
-        />
-        <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="Auth" component={AuthStack} options={{ headerShown: false }} />
+        <Stack.Screen name="Main" component={MainNavigator} options={{ headerShown: false }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

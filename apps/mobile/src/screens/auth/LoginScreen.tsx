@@ -1,7 +1,7 @@
 import { Button } from "@/components/Button";
 import { Input } from "@/components/Input";
 import { phoneSchema } from "@/constants/validation";
-import type { RootStackParamList } from "@/navigation/types";
+import type { AuthStackParamList } from "@/navigation/types";
 import { sendOtp } from "@/services/api/api";
 import { useAuthStore } from "@/store/authStore";
 import { getErrorMessage } from "@/utils/errors";
@@ -21,7 +21,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 type FormValues = { phone: string };
 
-type Props = NativeStackScreenProps<RootStackParamList, "Login">;
+type Props = NativeStackScreenProps<AuthStackParamList, "Login">;
 
 export function LoginScreen({ navigation }: Props) {
   const setPhone = useAuthStore((s) => s.setPhone);

@@ -1,7 +1,8 @@
 import { Button } from "@/components/Button";
 import { OTPInput } from "@/components/OTPInput";
 import { otpSchema } from "@/constants/validation";
-import type { AuthFlow, RootStackParamList } from "@/navigation/types";
+import { resetToMain } from "@/navigation/navigationRef";
+import type { AuthFlow, AuthStackParamList } from "@/navigation/types";
 import { sendOtp, verifyOtp } from "@/services/api/api";
 import { useAuthStore } from "@/store/authStore";
 import { getErrorMessage } from "@/utils/errors";
@@ -12,7 +13,7 @@ import { useCallback, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-type Props = NativeStackScreenProps<RootStackParamList, "OTP">;
+type Props = NativeStackScreenProps<AuthStackParamList, "OTP">;
 
 function maskPhone(phone: string) {
   if (phone.length < 10) return phone;
@@ -80,7 +81,7 @@ export function OTPScreen({ navigation, route }: Props) {
 
         if (res.accessToken && res.user) {
           await login({ accessToken: res.accessToken, user: res.user });
-          navigation.reset({ index: 0, routes: [{ name: "Home" }] });
+          resetToMain();
           return;
         }
 

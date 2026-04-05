@@ -51,7 +51,15 @@ export function OnboardingScreen({ navigation }: Props) {
 
   const finish = async () => {
     await AsyncStorage.setItem(ONBOARDING_COMPLETE_KEY, "true");
-    navigation.reset({ index: 0, routes: [{ name: "Login" }] });
+    navigation.reset({
+      index: 0,
+      routes: [
+        {
+          name: "Auth",
+          state: { routes: [{ name: "Login" }], index: 0 },
+        },
+      ],
+    });
   };
 
   const renderItem: ListRenderItem<Slide> = ({ item }) => (

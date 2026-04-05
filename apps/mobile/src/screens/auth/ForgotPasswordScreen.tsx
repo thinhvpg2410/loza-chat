@@ -1,7 +1,7 @@
 import { Button } from "@/components/Button";
 import { Input } from "@/components/Input";
 import { phoneSchema } from "@/constants/validation";
-import type { RootStackParamList } from "@/navigation/types";
+import type { AuthStackParamList } from "@/navigation/types";
 import { forgotPassword } from "@/services/api/api";
 import { useAuthStore } from "@/store/authStore";
 import { getErrorMessage } from "@/utils/errors";
@@ -20,7 +20,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 type FormValues = { phone: string };
 
-type Props = NativeStackScreenProps<RootStackParamList, "ForgotPassword">;
+type Props = NativeStackScreenProps<AuthStackParamList, "ForgotPassword">;
 
 export function ForgotPasswordScreen({ navigation }: Props) {
   const setPhone = useAuthStore((s) => s.setPhone);

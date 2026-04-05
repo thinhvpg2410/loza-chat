@@ -1,7 +1,8 @@
 import { Button } from "@/components/Button";
 import { Input } from "@/components/Input";
 import { registerSchema } from "@/constants/validation";
-import type { RootStackParamList } from "@/navigation/types";
+import { resetToMain } from "@/navigation/navigationRef";
+import type { AuthStackParamList } from "@/navigation/types";
 import { register } from "@/services/api/api";
 import { useAuthStore } from "@/store/authStore";
 import { getErrorMessage } from "@/utils/errors";
@@ -25,9 +26,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 type FormValues = { name: string };
 
-type Props = NativeStackScreenProps<RootStackParamList, "Register">;
+type Props = NativeStackScreenProps<AuthStackParamList, "Register">;
 
-export function RegisterScreen({ navigation }: Props) {
+export function RegisterScreen(_props: Props) {
   const phone = useAuthStore((s) => s.phone);
   const login = useAuthStore((s) => s.login);
   const [avatarUri, setAvatarUri] = useState<string | undefined>();
@@ -67,7 +68,7 @@ export function RegisterScreen({ navigation }: Props) {
     try {
       const res = await register({ phone, name, avatarUri });
       await login({ accessToken: res.accessToken, user: res.user });
-      navigation.reset({ index: 0, routes: [{ name: "Home" }] });
+      resetToMain();
     } catch (e) {
       setApiError(getErrorMessage(e));
     } finally {

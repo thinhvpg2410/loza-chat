@@ -9,6 +9,7 @@ module.exports = {
           DEFAULT: "#0068FF",
           dark: "#0052CC",
         },
+        zalo: "#0085FF",
       },
     },
   },

@@ -1,7 +1,7 @@
 import { Button } from "@/components/Button";
 import { Input } from "@/components/Input";
 import { resetPasswordSchema } from "@/constants/validation";
-import type { RootStackParamList } from "@/navigation/types";
+import type { AuthStackParamList } from "@/navigation/types";
 import { resetPassword } from "@/services/api/api";
 import { useAuthStore } from "@/store/authStore";
 import { getErrorMessage } from "@/utils/errors";
@@ -20,7 +20,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 type FormValues = { password: string; confirmPassword: string };
 
-type Props = NativeStackScreenProps<RootStackParamList, "ResetPassword">;
+type Props = NativeStackScreenProps<AuthStackParamList, "ResetPassword">;
 
 export function ResetPasswordScreen({ navigation }: Props) {
   const resetToken = useAuthStore((s) => s.resetToken);
