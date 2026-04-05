@@ -1,68 +1,68 @@
-import { Body, Controller, Post } from '@nestjs/common';
-import {
-  ApiBadRequestResponse,
-  ApiOkResponse,
-  ApiOperation,
-  ApiTags,
-  ApiTooManyRequestsResponse,
-  ApiUnauthorizedResponse,
-} from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
-import { AuthService } from './auth.service';
-import {
-  MessageResponseDto,
-  RefreshAccessResponseDto,
-  VerifyOtpResponseDto,
-} from './dto/auth-response.dto';
-import { LogoutDto } from './dto/logout.dto';
-import { RefreshTokenDto } from './dto/refresh-token.dto';
-import { SendOtpDto } from './dto/send-otp.dto';
+import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
+import { GetUser } from './decorators/get-user.decorator';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { LogoutBodyDto } from './dto/logout-body.dto';
+import { RefreshBodyDto } from './dto/refresh-body.dto';
+import { RequestOtpDto } from './dto/request-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { AuthService } from './auth.service';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  @Post('send-otp')
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @ApiOperation({ summary: 'Send OTP to phone (mock: logged on server)' })
-  @ApiOkResponse({ type: MessageResponseDto })
-  @ApiBadRequestResponse({ description: 'Validation failed' })
-  @ApiTooManyRequestsResponse({ description: 'Rate limit exceeded' })
-  sendOtp(@Body() dto: SendOtpDto) {
-    return this.authService.sendOtp(dto.phone);
+  @Post('request-otp')
+  @ApiOperation({ summary: 'Request SMS OTP (logged in development only)' })
+  requestOtp(@Body() dto: RequestOtpDto, @Req() req: Request) {
+    return this.authService.requestOtp(
+      dto.phoneNumber,
+      this.clientIp(req),
+      this.clientUa(req),
+    );
   }
 
   @Post('verify-otp')
-  @Throttle({ default: { limit: 20, ttl: 60_000 } })
-  @ApiOperation({ summary: 'Verify OTP and issue access + refresh tokens' })
-  @ApiOkResponse({ type: VerifyOtpResponseDto })
-  @ApiUnauthorizedResponse({ description: 'Invalid or expired OTP' })
-  @ApiBadRequestResponse({ description: 'Validation failed' })
-  @ApiTooManyRequestsResponse({ description: 'Rate limit exceeded' })
+  @ApiOperation({ summary: 'Verify OTP and open session (device required)' })
   verifyOtp(@Body() dto: VerifyOtpDto) {
-    return this.authService.verifyOtp(dto.phone, dto.otp);
+    return this.authService.verifyOtp(dto);
   }
 
   @Post('refresh')
-  @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  @ApiOperation({ summary: 'Exchange refresh token for a new access token' })
-  @ApiOkResponse({ type: RefreshAccessResponseDto })
-  @ApiUnauthorizedResponse({ description: 'Invalid or expired refresh token' })
-  @ApiBadRequestResponse({ description: 'Validation failed' })
-  @ApiTooManyRequestsResponse({ description: 'Rate limit exceeded' })
-  refresh(@Body() dto: RefreshTokenDto) {
-    return this.authService.refreshAccessToken(dto.refresh_token);
+  @ApiOperation({ summary: 'Rotate refresh token and get new access token' })
+  refresh(@Body() dto: RefreshBodyDto) {
+    return this.authService.refresh(dto.refreshToken);
   }
 
   @Post('logout')
-  @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  @ApiOperation({ summary: 'Revoke refresh token' })
-  @ApiOkResponse({ type: MessageResponseDto })
-  @ApiBadRequestResponse({ description: 'Validation failed' })
-  @ApiTooManyRequestsResponse({ description: 'Rate limit exceeded' })
-  logout(@Body() dto: LogoutDto) {
-    return this.authService.logout(dto.refresh_token);
+  @ApiOperation({ summary: 'Revoke current refresh token' })
+  logout(@Body() dto: LogoutBodyDto) {
+    return this.authService.logout(dto.refreshToken);
+  }
+
+  @Post('logout-all')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Revoke all refresh tokens for current user' })
+  logoutAll(@GetUser('id') userId: string) {
+    return this.authService.logoutAll(userId);
+  }
+
+  private clientIp(req: Request): string | undefined {
+    const xff = req.headers['x-forwarded-for'];
+    if (typeof xff === 'string') {
+      return xff.split(',')[0]?.trim();
+    }
+    if (Array.isArray(xff)) {
+      return xff[0];
+    }
+    return req.ip;
+  }
+
+  private clientUa(req: Request): string | undefined {
+    const ua = req.headers['user-agent'];
+    return typeof ua === 'string' ? ua : undefined;
   }
 }

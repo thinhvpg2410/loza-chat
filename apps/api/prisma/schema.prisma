@@ -8,39 +8,72 @@ datasource db {
 }
 
 model User {
-  id                     String       @id @default(uuid())
-  phone                  String       @unique
-  name                   String?
-  avatar                 String?
-  createdAt              DateTime     @default(now())
-  refreshTokens          RefreshToken[]
-  friendshipsInitiated   Friendship[] @relation("Requester")
-  friendshipsReceived    Friendship[] @relation("Receiver")
+  id             String   @id @default(uuid())
+  phoneNumber    String   @unique @map("phone_number")
+  username       String?  @unique
+  displayName    String   @default("") @map("display_name")
+  avatarUrl      String?  @map("avatar_url")
+  statusMessage  String?  @map("status_message")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  devices       UserDevice[]
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+}
+
+model OtpRequest {
+  id          String    @id @default(uuid())
+  phoneNumber String    @map("phone_number")
+  otpCodeHash String    @map("otp_code_hash")
+  purpose     String
+  expiredAt   DateTime  @map("expired_at")
+  verifiedAt  DateTime? @map("verified_at")
+  attempts    Int       @default(0)
+  resendCount Int       @default(0) @map("resend_count")
+  ipAddress   String?   @map("ip_address")
+  userAgent   String?   @map("user_agent")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([phoneNumber, createdAt])
+  @@map("otp_requests")
+}
+
+model UserDevice {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  deviceId   String   @map("device_id")
+  platform   String
+  appVersion String   @map("app_version")
+  deviceName String?  @map("device_name")
+  lastSeenAt DateTime @default(now()) @map("last_seen_at")
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokens RefreshToken[]
+
+  @@unique([userId, deviceId])
+  @@index([userId])
+  @@map("user_devices")
 }
 
 model RefreshToken {
-  id        String   @id @default(uuid())
-  userId    String
-  token     String   @unique
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  userDeviceId String    @map("user_device_id")
+  tokenHash    String    @unique @map("token_hash")
+  expiresAt    DateTime  @map("expires_at")
+  revokedAt    DateTime? @map("revoked_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userDevice UserDevice @relation(fields: [userDeviceId], references: [id], onDelete: Cascade)
 
   @@index([userId])
-}
-
-model Friendship {
-  id          String   @id @default(uuid())
-  requesterId String
-  receiverId  String
-  status      String
-  createdAt   DateTime @default(now())
-
-  requester User @relation("Requester", fields: [requesterId], references: [id], onDelete: Cascade)
-  receiver  User @relation("Receiver", fields: [receiverId], references: [id], onDelete: Cascade)
-
-  @@unique([requesterId, receiverId])
-  @@index([requesterId, status])
-  @@index([receiverId, status])
+  @@index([userDeviceId])
+  @@map("refresh_tokens")
 }

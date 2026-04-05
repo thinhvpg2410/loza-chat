@@ -1,109 +1,173 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import { User } from '@prisma/client';
-import { createHash, randomBytes } from 'crypto';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+import type { User } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import type { AuthTokensResponse } from './interfaces/auth-tokens-response.interface';
-import type { JwtPayload } from './interfaces/jwt-payload.interface';
-import { OtpService } from './otp.service';
-
-const ACCESS_EXPIRES = '15m';
-const REFRESH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+import { DevicesService } from '../devices/devices.service';
+import type { VerifyOtpDto } from './dto/verify-otp.dto';
+import { OtpRequestsService } from './otp-requests.service';
+import { TokenService } from './token.service';
 
 @Injectable()
 export class AuthService {
-  private readonly logger = new Logger(AuthService.name);
-
   constructor(
     private readonly prisma: PrismaService,
-    private readonly jwtService: JwtService,
-    private readonly otpService: OtpService,
+    private readonly otpRequests: OtpRequestsService,
+    private readonly tokens: TokenService,
+    private readonly devices: DevicesService,
   ) {}
 
-  async sendOtp(phone: string): Promise<{ message: string }> {
-    await this.otpService.createAndStoreOtp(phone);
-    return { message: 'OTP sent (check server logs in development)' };
+  async requestOtp(
+    phoneNumber: string,
+    ipAddress: string | undefined,
+    userAgent: string | undefined,
+  ): Promise<{ message: string }> {
+    await this.otpRequests.startOtpRequest(phoneNumber, ipAddress, userAgent);
+    return { message: 'Verification code sent' };
   }
 
-  async verifyOtp(phone: string, otp: string): Promise<AuthTokensResponse> {
-    const valid = await this.otpService.verifyAndConsumeOtp(phone, otp);
-    if (!valid) {
-      throw new UnauthorizedException('Invalid or expired OTP');
-    }
+  async verifyOtp(dto: VerifyOtpDto): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    expiresIn: number;
+    user: User;
+    device: { id: string; deviceId: string; platform: string };
+  }> {
+    await this.otpRequests.verifyOtpAndConsume(dto.phoneNumber, dto.otp);
 
     const user = await this.prisma.user.upsert({
-      where: { phone },
-      create: { phone },
+      where: { phoneNumber: dto.phoneNumber },
+      create: {
+        phoneNumber: dto.phoneNumber,
+        displayName: `User ${dto.phoneNumber.slice(-4)}`,
+      },
       update: {},
     });
 
-    return this.issueTokensForUser(user);
-  }
-
-  async refreshAccessToken(
-    refreshTokenRaw: string,
-  ): Promise<{ access_token: string }> {
-    const tokenHash = this.hashRefreshToken(refreshTokenRaw);
-    const record = await this.prisma.refreshToken.findUnique({
-      where: { token: tokenHash },
-      include: { user: true },
-    });
-
-    if (!record || record.expiresAt.getTime() <= Date.now()) {
-      if (record) {
-        await this.prisma.refreshToken.delete({ where: { id: record.id } });
-      }
-      throw new UnauthorizedException('Invalid or expired refresh token');
+    if (!user.isActive) {
+      throw new UnauthorizedException('Account is disabled');
     }
 
-    const access_token = await this.signAccessToken(record.user);
-    return { access_token };
-  }
-
-  async logout(refreshTokenRaw: string): Promise<{ message: string }> {
-    const tokenHash = this.hashRefreshToken(refreshTokenRaw);
-    const deleted = await this.prisma.refreshToken.deleteMany({
-      where: { token: tokenHash },
+    const device = await this.devices.upsertForLogin(user.id, {
+      deviceId: dto.deviceId,
+      platform: dto.platform,
+      appVersion: dto.appVersion,
+      deviceName: dto.deviceName,
     });
-    if (deleted.count === 0) {
-      this.logger.debug('Logout: refresh token not found (idempotent)');
-    }
-    return { message: 'Logged out' };
-  }
 
-  private hashRefreshToken(raw: string): string {
-    return createHash('sha256').update(raw, 'utf8').digest('hex');
-  }
+    const refreshRaw = this.tokens.generateRefreshToken();
+    const tokenHash = this.tokens.hashRefreshToken(refreshRaw);
+    const expiresAt = this.tokens.getRefreshExpiresAt();
 
-  private async issueTokensForUser(user: User): Promise<AuthTokensResponse> {
-    const access_token = await this.signAccessToken(user);
-    const refresh_token = randomBytes(32).toString('hex');
-    const tokenHash = this.hashRefreshToken(refresh_token);
-    const expiresAt = new Date(Date.now() + REFRESH_TTL_MS);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.refreshToken.updateMany({
+        where: {
+          userDeviceId: device.id,
+          revokedAt: null,
+        },
+        data: { revokedAt: new Date() },
+      });
 
-    await this.prisma.refreshToken.create({
-      data: {
-        userId: user.id,
-        token: tokenHash,
-        expiresAt,
-      },
+      await tx.refreshToken.create({
+        data: {
+          userId: user.id,
+          userDeviceId: device.id,
+          tokenHash,
+          expiresAt,
+        },
+      });
     });
+
+    const accessToken = await this.tokens.signAccessToken(user.id);
 
     return {
-      access_token,
-      refresh_token,
-      user: {
-        id: user.id,
-        phone: user.phone,
-        name: user.name,
-        avatar: user.avatar,
-        createdAt: user.createdAt,
+      accessToken,
+      refreshToken: refreshRaw,
+      expiresIn: this.tokens.getAccessExpiresInSeconds(),
+      user,
+      device: {
+        id: device.id,
+        deviceId: device.deviceId,
+        platform: device.platform,
       },
     };
   }
 
-  private signAccessToken(user: User): Promise<string> {
-    const payload: JwtPayload = { sub: user.id, phone: user.phone };
-    return this.jwtService.signAsync(payload, { expiresIn: ACCESS_EXPIRES });
+  async refresh(refreshToken: string): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    expiresIn: number;
+  }> {
+    const tokenHash = this.tokens.hashRefreshToken(refreshToken);
+    const now = new Date();
+
+    const existing = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash },
+      include: {
+        user: true,
+      },
+    });
+
+    if (!existing || existing.revokedAt !== null || existing.expiresAt <= now) {
+      throw new UnauthorizedException('Invalid or expired session');
+    }
+
+    if (!existing.user.isActive) {
+      throw new UnauthorizedException('Account is disabled');
+    }
+
+    const newRaw = this.tokens.generateRefreshToken();
+    const newHash = this.tokens.hashRefreshToken(newRaw);
+    const expiresAt = this.tokens.getRefreshExpiresAt();
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.refreshToken.update({
+        where: { id: existing.id },
+        data: { revokedAt: new Date() },
+      });
+      await tx.refreshToken.create({
+        data: {
+          userId: existing.userId,
+          userDeviceId: existing.userDeviceId,
+          tokenHash: newHash,
+          expiresAt,
+        },
+      });
+      await tx.userDevice.update({
+        where: { id: existing.userDeviceId },
+        data: { lastSeenAt: new Date() },
+      });
+    });
+
+    const accessToken = await this.tokens.signAccessToken(existing.userId);
+
+    return {
+      accessToken,
+      refreshToken: newRaw,
+      expiresIn: this.tokens.getAccessExpiresInSeconds(),
+    };
+  }
+
+  async logout(refreshToken: string): Promise<{ message: string }> {
+    const tokenHash = this.tokens.hashRefreshToken(refreshToken);
+    const now = new Date();
+    const result = await this.prisma.refreshToken.updateMany({
+      where: {
+        tokenHash,
+        revokedAt: null,
+        expiresAt: { gt: now },
+      },
+      data: { revokedAt: new Date() },
+    });
+    if (result.count === 0) {
+      throw new UnauthorizedException('Invalid or expired session');
+    }
+    return { message: 'Logged out' };
+  }
+
+  async logoutAll(userId: string): Promise<{ message: string }> {
+    await this.prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return { message: 'Logged out from all devices' };
   }
 }

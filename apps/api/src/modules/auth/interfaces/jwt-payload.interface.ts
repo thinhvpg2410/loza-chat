@@ -1,4 +1,3 @@
-export interface JwtPayload {
+export interface AccessTokenPayload {
   sub: string;
-  phone: string;
 }
