@@ -14,25 +14,42 @@ enum FriendRequestStatus {
   cancelled
 }
 
-model User {
-  id             String   @id @default(uuid())
-  phoneNumber    String   @unique @map("phone_number")
-  username       String?  @unique
-  displayName    String   @default("") @map("display_name")
-  avatarUrl      String?  @map("avatar_url")
-  statusMessage  String?  @map("status_message")
-  isActive       Boolean  @default(true) @map("is_active")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+enum ConversationType {
+  direct
+}
 
-  devices            UserDevice[]
-  refreshTokens      RefreshToken[]
-  sentFriendRequests     FriendRequest[] @relation("SentFriendRequests")
-  receivedFriendRequests FriendRequest[] @relation("ReceivedFriendRequests")
-  friendshipsAsOne       Friendship[]    @relation("FriendshipsUserOne")
-  friendshipsAsTwo       Friendship[]    @relation("FriendshipsUserTwo")
-  blocksInitiated        Block[]         @relation("BlocksInitiated")
-  blocksReceived         Block[]         @relation("BlocksReceived")
+enum ConversationMemberRole {
+  member
+}
+
+enum MessageType {
+  text
+}
+
+model User {
+  id            String   @id @default(uuid())
+  phoneNumber   String   @unique @map("phone_number")
+  username      String?  @unique
+  displayName   String   @default("") @map("display_name")
+  avatarUrl     String?  @map("avatar_url")
+  statusMessage String?  @map("status_message")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  devices                  UserDevice[]
+  refreshTokens            RefreshToken[]
+  sentFriendRequests       FriendRequest[]      @relation("SentFriendRequests")
+  receivedFriendRequests   FriendRequest[]      @relation("ReceivedFriendRequests")
+  friendshipsAsOne         Friendship[]         @relation("FriendshipsUserOne")
+  friendshipsAsTwo         Friendship[]         @relation("FriendshipsUserTwo")
+  blocksInitiated          Block[]              @relation("BlocksInitiated")
+  blocksReceived           Block[]              @relation("BlocksReceived")
+  conversationsCreated     Conversation[]       @relation("ConversationCreatedBy")
+  conversationMembers      ConversationMember[]
+  messagesSent             Message[]
+  directConversationsAsOne Conversation[]       @relation("DirectConversationsUserOne")
+  directConversationsAsTwo Conversation[]       @relation("DirectConversationsUserTwo")
 
   @@map("users")
 }
@@ -103,12 +120,12 @@ model FriendRequest {
 
   sender   User @relation("SentFriendRequests", fields: [senderId], references: [id], onDelete: Cascade)
   receiver User @relation("ReceivedFriendRequests", fields: [receiverId], references: [id], onDelete: Cascade)
+  // DB: partial unique index friend_requests_one_pending_per_pair (see migrations) — one pending per unordered pair
 
   @@index([senderId, status])
   @@index([receiverId, status])
   @@index([senderId, receiverId, status])
   @@map("friend_requests")
-  // DB: partial unique index friend_requests_one_pending_per_pair (see migrations) — one pending per unordered pair
 }
 
 /// Invariant: userOneId < userTwoId (lexicographic). Enforced by DB CHECK + sortUserPair().
@@ -141,4 +158,72 @@ model Block {
   @@index([blockerId])
   @@index([blockedId])
   @@map("blocks")
+}
+
+/// Invariant for type=direct: directUserOneId < directUserTwoId (lexicographic). Enforced by DB CHECK + sortUserPair().
+model Conversation {
+  id              String           @id @default(uuid())
+  type            ConversationType
+  createdById     String?          @map("created_by_id")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  lastMessageId   String?          @unique @map("last_message_id")
+  directUserOneId String?          @map("direct_user_one_id")
+  directUserTwoId String?          @map("direct_user_two_id")
+
+  createdBy     User?                @relation("ConversationCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  directUserOne User?                @relation("DirectConversationsUserOne", fields: [directUserOneId], references: [id], onDelete: Restrict)
+  directUserTwo User?                @relation("DirectConversationsUserTwo", fields: [directUserTwoId], references: [id], onDelete: Restrict)
+  lastMessage   Message?             @relation("ConversationLastMessage", fields: [lastMessageId], references: [id], onDelete: SetNull)
+  members       ConversationMember[]
+  messages      Message[]
+
+  @@index([updatedAt(sort: Desc)])
+  @@map("conversations")
+}
+
+model ConversationMember {
+  id                     String                  @id @default(uuid())
+  conversationId         String                  @map("conversation_id")
+  userId                 String                  @map("user_id")
+  role                   ConversationMemberRole? @map("role")
+  joinedAt               DateTime                @default(now()) @map("joined_at")
+  lastReadMessageId      String?                 @map("last_read_message_id")
+  lastDeliveredMessageId String?                 @map("last_delivered_message_id")
+  mutedUntil             DateTime?               @map("muted_until")
+  createdAt              DateTime                @default(now()) @map("created_at")
+
+  conversation         Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user                 User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastReadMessage      Message?     @relation("MemberLastRead", fields: [lastReadMessageId], references: [id], onDelete: SetNull)
+  lastDeliveredMessage Message?     @relation("MemberLastDelivered", fields: [lastDeliveredMessageId], references: [id], onDelete: SetNull)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+  @@map("conversation_members")
+}
+
+model Message {
+  id               String      @id @default(uuid())
+  conversationId   String      @map("conversation_id")
+  senderId         String      @map("sender_id")
+  clientMessageId  String      @map("client_message_id")
+  type             MessageType
+  content          String
+  replyToMessageId String?     @map("reply_to_message_id")
+  deletedAt        DateTime?   @map("deleted_at")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+
+  conversation           Conversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender                 User                 @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  replyTo                Message?             @relation("MessageReplies", fields: [replyToMessageId], references: [id], onDelete: SetNull)
+  replies                Message[]            @relation("MessageReplies")
+  lastMessageFor         Conversation?        @relation("ConversationLastMessage")
+  lastReadByMembers      ConversationMember[] @relation("MemberLastRead")
+  lastDeliveredByMembers ConversationMember[] @relation("MemberLastDelivered")
+
+  @@unique([conversationId, senderId, clientMessageId])
+  @@index([conversationId, createdAt(sort: Desc), id(sort: Desc)])
+  @@map("messages")
 }

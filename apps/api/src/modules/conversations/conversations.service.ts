@@ -1,0 +1,284 @@
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  ConversationMemberRole,
+  ConversationType,
+  Prisma,
+  type User,
+} from '@prisma/client';
+import { toPublicUserProfile } from '../../common/types/public-user-profile';
+import { sortUserPair } from '../../common/utils/sort-user-pair';
+import { PrismaService } from '../../prisma/prisma.service';
+import { FriendsService } from '../friends/friends.service';
+import { ConversationMembershipService } from './conversation-membership.service';
+import type {
+  ConversationDetailView,
+  ConversationListItemView,
+} from './types/conversation-views';
+
+@Injectable()
+export class ConversationsService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly friends: FriendsService,
+    private readonly membership: ConversationMembershipService,
+  ) {}
+
+  async createOrGetDirect(
+    currentUserId: string,
+    targetUserId: string,
+  ): Promise<{ conversation: ConversationDetailView }> {
+    if (currentUserId === targetUserId) {
+      throw new BadRequestException(
+        'Cannot start a conversation with yourself',
+      );
+    }
+
+    const target = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+    });
+    if (!target || !target.isActive) {
+      throw new NotFoundException('User not found');
+    }
+
+    const block = await this.prisma.block.findFirst({
+      where: {
+        OR: [
+          { blockerId: currentUserId, blockedId: targetUserId },
+          { blockerId: targetUserId, blockedId: currentUserId },
+        ],
+      },
+    });
+    if (block) {
+      throw new ForbiddenException('Cannot message this user');
+    }
+
+    const relationship = await this.friends.getRelationshipStatus(
+      currentUserId,
+      targetUserId,
+    );
+    if (relationship !== 'friend') {
+      throw new ForbiddenException('You can only message friends');
+    }
+
+    const [one, two] = sortUserPair(currentUserId, targetUserId);
+
+    const conversationId = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.conversation.findFirst({
+        where: {
+          type: ConversationType.direct,
+          directUserOneId: one,
+          directUserTwoId: two,
+        },
+        include: {
+          members: { include: { user: true } },
+        },
+      });
+
+      if (existing) {
+        return existing.id;
+      }
+
+      try {
+        const created = await tx.conversation.create({
+          data: {
+            type: ConversationType.direct,
+            createdById: currentUserId,
+            directUserOneId: one,
+            directUserTwoId: two,
+            members: {
+              create: [
+                {
+                  userId: currentUserId,
+                  role: ConversationMemberRole.member,
+                },
+                {
+                  userId: targetUserId,
+                  role: ConversationMemberRole.member,
+                },
+              ],
+            },
+          },
+          include: {
+            members: { include: { user: true } },
+          },
+        });
+        return created.id;
+      } catch (err) {
+        if (
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2002'
+        ) {
+          const again = await tx.conversation.findFirst({
+            where: {
+              type: ConversationType.direct,
+              directUserOneId: one,
+              directUserTwoId: two,
+            },
+            include: {
+              members: { include: { user: true } },
+            },
+          });
+          if (again) {
+            return again.id;
+          }
+        }
+        throw err;
+      }
+    });
+
+    const detail = await this.getConversationDetailForMember(
+      currentUserId,
+      conversationId,
+    );
+    return { conversation: detail };
+  }
+
+  async listMyConversations(
+    userId: string,
+  ): Promise<{ conversations: ConversationListItemView[] }> {
+    const memberships = await this.prisma.conversationMember.findMany({
+      where: { userId },
+      orderBy: { conversation: { updatedAt: 'desc' } },
+      include: {
+        conversation: {
+          include: {
+            lastMessage: true,
+            members: { include: { user: true } },
+          },
+        },
+      },
+    });
+
+    const conversationIds = memberships.map((m) => m.conversationId);
+    const unreadMap = await this.unreadCountsForConversations(
+      userId,
+      conversationIds,
+    );
+
+    const items: ConversationListItemView[] = [];
+
+    for (const row of memberships) {
+      const c = row.conversation;
+      const otherUser = this.resolveOtherDirectParticipant(
+        userId,
+        c.type,
+        c.members.map((m) => m.user),
+      );
+
+      const last = c.lastMessage;
+
+      items.push({
+        conversationId: c.id,
+        type: c.type,
+        updatedAt: c.updatedAt,
+        otherParticipant:
+          otherUser && otherUser.isActive
+            ? toPublicUserProfile(otherUser)
+            : null,
+        lastMessage: last
+          ? {
+              id: last.id,
+              content: last.content,
+              createdAt: last.createdAt,
+              senderId: last.senderId,
+            }
+          : null,
+        unreadCount: unreadMap.get(c.id) ?? 0,
+      });
+    }
+
+    return { conversations: items };
+  }
+
+  async getConversationDetailForMember(
+    userId: string,
+    conversationId: string,
+  ): Promise<ConversationDetailView> {
+    const member = await this.membership.requireMember(userId, conversationId);
+
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: {
+        members: { include: { user: true } },
+      },
+    });
+
+    if (!conversation) {
+      throw new NotFoundException('Conversation not found');
+    }
+
+    const otherUser = this.resolveOtherDirectParticipant(
+      userId,
+      conversation.type,
+      conversation.members.map((m) => m.user),
+    );
+
+    return {
+      id: conversation.id,
+      type: conversation.type,
+      createdAt: conversation.createdAt,
+      updatedAt: conversation.updatedAt,
+      otherParticipant:
+        otherUser && otherUser.isActive ? toPublicUserProfile(otherUser) : null,
+      myMembership: {
+        joinedAt: member.joinedAt,
+        lastReadMessageId: member.lastReadMessageId,
+        lastDeliveredMessageId: member.lastDeliveredMessageId,
+        mutedUntil: member.mutedUntil,
+      },
+    };
+  }
+
+  private resolveOtherDirectParticipant(
+    viewerId: string,
+    type: ConversationType,
+    users: User[],
+  ): User | null {
+    if (type !== ConversationType.direct) {
+      return null;
+    }
+    const others = users.filter((u) => u.id !== viewerId);
+    return others[0] ?? null;
+  }
+
+  private async unreadCountsForConversations(
+    userId: string,
+    conversationIds: string[],
+  ): Promise<Map<string, number>> {
+    const map = new Map<string, number>();
+    if (conversationIds.length === 0) {
+      return map;
+    }
+
+    const rows = await this.prisma.$queryRaw<
+      { conversation_id: string; cnt: bigint }[]
+    >`
+      SELECT m.conversation_id, COUNT(*)::bigint AS cnt
+      FROM messages m
+      INNER JOIN conversation_members cm
+        ON cm.conversation_id = m.conversation_id AND cm.user_id = ${userId}::uuid
+      LEFT JOIN messages lr ON lr.id = cm.last_read_message_id
+      WHERE m.deleted_at IS NULL
+        AND m.sender_id <> ${userId}::uuid
+        AND m.conversation_id IN (${Prisma.join(
+          conversationIds.map((id) => Prisma.sql`${id}::uuid`),
+        )})
+        AND (
+          cm.last_read_message_id IS NULL
+          OR m.created_at > lr.created_at
+          OR (m.created_at = lr.created_at AND m.id > lr.id)
+        )
+      GROUP BY m.conversation_id
+    `;
+
+    for (const row of rows) {
+      map.set(row.conversation_id, Number(row.cnt));
+    }
+    return map;
+  }
+}

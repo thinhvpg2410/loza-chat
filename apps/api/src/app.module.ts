@@ -8,7 +8,9 @@ import { AppService } from './app.service';
 import { AuthModule } from './modules/auth/auth.module';
 import { BlocksModule } from './modules/blocks/blocks.module';
 import { DevicesModule } from './modules/devices/devices.module';
+import { ConversationsModule } from './modules/conversations/conversations.module';
 import { FriendsModule } from './modules/friends/friends.module';
+import { MessagesModule } from './modules/messages/messages.module';
 import { UsersModule } from './modules/users/users.module';
 import { PrismaModule } from './prisma/prisma.module';
 
@@ -26,6 +28,8 @@ import { PrismaModule } from './prisma/prisma.module';
     DevicesModule,
     BlocksModule,
     FriendsModule,
+    ConversationsModule,
+    MessagesModule,
     UsersModule,
   ],
   controllers: [AppController],
