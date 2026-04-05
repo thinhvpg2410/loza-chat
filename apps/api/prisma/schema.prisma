@@ -7,6 +7,13 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum FriendRequestStatus {
+  pending
+  accepted
+  rejected
+  cancelled
+}
+
 model User {
   id             String   @id @default(uuid())
   phoneNumber    String   @unique @map("phone_number")
@@ -18,8 +25,14 @@ model User {
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  devices       UserDevice[]
-  refreshTokens RefreshToken[]
+  devices            UserDevice[]
+  refreshTokens      RefreshToken[]
+  sentFriendRequests     FriendRequest[] @relation("SentFriendRequests")
+  receivedFriendRequests FriendRequest[] @relation("ReceivedFriendRequests")
+  friendshipsAsOne       Friendship[]    @relation("FriendshipsUserOne")
+  friendshipsAsTwo       Friendship[]    @relation("FriendshipsUserTwo")
+  blocksInitiated        Block[]         @relation("BlocksInitiated")
+  blocksReceived         Block[]         @relation("BlocksReceived")
 
   @@map("users")
 }
@@ -76,4 +89,53 @@ model RefreshToken {
   @@index([userId])
   @@index([userDeviceId])
   @@map("refresh_tokens")
+}
+
+model FriendRequest {
+  id          String              @id @default(uuid())
+  senderId    String              @map("sender_id")
+  receiverId  String              @map("receiver_id")
+  status      FriendRequestStatus
+  message     String?
+  respondedAt DateTime?           @map("responded_at")
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+
+  sender   User @relation("SentFriendRequests", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("ReceivedFriendRequests", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@index([senderId, status])
+  @@index([receiverId, status])
+  @@index([senderId, receiverId, status])
+  @@map("friend_requests")
+}
+
+model Friendship {
+  id        String   @id @default(uuid())
+  userOneId String   @map("user_one_id")
+  userTwoId String   @map("user_two_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  userOne User @relation("FriendshipsUserOne", fields: [userOneId], references: [id], onDelete: Cascade)
+  userTwo User @relation("FriendshipsUserTwo", fields: [userTwoId], references: [id], onDelete: Cascade)
+
+  @@unique([userOneId, userTwoId])
+  @@index([userOneId])
+  @@index([userTwoId])
+  @@map("friendships")
+}
+
+model Block {
+  id        String   @id @default(uuid())
+  blockerId String   @map("blocker_id")
+  blockedId String   @map("blocked_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  blocker User @relation("BlocksInitiated", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("BlocksReceived", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
+  @@map("blocks")
 }
