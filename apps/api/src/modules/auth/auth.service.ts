@@ -1,5 +1,5 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
-import type { User } from '@prisma/client';
+import type { User, UserDevice } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DevicesService } from '../devices/devices.service';
 import type { VerifyOtpDto } from './dto/verify-otp.dto';
@@ -33,34 +33,38 @@ export class AuthService {
   }> {
     await this.otpRequests.verifyOtpAndConsume(dto.phoneNumber, dto.otp);
 
-    const user = await this.prisma.user.upsert({
-      where: { phoneNumber: dto.phoneNumber },
-      create: {
-        phoneNumber: dto.phoneNumber,
-        displayName: `User ${dto.phoneNumber.slice(-4)}`,
-      },
-      update: {},
-    });
-
-    if (!user.isActive) {
-      throw new UnauthorizedException('Account is disabled');
-    }
-
-    const device = await this.devices.upsertForLogin(user.id, {
-      deviceId: dto.deviceId,
-      platform: dto.platform,
-      appVersion: dto.appVersion,
-      deviceName: dto.deviceName,
-    });
-
     const refreshRaw = this.tokens.generateRefreshToken();
     const tokenHash = this.tokens.hashRefreshToken(refreshRaw);
     const expiresAt = this.tokens.getRefreshExpiresAt();
 
-    await this.prisma.$transaction(async (tx) => {
+    const { user, device } = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.user.upsert({
+        where: { phoneNumber: dto.phoneNumber },
+        create: {
+          phoneNumber: dto.phoneNumber,
+          displayName: `User ${dto.phoneNumber.slice(-4)}`,
+        },
+        update: {},
+      });
+
+      if (!u.isActive) {
+        throw new UnauthorizedException('Account is disabled');
+      }
+
+      const d: UserDevice = await this.devices.upsertForLogin(
+        u.id,
+        {
+          deviceId: dto.deviceId,
+          platform: dto.platform,
+          appVersion: dto.appVersion,
+          deviceName: dto.deviceName,
+        },
+        tx,
+      );
+
       await tx.refreshToken.updateMany({
         where: {
-          userDeviceId: device.id,
+          userDeviceId: d.id,
           revokedAt: null,
         },
         data: { revokedAt: new Date() },
@@ -68,12 +72,14 @@ export class AuthService {
 
       await tx.refreshToken.create({
         data: {
-          userId: user.id,
-          userDeviceId: device.id,
+          userId: u.id,
+          userDeviceId: d.id,
           tokenHash,
           expiresAt,
         },
       });
+
+      return { user: u, device: d };
     });
 
     const accessToken = await this.tokens.signAccessToken(user.id);
@@ -97,32 +103,34 @@ export class AuthService {
     expiresIn: number;
   }> {
     const tokenHash = this.tokens.hashRefreshToken(refreshToken);
-    const now = new Date();
-
-    const existing = await this.prisma.refreshToken.findUnique({
-      where: { tokenHash },
-      include: {
-        user: true,
-      },
-    });
-
-    if (!existing || existing.revokedAt !== null || existing.expiresAt <= now) {
-      throw new UnauthorizedException('Invalid or expired session');
-    }
-
-    if (!existing.user.isActive) {
-      throw new UnauthorizedException('Account is disabled');
-    }
-
     const newRaw = this.tokens.generateRefreshToken();
     const newHash = this.tokens.hashRefreshToken(newRaw);
     const expiresAt = this.tokens.getRefreshExpiresAt();
+    const now = new Date();
 
-    await this.prisma.$transaction(async (tx) => {
-      await tx.refreshToken.update({
-        where: { id: existing.id },
+    const { userId } = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.refreshToken.findUnique({
+        where: { tokenHash },
+        include: { user: true },
+      });
+
+      if (
+        !existing ||
+        existing.revokedAt !== null ||
+        existing.expiresAt <= now ||
+        !existing.user.isActive
+      ) {
+        throw new UnauthorizedException('Invalid or expired session');
+      }
+
+      const revoked = await tx.refreshToken.updateMany({
+        where: { id: existing.id, revokedAt: null },
         data: { revokedAt: new Date() },
       });
+      if (revoked.count === 0) {
+        throw new UnauthorizedException('Invalid or expired session');
+      }
+
       await tx.refreshToken.create({
         data: {
           userId: existing.userId,
@@ -131,13 +139,16 @@ export class AuthService {
           expiresAt,
         },
       });
+
       await tx.userDevice.update({
         where: { id: existing.userDeviceId },
         data: { lastSeenAt: new Date() },
       });
+
+      return { userId: existing.userId };
     });
 
-    const accessToken = await this.tokens.signAccessToken(existing.userId);
+    const accessToken = await this.tokens.signAccessToken(userId);
 
     return {
       accessToken,

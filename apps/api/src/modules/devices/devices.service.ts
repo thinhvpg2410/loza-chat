@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import type { UserDevice } from '@prisma/client';
+import type { Prisma, UserDevice } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+
+export type DeviceDbClient = Prisma.TransactionClient | PrismaService;
 
 export type DeviceLoginInput = {
   deviceId: string;
@@ -16,8 +18,9 @@ export class DevicesService {
   async upsertForLogin(
     userId: string,
     input: DeviceLoginInput,
+    db: DeviceDbClient = this.prisma,
   ): Promise<UserDevice> {
-    return this.prisma.userDevice.upsert({
+    return db.userDevice.upsert({
       where: {
         userId_deviceId: { userId, deviceId: input.deviceId },
       },

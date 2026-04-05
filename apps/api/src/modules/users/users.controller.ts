@@ -17,7 +17,7 @@ export class UsersController {
   @Get('me')
   @ApiOperation({ summary: 'Current user profile' })
   getMe(@GetUser() user: User) {
-    return this.usersService.getMe(user);
+    return { user: this.usersService.getMe(user) };
   }
 
   @Get('search')
@@ -34,7 +34,8 @@ export class UsersController {
 
   @Patch('me')
   @ApiOperation({ summary: 'Update profile fields' })
-  patchMe(@GetUser('id') userId: string, @Body() dto: UpdateProfileDto) {
-    return this.usersService.updateProfile(userId, dto);
+  async patchMe(@GetUser('id') userId: string, @Body() dto: UpdateProfileDto) {
+    const user = await this.usersService.updateProfile(userId, dto);
+    return { user };
   }
 }

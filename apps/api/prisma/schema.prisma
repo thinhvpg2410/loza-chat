@@ -108,8 +108,11 @@ model FriendRequest {
   @@index([receiverId, status])
   @@index([senderId, receiverId, status])
   @@map("friend_requests")
+  // DB: partial unique index friend_requests_one_pending_per_pair (see migrations) — one pending per unordered pair
 }
 
+/// Invariant: userOneId < userTwoId (lexicographic). Enforced by DB CHECK + sortUserPair().
+/// When adding direct-message conversations, prefer linking via friendshipId or a dedicated conversation table.
 model Friendship {
   id        String   @id @default(uuid())
   userOneId String   @map("user_one_id")

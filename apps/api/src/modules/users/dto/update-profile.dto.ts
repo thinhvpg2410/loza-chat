@@ -11,18 +11,27 @@ import {
 export class UpdateProfileDto {
   @ApiPropertyOptional({ maxLength: 100 })
   @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   @IsString()
   @MaxLength(100)
   displayName?: string;
 
   @ApiPropertyOptional({ maxLength: 2048 })
   @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   @IsString()
   @MaxLength(2048)
   avatarUrl?: string;
 
   @ApiPropertyOptional({ maxLength: 200 })
   @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   @IsString()
   @MaxLength(200)
   statusMessage?: string;

@@ -87,7 +87,7 @@ export class UsersService {
       });
     }
 
-    if (!target) {
+    if (!target || !target.isActive) {
       return { results: [] };
     }
 

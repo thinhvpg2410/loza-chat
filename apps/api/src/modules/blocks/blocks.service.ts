@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { FriendRequestStatus } from '@prisma/client';
+import { FriendRequestStatus, Prisma } from '@prisma/client';
 import { sortUserPair } from '../../common/utils/sort-user-pair';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -29,47 +29,69 @@ export class BlocksService {
       throw new BadRequestException('Cannot block yourself');
     }
 
-    const target = await this.prisma.user.findUnique({
-      where: { id: blockedId },
-    });
-    if (!target) {
-      throw new NotFoundException('User not found');
-    }
+    try {
+      await this.prisma.$transaction(
+        async (tx) => {
+          const target = await tx.user.findUnique({
+            where: { id: blockedId },
+          });
+          if (!target) {
+            throw new NotFoundException('User not found');
+          }
 
-    const existing = await this.prisma.block.findUnique({
-      where: {
-        blockerId_blockedId: { blockerId, blockedId },
-      },
-    });
-    if (existing) {
-      throw new ConflictException('User is already blocked');
-    }
+          const existing = await tx.block.findUnique({
+            where: {
+              blockerId_blockedId: { blockerId, blockedId },
+            },
+          });
+          if (existing) {
+            throw new ConflictException('User is already blocked');
+          }
 
-    const [one, two] = sortUserPair(blockerId, blockedId);
+          const [one, two] = sortUserPair(blockerId, blockedId);
 
-    await this.prisma.$transaction(async (tx) => {
-      await tx.block.create({
-        data: { blockerId, blockedId },
-      });
+          await tx.block.create({
+            data: { blockerId, blockedId },
+          });
 
-      await tx.friendship.deleteMany({
-        where: { userOneId: one, userTwoId: two },
-      });
+          await tx.friendship.deleteMany({
+            where: { userOneId: one, userTwoId: two },
+          });
 
-      await tx.friendRequest.updateMany({
-        where: {
-          status: FriendRequestStatus.pending,
-          OR: [
-            { senderId: blockerId, receiverId: blockedId },
-            { senderId: blockedId, receiverId: blockerId },
-          ],
+          await tx.friendRequest.updateMany({
+            where: {
+              status: FriendRequestStatus.pending,
+              OR: [
+                { senderId: blockerId, receiverId: blockedId },
+                { senderId: blockedId, receiverId: blockerId },
+              ],
+            },
+            data: {
+              status: FriendRequestStatus.cancelled,
+              respondedAt: new Date(),
+            },
+          });
         },
-        data: {
-          status: FriendRequestStatus.cancelled,
-          respondedAt: new Date(),
+        {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
         },
-      });
-    });
+      );
+    } catch (err) {
+      if (
+        err instanceof NotFoundException ||
+        err instanceof ConflictException ||
+        err instanceof BadRequestException
+      ) {
+        throw err;
+      }
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictException('User is already blocked');
+      }
+      throw err;
+    }
   }
 
   async removeBlock(blockerId: string, blockedId: string): Promise<void> {

@@ -23,20 +23,23 @@ export class FriendsController {
 
   @Get('requests/incoming')
   @ApiOperation({ summary: 'Pending friend requests you received' })
-  incoming(@GetUser('id') userId: string) {
-    return this.friendsService.listIncomingRequests(userId);
+  async incoming(@GetUser('id') userId: string) {
+    const requests = await this.friendsService.listIncomingRequests(userId);
+    return { requests };
   }
 
   @Get('requests/outgoing')
   @ApiOperation({ summary: 'Pending friend requests you sent' })
-  outgoing(@GetUser('id') userId: string) {
-    return this.friendsService.listOutgoingRequests(userId);
+  async outgoing(@GetUser('id') userId: string) {
+    const requests = await this.friendsService.listOutgoingRequests(userId);
+    return { requests };
   }
 
   @Get()
   @ApiOperation({ summary: 'List friends' })
-  friends(@GetUser('id') userId: string) {
-    return this.friendsService.listFriends(userId);
+  async friends(@GetUser('id') userId: string) {
+    const friends = await this.friendsService.listFriends(userId);
+    return { friends };
   }
 
   @Delete(':userId')
