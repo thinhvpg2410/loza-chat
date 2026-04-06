@@ -15,7 +15,7 @@ import { S3ObjectStorageService } from './s3-object-storage.service';
       useFactory: (config: ConfigService<AppConfiguration, true>) => {
         const storage = config.get('storage', { infer: true });
         if (storage.mock) {
-          return new MockObjectStorageService();
+          return new MockObjectStorageService(config);
         }
         if (
           !storage.bucket ||

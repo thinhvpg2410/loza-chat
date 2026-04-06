@@ -17,6 +17,9 @@ import { UploadRulesService } from './upload-rules.service';
 
 @Injectable()
 export class UploadsService {
+  /** STORAGE_MOCK: bytes received via PUT /uploads/mock-upload/:sessionId */
+  private readonly mockUploadBuffers = new Map<string, Buffer>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: ObjectStoragePort,
@@ -88,6 +91,7 @@ export class UploadsService {
       key: storageKey,
       contentType: dto.mimeType,
       expiresInSeconds: uploadCfg.presignExpiresSeconds,
+      uploadSessionId: session.id,
     });
 
     return {
@@ -171,5 +175,67 @@ export class UploadsService {
     });
 
     return { attachment: toAttachmentPublicDto(result) };
+  }
+
+  /**
+   * Mock direct-to-API upload (replaces unresolvable mock-storage.local presigned URLs).
+   */
+  async receiveMockUpload(
+    userId: string,
+    sessionId: string,
+    body: Buffer,
+  ): Promise<void> {
+    const storageCfg = this.config.get('storage', { infer: true });
+    if (!storageCfg.mock) {
+      throw new BadRequestException('Mock upload is only available when STORAGE_MOCK=true');
+    }
+
+    const session = await this.prisma.uploadSession.findUnique({
+      where: { id: sessionId },
+    });
+    if (!session) {
+      throw new NotFoundException('Upload session not found');
+    }
+    if (session.userId !== userId) {
+      throw new ForbiddenException('Not your upload session');
+    }
+    if (session.status !== UploadSessionStatus.pending) {
+      throw new BadRequestException(
+        `Upload session is not pending (status=${session.status})`,
+      );
+    }
+    if (session.expiresAt.getTime() < Date.now()) {
+      await this.prisma.uploadSession.update({
+        where: { id: sessionId },
+        data: { status: UploadSessionStatus.expired },
+      });
+      throw new BadRequestException('Upload session expired');
+    }
+    if (BigInt(body.length) !== session.fileSize) {
+      throw new BadRequestException(
+        'Uploaded size does not match declared size',
+      );
+    }
+
+    this.mockUploadBuffers.set(session.storageKey, body);
+  }
+
+  async getMockPublicObject(
+    storageKey: string,
+  ): Promise<{ buffer: Buffer; mimeType: string } | null> {
+    if (!this.config.get('storage', { infer: true }).mock) {
+      return null;
+    }
+    const buf = this.mockUploadBuffers.get(storageKey);
+    if (!buf) {
+      return null;
+    }
+    const session = await this.prisma.uploadSession.findFirst({
+      where: { storageKey },
+    });
+    if (!session) {
+      return null;
+    }
+    return { buffer: buf, mimeType: session.mimeType };
   }
 }

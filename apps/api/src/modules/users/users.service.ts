@@ -129,10 +129,15 @@ export class UsersService {
   }
 
   private buildPublicMediaUrl(storageKey: string): string {
-    const base = this.config.get('storage', { infer: true }).publicBaseUrl;
+    const storage = this.config.get('storage', { infer: true });
+    const base = storage.publicBaseUrl;
     if (base && base.trim().length > 0) {
       const trimmed = base.replace(/\/$/, '');
       return `${trimmed}/${storageKey}`;
+    }
+    const api = (this.config.get('apiPublicBaseUrl', { infer: true }) ?? '').trim();
+    if (storage.mock && api.length > 0) {
+      return `${api.replace(/\/$/, '')}/uploads/mock-public?key=${encodeURIComponent(storageKey)}`;
     }
     return `https://mock-storage.local/public/${storageKey}`;
   }

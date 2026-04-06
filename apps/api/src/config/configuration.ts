@@ -1,6 +1,11 @@
 export type AppConfiguration = {
   nodeEnv: string;
   port: number;
+  /**
+   * Public base URL clients use to reach this API (e.g. http://192.168.1.10:3000).
+   * Required for mock storage presigned PUT and mock public media URLs.
+   */
+  apiPublicBaseUrl: string;
   jwt: {
     accessSecret: string;
     refreshSecret: string;
@@ -41,6 +46,7 @@ export type AppConfiguration = {
 export default (): AppConfiguration => ({
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: parseInt(process.env.PORT ?? '3000', 10),
+  apiPublicBaseUrl: (process.env.API_PUBLIC_BASE_URL ?? '').trim(),
   jwt: {
     accessSecret: process.env.JWT_ACCESS_SECRET ?? '',
     refreshSecret: process.env.JWT_REFRESH_SECRET ?? '',
