@@ -1,18 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import { ChatPanel } from "@/components/chat/ChatPanel";
 import { ConversationList } from "@/components/chat/ConversationList";
-import { EmptyChatPanel } from "@/components/layout/empty-chat-panel";
-import { mockConversations } from "@/lib/mock-chat";
+import { getConversationById, mockConversations } from "@/lib/mock-chat";
 
 export function ChatWorkspace() {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(mockConversations[0]?.id ?? null);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const activeTitle = useMemo(() => {
-    const c = mockConversations.find((x) => x.id === selectedId);
-    return c?.title ?? null;
-  }, [selectedId]);
+  const activeConversation = selectedId ? getConversationById(selectedId) ?? null : null;
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -23,14 +20,7 @@ export function ChatWorkspace() {
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
       />
-      <EmptyChatPanel
-        title={activeTitle ? `Open: ${activeTitle}` : "Select a conversation"}
-        description={
-          activeTitle
-            ? "Chat messages and composer will load here when messaging is wired to the API."
-            : "Choose a chat from the list. The main thread opens here in a later phase."
-        }
-      />
+      <ChatPanel conversation={activeConversation} />
     </div>
   );
 }

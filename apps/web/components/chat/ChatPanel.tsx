@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ChatHeader } from "@/components/chat/ChatHeader";
-import { Composer } from "@/components/chat/Composer";
+import { MessageInput } from "@/components/chat/MessageInput";
 import { MessageList } from "@/components/chat/MessageList";
 import { getMessagesForConversation } from "@/lib/mock-chat";
 import type { Conversation, Message } from "@/lib/types/chat";
@@ -18,12 +18,12 @@ function buildMessageId(): string {
   return `m-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-type ActiveComposerProps = {
+type ActiveMessageInputProps = {
   conversation: Conversation;
   onSent: (message: Message) => void;
 };
 
-function ActiveComposer({ conversation, onSent }: ActiveComposerProps) {
+function ActiveMessageInput({ conversation, onSent }: ActiveMessageInputProps) {
   const [draft, setDraft] = useState("");
 
   const handleSend = () => {
@@ -31,13 +31,14 @@ function ActiveComposer({ conversation, onSent }: ActiveComposerProps) {
     if (!body) return;
 
     const now = new Date();
-    const sentAt = now.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    const sentAt = now.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
 
     const newMessage: Message = {
       id: buildMessageId(),
       conversationId: conversation.id,
       body,
       sentAt,
+      createdAt: now.toISOString(),
       isOwn: true,
     };
 
@@ -45,7 +46,7 @@ function ActiveComposer({ conversation, onSent }: ActiveComposerProps) {
     setDraft("");
   };
 
-  return <Composer value={draft} onChange={setDraft} onSend={handleSend} disabled={false} />;
+  return <MessageInput value={draft} onChange={setDraft} onSend={handleSend} disabled={false} />;
 }
 
 export function ChatPanel({ conversation }: ChatPanelProps) {
@@ -66,23 +67,26 @@ export function ChatPanel({ conversation }: ChatPanelProps) {
   };
 
   return (
-    <section className="flex min-w-0 flex-1 flex-col bg-[var(--zalo-chat-bg)]" aria-label="Khung trò chuyện">
+    <section
+      className="flex min-w-0 flex-1 flex-col bg-[var(--zalo-chat-bg)]"
+      aria-label="Khung trò chuyện"
+    >
       <ChatHeader conversation={conversation} />
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto bg-[var(--zalo-chat-bg)]">
         {conversation ? (
           <MessageList messages={messages} />
         ) : (
           <div className="flex h-full min-h-[200px] items-center justify-center px-6">
-            <p className="max-w-sm text-center text-sm text-[var(--zalo-text-muted)]">
-              Chọn một cuộc trò chuyện từ danh sách bên trái để xem tin nhắn.
+            <p className="max-w-sm text-center text-[13px] text-[var(--zalo-text-muted)]">
+              Chọn một cuộc trò chuyện từ danh sách để xem tin nhắn.
             </p>
           </div>
         )}
       </div>
       {conversation ? (
-        <ActiveComposer key={conversation.id} conversation={conversation} onSent={appendMessage} />
+        <ActiveMessageInput key={conversation.id} conversation={conversation} onSent={appendMessage} />
       ) : (
-        <Composer value="" onChange={() => {}} onSend={() => {}} disabled />
+        <MessageInput value="" onChange={() => {}} onSend={() => {}} disabled />
       )}
     </section>
   );
