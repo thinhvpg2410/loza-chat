@@ -15,6 +15,9 @@ function delay(ms: number) {
 
 export function getApiErrorMessage(err: unknown, fallback = "Có lỗi xảy ra"): string {
   if (isAxiosError(err)) {
+    if (err.response == null && (err.code === "ERR_NETWORK" || err.message === "Network Error")) {
+      return "Không kết nối được máy chủ. Kiểm tra API đang chạy và điện thoại cùng Wi‑Fi với máy dev (tránh dùng localhost trên điện thoại thật).";
+    }
     const data = err.response?.data as { message?: string | string[] } | undefined;
     const m = data?.message;
     if (typeof m === "string") return m;

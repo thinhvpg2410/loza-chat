@@ -1,9 +1,10 @@
 import axios from "axios";
 
+import { API_BASE_URL } from "@/constants/env";
 import { useAuthStore } from "@/store/authStore";
 
 export const apiClient = axios.create({
-  baseURL: process.env.EXPO_PUBLIC_API_URL ?? "https://api.loza.local",
+  baseURL: API_BASE_URL,
   timeout: 15000,
   headers: { "Content-Type": "application/json" },
 });

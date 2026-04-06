@@ -128,6 +128,16 @@ export default function ProfileSetupScreen() {
   return (
     <AppScreen
       scroll
+      footer={
+        <AppButton
+          title="Tiếp tục"
+          variant="primary"
+          compact
+          loading={submitting}
+          disabled={USE_API_MOCK ? !canContinueMock : !canContinueReal || submitting}
+          onPress={() => void onContinue()}
+        />
+      }
       horizontalPadding="md"
       safeEdges={["top", "left", "right", "bottom"]}
       keyboardOffset={0}
@@ -210,17 +220,6 @@ export default function ProfileSetupScreen() {
           {formError}
         </AppText>
       ) : null}
-
-      <View style={{ flex: 1, minHeight: spacing.xxl }} />
-
-      <AppButton
-        title="Tiếp tục"
-        variant="primary"
-        compact
-        loading={submitting}
-        disabled={USE_API_MOCK ? !canContinueMock : !canContinueReal || submitting}
-        onPress={() => void onContinue()}
-      />
     </AppScreen>
   );
 }

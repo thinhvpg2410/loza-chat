@@ -68,6 +68,27 @@ export default function ForgotPasswordScreen() {
   return (
     <AppScreen
       scroll
+      footer={
+        <>
+          <AppButton
+            title="Gửi mã"
+            variant="primary"
+            compact
+            loading={submitting}
+            disabled={!canContinue || submitting}
+            onPress={() => void onContinue()}
+          />
+
+          <AppText
+            variant="micro"
+            color="primary"
+            style={{ textAlign: "center", marginTop: spacing.sm }}
+            onPress={() => router.back()}
+          >
+            Quay lại đăng nhập
+          </AppText>
+        </>
+      }
       horizontalPadding="md"
       safeEdges={["top", "left", "right", "bottom"]}
       keyboardOffset={0}
@@ -104,26 +125,6 @@ export default function ForgotPasswordScreen() {
           error={error}
         />
       </View>
-
-      <View style={{ flex: 1, minHeight: spacing.xxl }} />
-
-      <AppButton
-        title="Gửi mã"
-        variant="primary"
-        compact
-        loading={submitting}
-        disabled={!canContinue || submitting}
-        onPress={() => void onContinue()}
-      />
-
-      <AppText
-        variant="micro"
-        color="primary"
-        style={{ textAlign: "center", marginTop: spacing.sm }}
-        onPress={() => router.back()}
-      >
-        Quay lại đăng nhập
-      </AppText>
     </AppScreen>
   );
 }

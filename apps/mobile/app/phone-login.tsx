@@ -65,6 +65,35 @@ export default function PhoneLoginScreen() {
   return (
     <AppScreen
       scroll
+      footer={
+        <>
+          <AppButton
+            title="Tiếp tục"
+            variant="primary"
+            compact
+            loading={submitting}
+            disabled={!canContinue || submitting}
+            onPress={() => void onContinue()}
+          />
+
+          <AppText
+            variant="micro"
+            color="primary"
+            style={{ textAlign: "center", marginTop: spacing.sm }}
+            onPress={() => router.push({ pathname: "/forgot-password" })}
+          >
+            Quên mật khẩu?
+          </AppText>
+
+          <AppText
+            variant="micro"
+            color="textMuted"
+            style={{ textAlign: "center", marginTop: spacing.sm, marginBottom: spacing.xs, lineHeight: 15 }}
+          >
+            {USE_API_MOCK ? "Tiếp tục là đồng ý điều khoản (mock)." : "Tiếp tục là đồng ý điều khoản dịch vụ."}
+          </AppText>
+        </>
+      }
       horizontalPadding="md"
       safeEdges={["top", "left", "right", "bottom"]}
       keyboardOffset={0}
@@ -104,36 +133,6 @@ export default function PhoneLoginScreen() {
 
       <AppText variant="micro" color="textMuted" style={{ marginTop: spacing.sm, lineHeight: 16 }}>
         SMS xác nhận có thể tính phí nhà mạng.
-      </AppText>
-
-      <View style={{ flex: 1, minHeight: spacing.xxl }} />
-
-      <AppButton
-        title="Tiếp tục"
-        variant="primary"
-        compact
-        loading={submitting}
-        disabled={!canContinue || submitting}
-        onPress={() => void onContinue()}
-      />
-
-      {!USE_API_MOCK ? (
-        <AppText
-          variant="micro"
-          color="primary"
-          style={{ textAlign: "center", marginTop: spacing.sm }}
-          onPress={() => router.push({ pathname: "/forgot-password" })}
-        >
-          Quên mật khẩu?
-        </AppText>
-      ) : null}
-
-      <AppText
-        variant="micro"
-        color="textMuted"
-        style={{ textAlign: "center", marginTop: spacing.sm, marginBottom: spacing.xs, lineHeight: 15 }}
-      >
-        {USE_API_MOCK ? "Tiếp tục là đồng ý điều khoản (mock)." : "Tiếp tục là đồng ý điều khoản dịch vụ."}
       </AppText>
     </AppScreen>
   );

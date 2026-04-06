@@ -128,6 +128,16 @@ export default function OtpVerifyScreen() {
   return (
     <AppScreen
       scroll
+      footer={
+        <AppButton
+          title="Xác nhận"
+          variant="primary"
+          compact
+          loading={submitting}
+          disabled={code.length !== OTP_LENGTH || submitting}
+          onPress={() => void verify(code)}
+        />
+      }
       horizontalPadding="md"
       safeEdges={["top", "left", "right", "bottom"]}
       keyboardOffset={0}
@@ -162,14 +172,14 @@ export default function OtpVerifyScreen() {
           paddingHorizontal: 2,
         }}
       >
-        <AppText variant="micro" color="textSecondary">
+        <AppText variant="micro" color="textSecondary" style={{ flexShrink: 1, minWidth: 0 }}>
           {isRunning ? `Gửi lại sau ${secondsLeft}s` : "Không nhận được mã?"}
         </AppText>
         <AppText
           variant="micro"
           color={isRunning ? "textMuted" : "primary"}
           onPress={() => void onResend()}
-          style={{ fontWeight: "600" }}
+          style={{ fontWeight: "600", marginLeft: spacing.sm, flexShrink: 0 }}
         >
           Gửi lại
         </AppText>
@@ -180,17 +190,6 @@ export default function OtpVerifyScreen() {
           Gợi ý mock: 123456
         </AppText>
       ) : null}
-
-      <View style={{ flex: 1, minHeight: spacing.xxl }} />
-
-      <AppButton
-        title="Xác nhận"
-        variant="primary"
-        compact
-        loading={submitting}
-        disabled={code.length !== OTP_LENGTH || submitting}
-        onPress={() => void verify(code)}
-      />
     </AppScreen>
   );
 }

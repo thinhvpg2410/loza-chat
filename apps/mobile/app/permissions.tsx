@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { appStorage } from "@/storage/appStorage";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { View } from "react-native";
@@ -87,7 +87,7 @@ export default function PermissionsScreen() {
   const finish = async () => {
     setFinishing(true);
     try {
-      await AsyncStorage.setItem(ONBOARDING_COMPLETE_KEY, "true");
+      await appStorage.setItem(ONBOARDING_COMPLETE_KEY, "true");
 
       if (USE_API_MOCK) {
         const phoneE164 = phone || "+84900000000";

@@ -1,6 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
-import { View } from "react-native";
 
 import { AuthHeader } from "@components/auth";
 import { AppButton } from "@ui/AppButton";
@@ -48,6 +47,27 @@ export default function LoginPasswordScreen() {
   return (
     <AppScreen
       scroll
+      footer={
+        <>
+          <AppButton
+            title="Đăng nhập"
+            variant="primary"
+            compact
+            loading={submitting}
+            disabled={!canSubmit || submitting}
+            onPress={() => void onSubmit()}
+          />
+
+          <AppText
+            variant="micro"
+            color="primary"
+            style={{ textAlign: "center", marginTop: spacing.sm }}
+            onPress={() => router.replace("/phone-login")}
+          >
+            Đổi số điện thoại
+          </AppText>
+        </>
+      }
       horizontalPadding="md"
       safeEdges={["top", "left", "right", "bottom"]}
       keyboardOffset={0}
@@ -80,26 +100,6 @@ export default function LoginPasswordScreen() {
         }
       >
         Quên mật khẩu?
-      </AppText>
-
-      <View style={{ flex: 1, minHeight: spacing.xxl }} />
-
-      <AppButton
-        title="Đăng nhập"
-        variant="primary"
-        compact
-        loading={submitting}
-        disabled={!canSubmit || submitting}
-        onPress={() => void onSubmit()}
-      />
-
-      <AppText
-        variant="micro"
-        color="primary"
-        style={{ textAlign: "center", marginTop: spacing.sm }}
-        onPress={() => router.replace("/phone-login")}
-      >
-        Đổi số điện thoại
       </AppText>
     </AppScreen>
   );

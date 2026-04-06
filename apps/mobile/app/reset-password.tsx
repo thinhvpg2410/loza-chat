@@ -46,6 +46,16 @@ export default function ResetPasswordScreen() {
   return (
     <AppScreen
       scroll
+      footer={
+        <AppButton
+          title="Cập nhật mật khẩu"
+          variant="primary"
+          compact
+          loading={submitting}
+          disabled={!canSubmit || submitting}
+          onPress={() => void onSubmit()}
+        />
+      }
       horizontalPadding="md"
       safeEdges={["top", "left", "right", "bottom"]}
       keyboardOffset={0}
@@ -93,17 +103,6 @@ export default function ResetPasswordScreen() {
           {error}
         </AppText>
       ) : null}
-
-      <View style={{ flex: 1, minHeight: spacing.xxl }} />
-
-      <AppButton
-        title="Cập nhật mật khẩu"
-        variant="primary"
-        compact
-        loading={submitting}
-        disabled={!canSubmit || submitting}
-        onPress={() => void onSubmit()}
-      />
     </AppScreen>
   );
 }

@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { appStorage } from "@/storage/appStorage";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
@@ -17,12 +17,12 @@ function randomHex(bytes: number): string {
 }
 
 export async function getOrCreateDeviceId(): Promise<string> {
-  const existing = await AsyncStorage.getItem(DEVICE_ID_KEY);
+  const existing = await appStorage.getItem(DEVICE_ID_KEY);
   if (existing && existing.length >= 8) {
     return existing;
   }
   const next = `loza-${randomHex(16)}`;
-  await AsyncStorage.setItem(DEVICE_ID_KEY, next);
+  await appStorage.setItem(DEVICE_ID_KEY, next);
   return next;
 }
 

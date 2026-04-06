@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText } from "@ui/AppText";
 import { colors, headerSeparator, spacing } from "@theme";
@@ -17,14 +16,12 @@ type ShellHeaderProps = {
 };
 
 export function ShellHeader({ title, subtitle, left, right, bottomPadding = spacing.sm }: ShellHeaderProps) {
-  const insets = useSafeAreaInsets();
-
   return (
     <View
       style={[
         headerSeparator,
         {
-          paddingTop: insets.top,
+          paddingTop: 0,
           paddingBottom: bottomPadding,
           paddingHorizontal: spacing.md,
           backgroundColor: colors.background,

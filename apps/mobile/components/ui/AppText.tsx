@@ -27,5 +27,11 @@ export function AppText({
   const base: TextStyle = typography[variant];
   const colorStyle: TextStyle = { color: resolveColor(color) };
 
-  return <Text style={[base, colorStyle, style]} {...rest} />;
+  return (
+    <Text
+      maxFontSizeMultiplier={1.25}
+      style={[base, colorStyle, style]}
+      {...rest}
+    />
+  );
 }

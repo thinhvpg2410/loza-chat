@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { appStorage } from "@/storage/appStorage";
 import { create } from "zustand";
 
 import { USE_API_MOCK } from "@/constants/env";
@@ -43,11 +43,11 @@ type AuthState = {
 };
 
 async function persistSession(snapshot: PersistedAuth) {
-  await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(snapshot));
+  await appStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(snapshot));
 }
 
 async function readSession(): Promise<PersistedAuth | null> {
-  const raw = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
+  const raw = await appStorage.getItem(AUTH_STORAGE_KEY);
   if (!raw) return null;
   try {
     return JSON.parse(raw) as PersistedAuth;
@@ -119,7 +119,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       otpProofToken: null,
       resetToken: null,
     });
-    await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+    await appStorage.removeItem(AUTH_STORAGE_KEY);
   },
 
   hydrate: async () => {

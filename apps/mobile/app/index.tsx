@@ -1,4 +1,4 @@
-import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { useEffect, useRef } from "react";
 import { ActivityIndicator, View } from "react-native";
@@ -43,19 +43,12 @@ export default function SplashScreen() {
         paddingHorizontal: spacing.md,
       }}
     >
-      <View
-        style={{
-          width: 76,
-          height: 76,
-          borderRadius: 999,
-          backgroundColor: colors.primaryMuted,
-          alignItems: "center",
-          justifyContent: "center",
-          marginBottom: spacing.md,
-        }}
-      >
-        <Ionicons name="chatbubble-ellipses-outline" size={38} color={colors.primary} />
-      </View>
+      <Image
+        source={require("../assets/images/loza-logo.png")}
+        style={{ width: 112, height: 112, marginBottom: spacing.md }}
+        contentFit="contain"
+        accessibilityLabel="Loza Chat"
+      />
       <AppText variant="headline" style={{ fontWeight: "700", color: colors.text, letterSpacing: -0.3 }}>
         Loza Chat
       </AppText>

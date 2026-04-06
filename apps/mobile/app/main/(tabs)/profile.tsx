@@ -30,7 +30,10 @@ export default function ProfileTabScreen() {
   return (
     <AppTabScreen>
       <ShellHeader title="Cá nhân" />
-      <ScrollView>
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingBottom: spacing.xl }}
+      >
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Chỉnh sửa hồ sơ"
@@ -38,13 +41,15 @@ export default function ProfileTabScreen() {
           style={({ pressed }) => ({
             flexDirection: "row",
             alignItems: "center",
+            width: "100%",
+            alignSelf: "stretch",
             paddingHorizontal: spacing.md,
             paddingVertical: spacing.md,
             opacity: pressed ? 0.88 : 1,
           })}
         >
           <AppAvatar uri={user?.avatarUri} name={user?.name ?? " "} size="lg" />
-          <View style={{ marginLeft: spacing.md, flex: 1 }}>
+          <View style={{ marginLeft: spacing.md, flex: 1, minWidth: 0 }}>
             <AppText variant="headline" style={{ fontWeight: "600", color: colors.text }}>
               {user?.name ?? "Người dùng"}
             </AppText>
@@ -58,7 +63,7 @@ export default function ProfileTabScreen() {
               {user?.birthDate ? ` · ${isoToDdMmYyyy(user.birthDate)}` : ""}
             </AppText>
           </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} style={{ flexShrink: 0 }} />
         </Pressable>
 
         <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: spacing.xs }} />
@@ -75,6 +80,8 @@ export default function ProfileTabScreen() {
             style={({ pressed }) => ({
               flexDirection: "row",
               alignItems: "center",
+              width: "100%",
+              alignSelf: "stretch",
               paddingHorizontal: spacing.md,
               paddingVertical: spacing.md,
               opacity: pressed ? 0.85 : 1,
@@ -88,14 +95,25 @@ export default function ProfileTabScreen() {
                 backgroundColor: colors.surface,
                 alignItems: "center",
                 justifyContent: "center",
+                flexShrink: 0,
               }}
             >
               <Ionicons name={row.icon} size={20} color={colors.primary} />
             </View>
-            <AppText variant="subhead" style={{ fontWeight: "500", marginLeft: spacing.md, flex: 1, color: colors.text }}>
+            <AppText
+              variant="subhead"
+              numberOfLines={2}
+              style={{
+                fontWeight: "500",
+                marginLeft: spacing.md,
+                flex: 1,
+                minWidth: 0,
+                color: colors.text,
+              }}
+            >
               {row.label}
             </AppText>
-            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} style={{ flexShrink: 0 }} />
           </Pressable>
         ))}
 

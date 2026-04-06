@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { appStorage } from "@/storage/appStorage";
 
 import { ONBOARDING_COMPLETE_KEY } from "@/constants/storageKeys";
 import { useAuthStore } from "@/store/authStore";
@@ -12,7 +12,7 @@ export async function completeMockOnboardingSession(params: {
   phoneE164: string;
   avatarUri?: string | null;
 }): Promise<void> {
-  await AsyncStorage.setItem(ONBOARDING_COMPLETE_KEY, "true");
+  await appStorage.setItem(ONBOARDING_COMPLETE_KEY, "true");
   await useAuthStore.getState().login({
     accessToken: "mock-access-token",
     refreshToken: "mock-refresh-token",
