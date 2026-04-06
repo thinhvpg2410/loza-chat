@@ -1,11 +1,18 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
+  GoneException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import type { User, UserDevice } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
+import type { Prisma, User, UserDevice } from '@prisma/client';
+import { QrLoginSessionStatus } from '@prisma/client';
+import { randomBytes } from 'crypto';
 import * as bcrypt from 'bcrypt';
+import type { AppConfiguration } from '../../config/configuration';
 import { OtpPurpose } from '../../common/constants/otp-purpose';
 import { parseLoginIdentifier } from '../../common/utils/contact-identifiers';
 import { toPublicUser } from '../../common/utils/user-public';
@@ -15,6 +22,7 @@ import { DevicesService } from '../devices/devices.service';
 import type { CreateAccountDto } from './dto/create-account.dto';
 import type { ForgotPasswordResetDto } from './dto/forgot-password-reset.dto';
 import type { LoginDto } from './dto/login.dto';
+import type { QrCreateDto } from './dto/qr-create.dto';
 import type { VerifyContactOtpDto } from './dto/contact-otp.dto';
 import type { VerifyLoginDeviceOtpDto } from './dto/verify-login-device-otp.dto';
 import type { LoginDeviceChallengePayload } from './interfaces/login-device-challenge-payload.interface';
@@ -47,6 +55,7 @@ export class AuthService {
     private readonly otpRequests: OtpRequestsService,
     private readonly tokens: TokenService,
     private readonly devices: DevicesService,
+    private readonly config: ConfigService<AppConfiguration, true>,
   ) {}
 
   async registerRequestOtp(
@@ -400,47 +409,56 @@ export class AuthService {
     );
   }
 
+  private async openPasswordSessionWithTx(
+    tx: Prisma.TransactionClient,
+    user: User,
+    dto: Pick<LoginDto, 'deviceId' | 'platform' | 'appVersion' | 'deviceName'>,
+    deviceOptions: { markTrusted?: boolean },
+  ): Promise<{ deviceRow: UserDevice; refreshRaw: string }> {
+    const refreshRaw = this.tokens.generateRefreshToken();
+    const tokenHash = this.tokens.hashRefreshToken(refreshRaw);
+    const expiresAt = this.tokens.getRefreshExpiresAt();
+
+    const d: UserDevice = await this.devices.upsertForLogin(
+      user.id,
+      {
+        deviceId: dto.deviceId,
+        platform: dto.platform,
+        appVersion: dto.appVersion,
+        deviceName: dto.deviceName,
+      },
+      tx,
+      deviceOptions.markTrusted ? { markTrusted: true } : undefined,
+    );
+
+    await tx.refreshToken.updateMany({
+      where: {
+        userDeviceId: d.id,
+        revokedAt: null,
+      },
+      data: { revokedAt: new Date() },
+    });
+
+    await tx.refreshToken.create({
+      data: {
+        userId: user.id,
+        userDeviceId: d.id,
+        tokenHash,
+        expiresAt,
+      },
+    });
+
+    return { deviceRow: d, refreshRaw };
+  }
+
   private async openPasswordSession(
     user: User,
     dto: Pick<LoginDto, 'deviceId' | 'platform' | 'appVersion' | 'deviceName'>,
     deviceOptions: { markTrusted?: boolean },
   ): Promise<LoginSessionPayload> {
-    const refreshRaw = this.tokens.generateRefreshToken();
-    const tokenHash = this.tokens.hashRefreshToken(refreshRaw);
-    const expiresAt = this.tokens.getRefreshExpiresAt();
-
-    const { deviceRow } = await this.prisma.$transaction(async (tx) => {
-      const d: UserDevice = await this.devices.upsertForLogin(
-        user.id,
-        {
-          deviceId: dto.deviceId,
-          platform: dto.platform,
-          appVersion: dto.appVersion,
-          deviceName: dto.deviceName,
-        },
-        tx,
-        deviceOptions.markTrusted ? { markTrusted: true } : undefined,
-      );
-
-      await tx.refreshToken.updateMany({
-        where: {
-          userDeviceId: d.id,
-          revokedAt: null,
-        },
-        data: { revokedAt: new Date() },
-      });
-
-      await tx.refreshToken.create({
-        data: {
-          userId: user.id,
-          userDeviceId: d.id,
-          tokenHash,
-          expiresAt,
-        },
-      });
-
-      return { deviceRow: d };
-    });
+    const { deviceRow, refreshRaw } = await this.prisma.$transaction(
+      async (tx) => this.openPasswordSessionWithTx(tx, user, dto, deviceOptions),
+    );
 
     const accessToken = await this.tokens.signAccessToken(user.id, {
       deviceId: deviceRow.deviceId,
@@ -457,6 +475,352 @@ export class AuthService {
         platform: deviceRow.platform,
       },
     };
+  }
+
+  async qrCreate(dto: QrCreateDto): Promise<{
+    sessionToken: string;
+    expiresAt: Date;
+  }> {
+    const ttl = this.config.get('qr', { infer: true }).loginSessionTtlMinutes;
+    const publicToken = randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + ttl * 60_000);
+
+    await this.prisma.qrLoginSession.create({
+      data: {
+        publicToken,
+        status: QrLoginSessionStatus.pending,
+        expiresAt,
+        webDeviceId: dto.deviceId,
+        webPlatform: 'web',
+        webAppVersion: dto.appVersion,
+        webDeviceName: dto.deviceName?.trim() ? dto.deviceName.trim() : null,
+      },
+    });
+
+    return { sessionToken: publicToken, expiresAt };
+  }
+
+  async qrGetStatus(sessionToken: string): Promise<
+    | {
+        status: 'pending' | 'scanned' | 'rejected';
+        expiresAt: Date;
+      }
+    | {
+        status: 'expired' | 'not_found';
+        expiresAt?: Date;
+      }
+    | {
+        status: 'approved';
+        expiresAt: Date;
+        tokensAlreadyDelivered: true;
+      }
+    | ({
+        status: 'approved';
+        expiresAt: Date;
+        tokensAlreadyDelivered: false;
+      } & LoginSessionPayload)
+  > {
+    this.assertQrSessionTokenFormat(sessionToken);
+
+    const row = await this.prisma.qrLoginSession.findUnique({
+      where: { publicToken: sessionToken },
+    });
+
+    if (!row) {
+      return { status: 'not_found' };
+    }
+
+    const now = new Date();
+
+    if (
+      row.expiresAt <= now &&
+      (row.status === QrLoginSessionStatus.pending ||
+        row.status === QrLoginSessionStatus.scanned)
+    ) {
+      await this.prisma.qrLoginSession.updateMany({
+        where: {
+          id: row.id,
+          status: {
+            in: [
+              QrLoginSessionStatus.pending,
+              QrLoginSessionStatus.scanned,
+            ],
+          },
+        },
+        data: { status: QrLoginSessionStatus.expired },
+      });
+      return { status: 'expired', expiresAt: row.expiresAt };
+    }
+
+    if (row.status === QrLoginSessionStatus.rejected) {
+      return { status: 'rejected', expiresAt: row.expiresAt };
+    }
+
+    if (row.status === QrLoginSessionStatus.expired) {
+      return { status: 'expired', expiresAt: row.expiresAt };
+    }
+
+    if (row.status === QrLoginSessionStatus.approved) {
+      const delivered = await this.prisma.$transaction(async (tx) => {
+        const r = await tx.qrLoginSession.findUnique({
+          where: { id: row.id },
+        });
+        if (
+          !r?.accessTokenForDelivery ||
+          !r.refreshTokenForDelivery ||
+          r.tokensDeliveredAt
+        ) {
+          return null;
+        }
+        const accessToken = r.accessTokenForDelivery;
+        const refreshToken = r.refreshTokenForDelivery;
+        await tx.qrLoginSession.update({
+          where: { id: r.id },
+          data: {
+            accessTokenForDelivery: null,
+            refreshTokenForDelivery: null,
+            tokensDeliveredAt: new Date(),
+          },
+        });
+        return { accessToken, refreshToken };
+      });
+
+      if (!delivered) {
+        return {
+          status: 'approved',
+          expiresAt: row.expiresAt,
+          tokensAlreadyDelivered: true,
+        };
+      }
+
+      const user = await this.prisma.user.findUnique({
+        where: { id: row.approvedByUserId! },
+      });
+      if (!user) {
+        return {
+          status: 'approved',
+          expiresAt: row.expiresAt,
+          tokensAlreadyDelivered: true,
+        };
+      }
+
+      const deviceRow = await this.prisma.userDevice.findUnique({
+        where: {
+          userId_deviceId: {
+            userId: user.id,
+            deviceId: row.webDeviceId,
+          },
+        },
+      });
+
+      if (!deviceRow) {
+        return {
+          status: 'approved',
+          expiresAt: row.expiresAt,
+          tokensAlreadyDelivered: true,
+        };
+      }
+
+      return {
+        status: 'approved',
+        expiresAt: row.expiresAt,
+        tokensAlreadyDelivered: false,
+        accessToken: delivered.accessToken,
+        refreshToken: delivered.refreshToken,
+        expiresIn: this.tokens.getAccessExpiresInSeconds(),
+        user: toPublicUser(user),
+        device: {
+          id: deviceRow.id,
+          deviceId: deviceRow.deviceId,
+          platform: deviceRow.platform,
+        },
+      };
+    }
+
+    if (row.status === QrLoginSessionStatus.pending) {
+      return { status: 'pending', expiresAt: row.expiresAt };
+    }
+
+    return { status: 'scanned', expiresAt: row.expiresAt };
+  }
+
+  async qrScan(actorUserId: string, sessionToken: string): Promise<{ ok: true }> {
+    this.assertQrSessionTokenFormat(sessionToken);
+
+    const row = await this.prisma.qrLoginSession.findUnique({
+      where: { publicToken: sessionToken },
+    });
+
+    if (!row) {
+      throw new NotFoundException('QR session not found');
+    }
+
+    const now = new Date();
+    if (row.expiresAt <= now) {
+      await this.prisma.qrLoginSession.updateMany({
+        where: {
+          id: row.id,
+          status: {
+            in: [
+              QrLoginSessionStatus.pending,
+              QrLoginSessionStatus.scanned,
+            ],
+          },
+        },
+        data: { status: QrLoginSessionStatus.expired },
+      });
+      throw new GoneException('QR session expired');
+    }
+
+    if (row.status === QrLoginSessionStatus.scanned) {
+      if (row.scannedByUserId === actorUserId) {
+        return { ok: true };
+      }
+      throw new ConflictException('This QR code was scanned by another account');
+    }
+
+    if (row.status !== QrLoginSessionStatus.pending) {
+      throw new ConflictException('QR session is no longer available');
+    }
+
+    await this.prisma.qrLoginSession.update({
+      where: { id: row.id },
+      data: {
+        status: QrLoginSessionStatus.scanned,
+        scannedByUserId: actorUserId,
+        scannedAt: now,
+      },
+    });
+
+    return { ok: true };
+  }
+
+  async qrApprove(actorUserId: string, sessionToken: string): Promise<{ ok: true }> {
+    this.assertQrSessionTokenFormat(sessionToken);
+
+    await this.prisma.$transaction(async (tx) => {
+      const row = await tx.qrLoginSession.findUnique({
+        where: { publicToken: sessionToken },
+      });
+
+      if (!row) {
+        throw new NotFoundException('QR session not found');
+      }
+
+      const now = new Date();
+      if (row.expiresAt <= now) {
+        await tx.qrLoginSession.updateMany({
+          where: {
+            id: row.id,
+            status: {
+              in: [
+                QrLoginSessionStatus.pending,
+                QrLoginSessionStatus.scanned,
+              ],
+            },
+          },
+          data: { status: QrLoginSessionStatus.expired },
+        });
+        throw new GoneException('QR session expired');
+      }
+
+      if (row.status !== QrLoginSessionStatus.scanned) {
+        throw new BadRequestException(
+          'Scan this QR code on your phone first, then approve',
+        );
+      }
+
+      if (row.scannedByUserId !== actorUserId) {
+        throw new ForbiddenException('Only the account that scanned can approve');
+      }
+
+      const user = await tx.user.findUnique({ where: { id: actorUserId } });
+      if (!user?.isActive) {
+        throw new UnauthorizedException('Account is disabled');
+      }
+
+      const { deviceRow, refreshRaw } = await this.openPasswordSessionWithTx(
+        tx,
+        user,
+        {
+          deviceId: row.webDeviceId,
+          platform: row.webPlatform,
+          appVersion: row.webAppVersion,
+          deviceName: row.webDeviceName ?? undefined,
+        },
+        { markTrusted: true },
+      );
+
+      const accessToken = await this.tokens.signAccessToken(user.id, {
+        deviceId: deviceRow.deviceId,
+      });
+
+      await tx.qrLoginSession.update({
+        where: { id: row.id },
+        data: {
+          status: QrLoginSessionStatus.approved,
+          approvedAt: now,
+          approvedByUserId: actorUserId,
+          accessTokenForDelivery: accessToken,
+          refreshTokenForDelivery: refreshRaw,
+        },
+      });
+    });
+
+    return { ok: true };
+  }
+
+  async qrReject(actorUserId: string, sessionToken: string): Promise<{ ok: true }> {
+    this.assertQrSessionTokenFormat(sessionToken);
+
+    const row = await this.prisma.qrLoginSession.findUnique({
+      where: { publicToken: sessionToken },
+    });
+
+    if (!row) {
+      throw new NotFoundException('QR session not found');
+    }
+
+    const now = new Date();
+    if (row.expiresAt <= now) {
+      await this.prisma.qrLoginSession.updateMany({
+        where: {
+          id: row.id,
+          status: {
+            in: [
+              QrLoginSessionStatus.pending,
+              QrLoginSessionStatus.scanned,
+            ],
+          },
+        },
+        data: { status: QrLoginSessionStatus.expired },
+      });
+      throw new GoneException('QR session expired');
+    }
+
+    if (row.status !== QrLoginSessionStatus.scanned) {
+      throw new BadRequestException('Nothing to reject for this QR session');
+    }
+
+    if (row.scannedByUserId !== actorUserId) {
+      throw new ForbiddenException('Only the account that scanned can reject');
+    }
+
+    await this.prisma.qrLoginSession.update({
+      where: { id: row.id },
+      data: {
+        status: QrLoginSessionStatus.rejected,
+        rejectedAt: now,
+      },
+    });
+
+    return { ok: true };
+  }
+
+  private assertQrSessionTokenFormat(sessionToken: string): void {
+    if (!/^[a-f0-9]{64}$/i.test(sessionToken)) {
+      throw new BadRequestException('Invalid session token format');
+    }
   }
 
   async forgotPasswordRequestOtp(

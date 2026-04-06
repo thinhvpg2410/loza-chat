@@ -52,6 +52,14 @@ enum MediaKind {
   other
 }
 
+enum QrLoginSessionStatus {
+  pending
+  scanned
+  approved
+  rejected
+  expired
+}
+
 model User {
   id            String   @id @default(uuid())
   email         String?  @unique @map("email")
@@ -104,6 +112,36 @@ model OtpRequest {
   @@index([phoneNumber, createdAt])
   @@index([email, createdAt])
   @@map("otp_requests")
+}
+
+/// Ephemeral web login via mobile scan + approve. `public_token` is the QR secret (not a JWT).
+model QrLoginSession {
+  id          String               @id @default(uuid())
+  publicToken String               @unique @map("public_token")
+  status      QrLoginSessionStatus
+  expiresAt   DateTime             @map("expires_at")
+  createdAt   DateTime             @default(now()) @map("created_at")
+
+  webDeviceId   String  @map("web_device_id")
+  webPlatform   String  @map("web_platform")
+  webAppVersion String  @map("web_app_version")
+  webDeviceName String? @map("web_device_name")
+
+  scannedByUserId String?   @map("scanned_by_user_id")
+  scannedAt       DateTime? @map("scanned_at")
+
+  approvedByUserId String?   @map("approved_by_user_id")
+  approvedAt       DateTime? @map("approved_at")
+
+  rejectedAt DateTime? @map("rejected_at")
+
+  /// One-time handoff to browser poll (cleared after first successful GET status).
+  accessTokenForDelivery  String?   @map("access_token_for_delivery")
+  refreshTokenForDelivery String?   @map("refresh_token_for_delivery")
+  tokensDeliveredAt       DateTime? @map("tokens_delivered_at")
+
+  @@index([expiresAt])
+  @@map("qr_login_sessions")
 }
 
 model UserDevice {

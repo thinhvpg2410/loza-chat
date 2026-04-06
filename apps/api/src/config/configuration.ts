@@ -43,6 +43,10 @@ export type AppConfiguration = {
     maxOtherBytes: number;
     maxAttachmentsPerMessage: number;
   };
+  qr: {
+    /** Browser QR login session lifetime */
+    loginSessionTtlMinutes: number;
+  };
 };
 
 export default (): AppConfiguration => ({
@@ -117,6 +121,12 @@ export default (): AppConfiguration => ({
     ),
     maxAttachmentsPerMessage: parseInt(
       process.env.UPLOAD_MAX_ATTACHMENTS_PER_MESSAGE ?? '10',
+      10,
+    ),
+  },
+  qr: {
+    loginSessionTtlMinutes: parseInt(
+      process.env.QR_LOGIN_SESSION_TTL_MINUTES ?? '5',
       10,
     ),
   },

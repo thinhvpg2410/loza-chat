@@ -1,4 +1,12 @@
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { GetUser } from './decorators/get-user.decorator';
@@ -8,6 +16,8 @@ import { ContactOtpDto, VerifyContactOtpDto } from './dto/contact-otp.dto';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { ForgotPasswordResetDto } from './dto/forgot-password-reset.dto';
 import { LoginDto } from './dto/login.dto';
+import { QrCreateDto } from './dto/qr-create.dto';
+import { QrSessionTokenDto } from './dto/qr-session-token.dto';
 import { VerifyLoginDeviceOtpDto } from './dto/verify-login-device-otp.dto';
 import { LogoutBodyDto } from './dto/logout-body.dto';
 import { RefreshBodyDto } from './dto/refresh-body.dto';
@@ -65,6 +75,51 @@ export class AuthController {
   })
   verifyLoginDeviceOtp(@Body() dto: VerifyLoginDeviceOtpDto) {
     return this.authService.verifyLoginDeviceOtp(dto);
+  }
+
+  @Post('qr/create')
+  @ApiOperation({
+    summary:
+      'Create a short-lived QR login session (web). Put sessionToken in QR for mobile to scan.',
+  })
+  qrCreate(@Body() dto: QrCreateDto) {
+    return this.authService.qrCreate(dto);
+  }
+
+  @Get('qr/status/:sessionToken')
+  @ApiOperation({
+    summary:
+      'Poll QR login status; when approved, first poll returns access/refresh (one-time)',
+  })
+  qrStatus(@Param('sessionToken') sessionToken: string) {
+    return this.authService.qrGetStatus(sessionToken);
+  }
+
+  @Post('qr/scan')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Authenticated mobile: record scan of web QR session' })
+  qrScan(@GetUser('id') userId: string, @Body() dto: QrSessionTokenDto) {
+    return this.authService.qrScan(userId, dto.sessionToken);
+  }
+
+  @Post('qr/approve')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary:
+      'Authenticated mobile: approve web login (issues same session as password login)',
+  })
+  qrApprove(@GetUser('id') userId: string, @Body() dto: QrSessionTokenDto) {
+    return this.authService.qrApprove(userId, dto.sessionToken);
+  }
+
+  @Post('qr/reject')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Authenticated mobile: reject web QR login after scan' })
+  qrReject(@GetUser('id') userId: string, @Body() dto: QrSessionTokenDto) {
+    return this.authService.qrReject(userId, dto.sessionToken);
   }
 
   @Post('forgot-password/request-otp')
