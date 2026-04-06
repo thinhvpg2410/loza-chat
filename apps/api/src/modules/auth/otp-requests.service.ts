@@ -7,10 +7,16 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
-import { OtpPurpose } from '../../common/constants/otp-purpose';
+import { OtpPurpose, type OtpPurposeValue } from '../../common/constants/otp-purpose';
+import { normalizeEmail } from '../../common/utils/contact-identifiers';
 import { PrismaService } from '../../prisma/prisma.service';
 
 const BCRYPT_ROUNDS = 10;
+
+export type OtpContact = {
+  phoneNumber: string | null;
+  email: string | null;
+};
 
 @Injectable()
 export class OtpRequestsService {
@@ -21,11 +27,45 @@ export class OtpRequestsService {
     private readonly config: ConfigService,
   ) {}
 
+  private normalizeContact(
+    phoneNumber: string | undefined,
+    email: string | undefined,
+  ): OtpContact {
+    const hasPhone =
+      phoneNumber !== undefined &&
+      phoneNumber !== null &&
+      phoneNumber.trim() !== '';
+    const hasEmail =
+      email !== undefined && email !== null && email.trim() !== '';
+    if (hasPhone === hasEmail) {
+      throw new HttpException(
+        'Provide exactly one of phoneNumber or email',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    if (hasEmail) {
+      return { phoneNumber: null, email: normalizeEmail(email!) };
+    }
+    const E164_PHONE = /^\+[1-9]\d{6,14}$/;
+    const p = phoneNumber!.trim();
+    if (!E164_PHONE.test(p)) {
+      throw new HttpException(
+        'phoneNumber must be E.164 format (e.g. +84901234567)',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    return { phoneNumber: p, email: null };
+  }
+
   async startOtpRequest(
-    phoneNumber: string,
+    purpose: OtpPurposeValue,
+    phoneNumber: string | undefined,
+    email: string | undefined,
     ipAddress: string | undefined,
     userAgent: string | undefined,
   ): Promise<void> {
+    const contact = this.normalizeContact(phoneNumber, email);
+
     const rateWindowMinutes =
       this.config.get<number>('otp.rateWindowMinutes') ?? 15;
     const maxRequests =
@@ -35,9 +75,14 @@ export class OtpRequestsService {
       this.config.get<number>('otp.maxResendsPerActiveCode') ?? 3;
 
     const windowStart = new Date(Date.now() - rateWindowMinutes * 60 * 1000);
+    const recentWhere =
+      contact.email !== null
+        ? { email: contact.email }
+        : { phoneNumber: contact.phoneNumber! };
+
     const recentCount = await this.prisma.otpRequest.count({
       where: {
-        phoneNumber,
+        ...recentWhere,
         createdAt: { gte: windowStart },
       },
     });
@@ -51,8 +96,8 @@ export class OtpRequestsService {
     const now = new Date();
     const active = await this.prisma.otpRequest.findFirst({
       where: {
-        phoneNumber,
-        purpose: OtpPurpose.LOGIN,
+        purpose,
+        ...recentWhere,
         verifiedAt: null,
         expiredAt: { gt: now },
       },
@@ -84,9 +129,10 @@ export class OtpRequestsService {
     } else {
       await this.prisma.otpRequest.create({
         data: {
-          phoneNumber,
+          phoneNumber: contact.phoneNumber,
+          email: contact.email,
           otpCodeHash,
-          purpose: OtpPurpose.LOGIN,
+          purpose,
           expiredAt,
           ipAddress: ipAddress ?? null,
           userAgent: userAgent ?? null,
@@ -95,21 +141,29 @@ export class OtpRequestsService {
     }
 
     const nodeEnv = this.config.get<string>('nodeEnv', 'development');
+    const dest =
+      contact.email !== null ? contact.email : contact.phoneNumber ?? '';
     if (nodeEnv === 'development') {
-      this.logger.log(`[DEV ONLY] OTP for ${phoneNumber}: ${plainOtp}`);
+      this.logger.log(`[DEV ONLY] OTP for ${purpose} ${dest}: ${plainOtp}`);
     }
   }
 
   async verifyOtpAndConsume(
-    phoneNumber: string,
+    purpose: OtpPurposeValue,
+    phoneNumber: string | undefined,
+    email: string | undefined,
     plainOtp: string,
-  ): Promise<void> {
+  ): Promise<OtpContact> {
+    const contact = this.normalizeContact(phoneNumber, email);
     const maxAttempts = this.config.get<number>('otp.maxVerifyAttempts') ?? 5;
     const now = new Date();
+
     const row = await this.prisma.otpRequest.findFirst({
       where: {
-        phoneNumber,
-        purpose: OtpPurpose.LOGIN,
+        purpose,
+        ...(contact.email !== null
+          ? { email: contact.email, phoneNumber: null }
+          : { phoneNumber: contact.phoneNumber!, email: null }),
         verifiedAt: null,
         expiredAt: { gt: now },
       },
@@ -139,6 +193,11 @@ export class OtpRequestsService {
       where: { id: row.id },
       data: { verifiedAt: new Date() },
     });
+
+    return {
+      phoneNumber: contact.phoneNumber,
+      email: contact.email,
+    };
   }
 
   private generateSixDigitOtp(): string {

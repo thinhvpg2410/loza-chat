@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import { toPublicUser } from '../../common/utils/user-public';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AccessTokenPayload } from './interfaces/jwt-payload.interface';
 
@@ -25,6 +26,6 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     if (!user || !user.isActive) {
       throw new UnauthorizedException();
     }
-    return user;
+    return toPublicUser(user);
   }
 }

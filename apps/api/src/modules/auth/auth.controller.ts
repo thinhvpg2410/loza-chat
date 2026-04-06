@@ -3,31 +3,79 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { GetUser } from './decorators/get-user.decorator';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { AuthService } from './auth.service';
+import { ContactOtpDto, VerifyContactOtpDto } from './dto/contact-otp.dto';
+import { CreateAccountDto } from './dto/create-account.dto';
+import { ForgotPasswordResetDto } from './dto/forgot-password-reset.dto';
+import { LoginDto } from './dto/login.dto';
 import { LogoutBodyDto } from './dto/logout-body.dto';
 import { RefreshBodyDto } from './dto/refresh-body.dto';
-import { RequestOtpDto } from './dto/request-otp.dto';
-import { VerifyOtpDto } from './dto/verify-otp.dto';
-import { AuthService } from './auth.service';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  @Post('request-otp')
-  @ApiOperation({ summary: 'Request SMS OTP (logged in development only)' })
-  requestOtp(@Body() dto: RequestOtpDto, @Req() req: Request) {
-    return this.authService.requestOtp(
+  @Post('register/request-otp')
+  @ApiOperation({ summary: 'Request OTP for registration (SMS/email dev-only)' })
+  registerRequestOtp(
+    @Body() dto: ContactOtpDto,
+    @Req() req: Request,
+  ): Promise<{ message: string }> {
+    return this.authService.registerRequestOtp(
       dto.phoneNumber,
+      dto.email,
       this.clientIp(req),
       this.clientUa(req),
     );
   }
 
-  @Post('verify-otp')
-  @ApiOperation({ summary: 'Verify OTP and open session (device required)' })
-  verifyOtp(@Body() dto: VerifyOtpDto) {
-    return this.authService.verifyOtp(dto);
+  @Post('register/verify-otp')
+  @ApiOperation({ summary: 'Verify registration OTP; returns short-lived token for create-account' })
+  registerVerifyOtp(@Body() dto: VerifyContactOtpDto): Promise<{ token: string }> {
+    return this.authService.registerVerifyOtp(dto);
+  }
+
+  @Post('register/create-account')
+  @ApiOperation({
+    summary: 'Create password and account after registration OTP; opens session',
+  })
+  createAccount(@Body() dto: CreateAccountDto) {
+    return this.authService.createAccount(dto);
+  }
+
+  @Post('login')
+  @ApiOperation({ summary: 'Login with email or phone + password' })
+  login(@Body() dto: LoginDto) {
+    return this.authService.login(dto);
+  }
+
+  @Post('forgot-password/request-otp')
+  @ApiOperation({ summary: 'Request OTP for password reset' })
+  forgotPasswordRequestOtp(
+    @Body() dto: ContactOtpDto,
+    @Req() req: Request,
+  ): Promise<{ message: string }> {
+    return this.authService.forgotPasswordRequestOtp(
+      dto.phoneNumber,
+      dto.email,
+      this.clientIp(req),
+      this.clientUa(req),
+    );
+  }
+
+  @Post('forgot-password/verify-otp')
+  @ApiOperation({ summary: 'Verify forgot-password OTP; returns reset token' })
+  forgotPasswordVerifyOtp(
+    @Body() dto: VerifyContactOtpDto,
+  ): Promise<{ token: string }> {
+    return this.authService.forgotPasswordVerifyOtp(dto);
+  }
+
+  @Post('forgot-password/reset')
+  @ApiOperation({ summary: 'Set new password after forgot-password OTP' })
+  forgotPasswordReset(@Body() dto: ForgotPasswordResetDto) {
+    return this.authService.forgotPasswordReset(dto);
   }
 
   @Post('refresh')

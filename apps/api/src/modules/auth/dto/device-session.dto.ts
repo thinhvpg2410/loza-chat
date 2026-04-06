@@ -1,21 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import {
-  IsIn,
-  IsOptional,
-  IsString,
-  Matches,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
-import { RequestOtpDto } from './request-otp.dto';
+import { IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
-export class VerifyOtpDto extends RequestOtpDto {
-  @ApiProperty({ example: '123456' })
-  @IsString()
-  @Matches(/^\d{6}$/, { message: 'OTP must be 6 digits' })
-  otp!: string;
-
+export class DeviceSessionDto {
   @ApiProperty({ description: 'Stable device identifier from the client' })
   @IsString()
   @MinLength(8)

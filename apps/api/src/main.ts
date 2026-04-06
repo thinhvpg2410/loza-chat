@@ -27,7 +27,7 @@ async function bootstrap() {
         type: 'http',
         scheme: 'bearer',
         bearerFormat: 'JWT',
-        description: 'Paste access_token from verify-otp / refresh',
+        description: 'Paste access_token from login / register/create-account / refresh',
       },
       'access-token',
     )
