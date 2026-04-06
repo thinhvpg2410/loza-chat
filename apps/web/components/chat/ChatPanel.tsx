@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import type { AttachmentAction } from "@/components/chat/AttachmentPanel";
 import { ImagePreviewModal } from "@/components/chat/ImagePreviewModal";
@@ -141,6 +141,8 @@ export function ChatPanel({ conversation }: ChatPanelProps) {
   const [replyTarget, setReplyTarget] = useState<{ convId: string; message: Message } | null>(
     null,
   );
+  const messageScrollRef = useRef<HTMLDivElement>(null);
+  const scrollAfterOwnSendRef = useRef(false);
 
   const messages = useMemo(() => {
     if (!conversation) return [];
@@ -168,12 +170,20 @@ export function ChatPanel({ conversation }: ChatPanelProps) {
     [messages, reactionOverrides],
   );
 
-  const appendMessage = (message: Message) => {
+  const appendMessage = useCallback((message: Message) => {
+    scrollAfterOwnSendRef.current = true;
     setExtraByConversation((prev) => ({
       ...prev,
       [message.conversationId]: [...(prev[message.conversationId] ?? []), message],
     }));
-  };
+  }, []);
+
+  useLayoutEffect(() => {
+    const el = messageScrollRef.current;
+    if (!el || !scrollAfterOwnSendRef.current) return;
+    scrollAfterOwnSendRef.current = false;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [messages]);
 
   const replyRef: ReplyPreviewRef | null =
     conversation && replyTarget && replyTarget.convId === conversation.id
@@ -190,7 +200,10 @@ export function ChatPanel({ conversation }: ChatPanelProps) {
       aria-label="Khung trò chuyện"
     >
       <ChatHeader conversation={conversation} />
-      <div className="min-h-0 flex-1 overflow-y-auto bg-[var(--zalo-chat-bg)]">
+      <div
+        ref={messageScrollRef}
+        className="min-h-0 flex-1 overflow-y-auto bg-[var(--zalo-chat-bg)]"
+      >
         {conversation ? (
           <>
             <MessageList
