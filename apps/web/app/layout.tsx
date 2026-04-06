@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Loza Chat",
-  description: "Web client — Zalo-style chat shell (Phase W1)",
+  description: "Loza Chat Web — chat, bạn bè, nhóm và cài đặt tài khoản",
 };
 
 export default function RootLayout({

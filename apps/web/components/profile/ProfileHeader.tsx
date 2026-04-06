@@ -8,7 +8,7 @@ type ProfileHeaderProps = {
 export function ProfileHeader({ user }: ProfileHeaderProps) {
   return (
     <div className="flex flex-col items-center border-b border-[var(--zalo-border)] px-4 pb-4 pt-2">
-      <Avatar name={user.displayName} size="lg" />
+      <Avatar name={user.displayName} size="lg" src={user.avatarUrl} />
       <h2 className="mt-3 text-center text-[16px] font-semibold leading-tight text-[var(--zalo-text)]">
         {user.displayName}
       </h2>

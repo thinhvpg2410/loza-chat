@@ -1,12 +1,22 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { LOZA_SESSION_COOKIE } from "./lib/auth/constants";
+import { LOZA_ACCESS_COOKIE, LOZA_SESSION_COOKIE } from "./lib/auth/constants";
 
-const PROTECTED_PREFIXES = ["/contacts", "/settings"];
+function isPublicAuthPath(pathname: string): boolean {
+  return (
+    pathname === "/login" ||
+    pathname === "/register" ||
+    pathname === "/forgot-password"
+  );
+}
 
-function isProtectedPath(pathname: string): boolean {
-  if (pathname === "/") return true;
-  return PROTECTED_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+function hasSession(request: NextRequest): boolean {
+  if (process.env.LOZA_AUTH_BYPASS === "1") {
+    return true;
+  }
+  const mock = request.cookies.get(LOZA_SESSION_COOKIE)?.value;
+  const access = request.cookies.get(LOZA_ACCESS_COOKIE)?.value;
+  return Boolean(mock) || Boolean(access);
 }
 
 export function proxy(request: NextRequest) {
@@ -15,16 +25,16 @@ export function proxy(request: NextRequest) {
   }
 
   const { pathname } = request.nextUrl;
-  const hasSession = Boolean(request.cookies.get(LOZA_SESSION_COOKIE)?.value);
+  const session = hasSession(request);
 
-  if (pathname === "/login") {
-    if (hasSession) {
+  if (isPublicAuthPath(pathname)) {
+    if (session) {
       return NextResponse.redirect(new URL("/", request.url));
     }
     return NextResponse.next();
   }
 
-  if (isProtectedPath(pathname) && !hasSession) {
+  if (!session) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
@@ -32,5 +42,7 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/login", "/contacts/:path*", "/settings/:path*"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+  ],
 };

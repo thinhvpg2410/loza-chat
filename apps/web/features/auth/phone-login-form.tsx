@@ -29,18 +29,16 @@ export function PhoneLoginForm() {
         />
       </div>
       <div className="flex flex-col gap-2">
-        <label htmlFor="otp" className="text-xs font-medium text-[var(--zalo-text-subtle)]">
-          Mã OTP
+        <label htmlFor="password" className="text-xs font-medium text-[var(--zalo-text-subtle)]">
+          Mật khẩu
         </label>
         <input
-          id="otp"
-          name="otp"
-          type="text"
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          placeholder="Mã 6 số"
-          maxLength={6}
-          className={`${inputClass} tracking-[0.2em]`}
+          id="password"
+          name="password"
+          type="password"
+          autoComplete="current-password"
+          placeholder="Nhập mật khẩu"
+          className={inputClass}
         />
       </div>
       {state.error ? (
@@ -52,7 +50,7 @@ export function PhoneLoginForm() {
         {pending ? "Đang đăng nhập…" : "Đăng nhập"}
       </Button>
       <p className="text-center text-[11px] leading-relaxed text-[var(--zalo-text-subtle)]">
-        Bản demo: nhập bất kỳ số điện thoại và OTP (không rỗng) để vào ứng dụng.
+  
       </p>
     </form>
   );

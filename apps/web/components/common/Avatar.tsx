@@ -1,5 +1,7 @@
 type AvatarProps = {
   name: string;
+  /** Public image URL when available. */
+  src?: string | null;
   /** `contact` ≈40px — dense list rows (e.g. friends). `md` ≈44px. */
   size?: "sm" | "contact" | "md" | "lg";
   online?: boolean;
@@ -13,16 +15,25 @@ const sizeClass: Record<NonNullable<AvatarProps["size"]>, string> = {
   lg: "h-16 w-16 text-xl",
 };
 
-export function Avatar({ name, size = "md", online, className = "" }: AvatarProps) {
+export function Avatar({ name, src, size = "md", online, className = "" }: AvatarProps) {
   const initial = name.trim().charAt(0).toUpperCase();
   const dotSm = size === "sm" || size === "contact";
   return (
     <div className={`relative shrink-0 ${className}`}>
-      <div
-        className={`flex items-center justify-center rounded-full bg-gradient-to-br from-[#7eb6ff] to-[var(--zalo-blue)] font-semibold text-white ${sizeClass[size]}`}
-      >
-        {initial}
-      </div>
+      {src ? (
+        // eslint-disable-next-line @next/next/no-img-element -- avatar URLs are user-controlled / external
+        <img
+          src={src}
+          alt=""
+          className={`rounded-full object-cover ${sizeClass[size]}`}
+        />
+      ) : (
+        <div
+          className={`flex items-center justify-center rounded-full bg-gradient-to-br from-[#7eb6ff] to-[var(--zalo-blue)] font-semibold text-white ${sizeClass[size]}`}
+        >
+          {initial}
+        </div>
+      )}
       {online ? (
         <span
           className={

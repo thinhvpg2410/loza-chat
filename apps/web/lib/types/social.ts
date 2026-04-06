@@ -43,6 +43,7 @@ export type ProfileUser = {
   username: string;
   phone?: string;
   bio?: string;
+  avatarUrl?: string;
   mutualFriendsCount?: number;
   isSelf?: boolean;
 };
