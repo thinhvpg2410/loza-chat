@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AppLogo } from "@/components/common/app-logo";
-import { IconChat, IconContacts, IconSettings } from "@/components/chat/icons";
+import { IconChat, IconContacts, IconGrid, IconSettings } from "@/components/chat/icons";
 import { SignOutButton } from "@/features/auth/sign-out-button";
 
 type NavItem = {
@@ -21,10 +21,16 @@ const items: NavItem[] = [
     match: (p) => p === "/",
   },
   {
-    href: "/contacts",
-    label: "Contacts",
+    href: "/friends",
+    label: "Friends",
     icon: IconContacts,
-    match: (p) => p === "/contacts" || p.startsWith("/contacts/"),
+    match: (p) => p === "/friends" || p.startsWith("/friends/"),
+  },
+  {
+    href: "/groups",
+    label: "Groups",
+    icon: IconGrid,
+    match: (p) => p === "/groups" || p.startsWith("/groups/"),
   },
   {
     href: "/settings",
