@@ -15,6 +15,7 @@ export async function completeMockOnboardingSession(params: {
   await AsyncStorage.setItem(ONBOARDING_COMPLETE_KEY, "true");
   await useAuthStore.getState().login({
     accessToken: "mock-access-token",
+    refreshToken: "mock-refresh-token",
     user: {
       id: "mock-user-1",
       name: params.displayName,

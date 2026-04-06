@@ -1,4 +1,5 @@
 import type { ComponentProps } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { View } from "react-native";
@@ -8,6 +9,8 @@ import { completeMockOnboardingSession } from "@lib/auth-mock";
 import { AppButton } from "@ui/AppButton";
 import { AppScreen } from "@ui/AppScreen";
 import { AppText } from "@ui/AppText";
+import { USE_API_MOCK } from "@/constants/env";
+import { ONBOARDING_COMPLETE_KEY } from "@/constants/storageKeys";
 import { useAuthStore } from "@/store/authStore";
 import { spacing } from "@theme";
 
@@ -56,12 +59,14 @@ const ITEMS: {
 export default function PermissionsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ displayName?: string; avatarUri?: string }>();
-  const phone = useAuthStore((s) => s.phone);
+  const phone = useAuthStore((s) => s.user?.phone ?? s.phone);
+  const userName = useAuthStore((s) => s.user?.name);
 
   const displayName = useMemo(() => {
+    if (userName?.trim()) return userName.trim();
     const raw = params.displayName ? decodeURIComponent(params.displayName) : "";
     return raw.trim() || "Bạn";
-  }, [params.displayName]);
+  }, [params.displayName, userName]);
 
   const [allowed, setAllowed] = useState<Record<PermissionKey, boolean>>({
     notifications: false,
@@ -82,12 +87,17 @@ export default function PermissionsScreen() {
   const finish = async () => {
     setFinishing(true);
     try {
-      const phoneE164 = phone || "+84900000000";
-      await completeMockOnboardingSession({
-        displayName,
-        phoneE164,
-        avatarUri: avatarUri || null,
-      });
+      await AsyncStorage.setItem(ONBOARDING_COMPLETE_KEY, "true");
+
+      if (USE_API_MOCK) {
+        const phoneE164 = phone || "+84900000000";
+        await completeMockOnboardingSession({
+          displayName,
+          phoneE164,
+          avatarUri: avatarUri || null,
+        });
+      }
+
       router.replace("/main");
     } finally {
       setFinishing(false);
@@ -99,7 +109,7 @@ export default function PermissionsScreen() {
       <AuthHeader showBack={false} title="Quyền truy cập" subtitle="Đổi lại bất cứ lúc nào trong Cài đặt." />
 
       <AppText variant="micro" color="textMuted" style={{ marginBottom: spacing.sm, lineHeight: 16 }}>
-        Xin chào {displayName}. Các quyền dưới đây là mock.
+        Xin chào {displayName}. {USE_API_MOCK ? "Các quyền dưới đây là mock." : "Bạn có thể bật quyền thật trong Cài đặt hệ thống."}
       </AppText>
 
       {ITEMS.map((item) => (

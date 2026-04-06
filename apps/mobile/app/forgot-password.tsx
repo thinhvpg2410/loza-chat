@@ -1,5 +1,5 @@
-import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { isAxiosError } from "axios";
 
@@ -10,7 +10,7 @@ import { AppScreen } from "@ui/AppScreen";
 import { AppText } from "@ui/AppText";
 import { USE_API_MOCK } from "@/constants/env";
 import { buildE164, isValidVnLength } from "@lib/auth-mock";
-import { getApiErrorMessage, registerRequestOtp } from "@/services/api/api";
+import { forgotPasswordRequestOtp, getApiErrorMessage } from "@/services/api/api";
 import { colors, radius, spacing } from "@theme";
 
 const DEFAULT_COUNTRY: CountryOption = {
@@ -19,8 +19,9 @@ const DEFAULT_COUNTRY: CountryOption = {
   flag: "🇻🇳",
 };
 
-export default function PhoneLoginScreen() {
+export default function ForgotPasswordScreen() {
   const router = useRouter();
+  const routeParams = useLocalSearchParams<{ phone?: string }>();
   const [country, setCountry] = useState<CountryOption>(DEFAULT_COUNTRY);
   const [national, setNational] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -29,6 +30,13 @@ export default function PhoneLoginScreen() {
   const e164 = useMemo(() => buildE164(country.dial, national), [country.dial, national]);
   const canContinue = isValidVnLength(national);
 
+  useEffect(() => {
+    const p = routeParams.phone;
+    if (p && p.startsWith("+84")) {
+      setNational(p.slice(4));
+    }
+  }, [routeParams.phone]);
+
   const onContinue = async () => {
     if (!canContinue) return;
     setError(undefined);
@@ -36,27 +44,22 @@ export default function PhoneLoginScreen() {
     if (USE_API_MOCK) {
       router.push({
         pathname: "/otp-verify",
-        params: { phone: e164, mode: "register" },
+        params: { phone: e164, mode: "forgot" },
       });
       return;
     }
 
     setSubmitting(true);
     try {
-      await registerRequestOtp(e164);
+      await forgotPasswordRequestOtp(e164);
       router.push({
         pathname: "/otp-verify",
-        params: { phone: e164, mode: "register" },
+        params: { phone: e164, mode: "forgot" },
       });
     } catch (e) {
-      if (isAxiosError(e) && e.response?.status === 409) {
-        router.push({
-          pathname: "/login-password",
-          params: { phone: e164 },
-        });
-        return;
-      }
-      setError(getApiErrorMessage(e, "Không gửi được mã. Thử lại."));
+      setError(
+        isAxiosError(e) ? getApiErrorMessage(e, "Không gửi được mã.") : getApiErrorMessage(e),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -69,7 +72,7 @@ export default function PhoneLoginScreen() {
       safeEdges={["top", "left", "right", "bottom"]}
       keyboardOffset={0}
     >
-      <AuthHeader showBack={false} title="Đăng nhập" subtitle="Nhập số điện thoại để nhận mã OTP." />
+      <AuthHeader title="Quên mật khẩu" subtitle="Nhập số điện thoại để nhận mã xác nhận." />
 
       <View
         style={{
@@ -102,14 +105,10 @@ export default function PhoneLoginScreen() {
         />
       </View>
 
-      <AppText variant="micro" color="textMuted" style={{ marginTop: spacing.sm, lineHeight: 16 }}>
-        SMS xác nhận có thể tính phí nhà mạng.
-      </AppText>
-
       <View style={{ flex: 1, minHeight: spacing.xxl }} />
 
       <AppButton
-        title="Tiếp tục"
+        title="Gửi mã"
         variant="primary"
         compact
         loading={submitting}
@@ -117,23 +116,13 @@ export default function PhoneLoginScreen() {
         onPress={() => void onContinue()}
       />
 
-      {!USE_API_MOCK ? (
-        <AppText
-          variant="micro"
-          color="primary"
-          style={{ textAlign: "center", marginTop: spacing.sm }}
-          onPress={() => router.push({ pathname: "/forgot-password" })}
-        >
-          Quên mật khẩu?
-        </AppText>
-      ) : null}
-
       <AppText
         variant="micro"
-        color="textMuted"
-        style={{ textAlign: "center", marginTop: spacing.sm, marginBottom: spacing.xs, lineHeight: 15 }}
+        color="primary"
+        style={{ textAlign: "center", marginTop: spacing.sm }}
+        onPress={() => router.back()}
       >
-        {USE_API_MOCK ? "Tiếp tục là đồng ý điều khoản (mock)." : "Tiếp tục là đồng ý điều khoản dịch vụ."}
+        Quay lại đăng nhập
       </AppText>
     </AppScreen>
   );
