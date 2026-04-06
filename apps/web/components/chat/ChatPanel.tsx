@@ -129,6 +129,7 @@ function ChatComposer({ conversation, onSend, replyTo, onCancelReply }: Composer
       onCancelReply={onCancelReply}
       onAttachment={handleAttachment}
       onPickSticker={handleSticker}
+      onInsertEmoji={(emoji) => setDraft((d) => d + emoji)}
     />
   );
 }

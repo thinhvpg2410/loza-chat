@@ -27,7 +27,7 @@ export function AttachmentPanel({ open, onClose, onPick }: AttachmentPanelProps)
         aria-label="Đóng"
         onClick={onClose}
       />
-      <div className="absolute bottom-full left-0 z-50 mb-1 w-[min(100%,280px)] rounded-lg border border-[var(--zalo-border)] bg-white py-2 shadow-md">
+      <div className="absolute bottom-full left-0 z-50 mb-1 w-full max-w-[280px] rounded-lg border border-[var(--zalo-border)] bg-white py-2 shadow-md">
         {items.map(({ action, label, icon: Icon }) => (
           <button
             key={action}
