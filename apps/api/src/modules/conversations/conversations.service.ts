@@ -151,7 +151,7 @@ export class ConversationsService {
         conversation: {
           include: {
             lastMessage: true,
-            members: { include: { user: true } },
+            _count: { select: { members: true } },
           },
         },
       },
@@ -163,14 +163,39 @@ export class ConversationsService {
       conversationIds,
     );
 
+    const directConversationIds = [
+      ...new Set(
+        memberships
+          .filter((m) => m.conversation.type === ConversationType.direct)
+          .map((m) => m.conversationId),
+      ),
+    ];
+
+    const directUsersByConversation = new Map<string, User[]>();
+    if (directConversationIds.length > 0) {
+      const rows = await this.prisma.conversationMember.findMany({
+        where: { conversationId: { in: directConversationIds } },
+        include: { user: true },
+      });
+      for (const r of rows) {
+        const arr = directUsersByConversation.get(r.conversationId) ?? [];
+        arr.push(r.user);
+        directUsersByConversation.set(r.conversationId, arr);
+      }
+    }
+
     const items: ConversationListItemView[] = [];
 
     for (const row of memberships) {
       const c = row.conversation;
+      const directUsers =
+        c.type === ConversationType.direct
+          ? (directUsersByConversation.get(c.id) ?? [])
+          : [];
       const otherUser = this.resolveOtherDirectParticipant(
         userId,
         c.type,
-        c.members.map((m) => m.user),
+        directUsers,
       );
 
       const last = c.lastMessage;
@@ -178,6 +203,9 @@ export class ConversationsService {
       items.push({
         conversationId: c.id,
         type: c.type,
+        title: c.type === ConversationType.group ? c.title ?? null : null,
+        avatarUrl: c.type === ConversationType.group ? c.avatarUrl ?? null : null,
+        memberCount: c._count.members,
         updatedAt: c.updatedAt,
         mutedUntil: row.mutedUntil,
         lastReadMessageId: row.lastReadMessageId,
@@ -212,6 +240,7 @@ export class ConversationsService {
       where: { id: conversationId },
       include: {
         members: { include: { user: true } },
+        _count: { select: { members: true } },
       },
     });
 
@@ -219,10 +248,14 @@ export class ConversationsService {
       throw new NotFoundException('Conversation not found');
     }
 
+    const directUsers =
+      conversation.type === ConversationType.direct
+        ? conversation.members.map((m) => m.user)
+        : [];
     const otherUser = this.resolveOtherDirectParticipant(
       userId,
       conversation.type,
-      conversation.members.map((m) => m.user),
+      directUsers,
     );
 
     return {
@@ -230,10 +263,20 @@ export class ConversationsService {
       type: conversation.type,
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
+      title:
+        conversation.type === ConversationType.group
+          ? conversation.title ?? null
+          : null,
+      avatarUrl:
+        conversation.type === ConversationType.group
+          ? conversation.avatarUrl ?? null
+          : null,
+      memberCount: conversation._count.members,
       otherParticipant:
         otherUser && otherUser.isActive ? toPublicUserProfile(otherUser) : null,
       myMembership: {
         joinedAt: member.joinedAt,
+        role: member.role,
         lastReadMessageId: member.lastReadMessageId,
         lastDeliveredMessageId: member.lastDeliveredMessageId,
         mutedUntil: member.mutedUntil,

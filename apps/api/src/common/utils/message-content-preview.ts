@@ -22,6 +22,13 @@ export function messageContentPreview(
   }
 
   switch (type) {
+    case MessageType.system:
+      return content && content.trim().length > 0
+        ? truncate(
+            content.replace(/\s+/g, ' ').trim(),
+            MAX_PREVIEW_LEN,
+          )
+        : '[Update]';
     case MessageType.image:
       return '[Image]';
     case MessageType.file:

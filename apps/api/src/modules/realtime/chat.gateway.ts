@@ -1,4 +1,10 @@
-import { HttpException, Logger, UnauthorizedException } from '@nestjs/common';
+import {
+  HttpException,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+  UnauthorizedException,
+} from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
@@ -11,8 +17,10 @@ import {
 import { MessageType, type User } from '@prisma/client';
 import { SkipThrottle } from '@nestjs/throttler';
 import type { Server, Socket } from 'socket.io';
+import { Subscription } from 'rxjs';
 import { ConversationMembershipService } from '../conversations/conversation-membership.service';
 import { FriendsService } from '../friends/friends.service';
+import { GroupDomainEventsService } from '../groups/group-domain-events.service';
 import { MessageReceiptsService } from '../messages/message-receipts.service';
 import { MessagesService } from '../messages/messages.service';
 import { ConversationJoinDto } from './dto/conversation-join.dto';
@@ -32,11 +40,19 @@ import { WsPayloadValidationError, parseWsPayload } from './ws-payload.util';
   cors: { origin: true, credentials: true },
   transports: ['websocket', 'polling'],
 })
-export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class ChatGateway
+  implements
+    OnGatewayConnection,
+    OnGatewayDisconnect,
+    OnModuleInit,
+    OnModuleDestroy
+{
   private readonly logger = new Logger(ChatGateway.name);
 
   @WebSocketServer()
   server!: Server;
+
+  private groupEventsSub?: Subscription;
 
   constructor(
     private readonly socketAuth: SocketAuthService,
@@ -46,7 +62,48 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly presence: PresenceService,
     private readonly typing: TypingStateService,
     private readonly friends: FriendsService,
+    private readonly groupDomainEvents: GroupDomainEventsService,
   ) {}
+
+  onModuleInit(): void {
+    this.groupEventsSub = this.groupDomainEvents.events$.subscribe((ev) => {
+      const room = conversationRoomId(ev.conversationId);
+      switch (ev.type) {
+        case 'group.updated':
+          this.server.to(room).emit('group:updated', {
+            conversationId: ev.conversationId,
+            ...ev.payload,
+          });
+          break;
+        case 'group.member_added':
+          this.server.to(room).emit('group:members_added', {
+            conversationId: ev.conversationId,
+            userIds: ev.userIds,
+          });
+          break;
+        case 'group.member_removed':
+          this.server.to(room).emit('group:members_removed', {
+            conversationId: ev.conversationId,
+            userId: ev.userId,
+          });
+          break;
+        case 'group.system_message':
+          this.server.to(room).emit('conversation:system_message', {
+            conversationId: ev.conversationId,
+            messageId: ev.messageId,
+          });
+          break;
+        default: {
+          const _x: never = ev;
+          void _x;
+        }
+      }
+    });
+  }
+
+  onModuleDestroy(): void {
+    this.groupEventsSub?.unsubscribe();
+  }
 
   async handleConnection(client: Socket): Promise<void> {
     try {

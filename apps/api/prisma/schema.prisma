@@ -16,9 +16,12 @@ enum FriendRequestStatus {
 
 enum ConversationType {
   direct
+  group
 }
 
 enum ConversationMemberRole {
+  owner
+  admin
   member
 }
 
@@ -29,6 +32,7 @@ enum MessageType {
   voice
   video
   other
+  system
 }
 
 enum UploadSessionStatus {
@@ -187,6 +191,8 @@ model Block {
 model Conversation {
   id              String           @id @default(uuid())
   type            ConversationType
+  title           String?
+  avatarUrl       String?          @map("avatar_url")
   createdById     String?          @map("created_by_id")
   createdAt       DateTime         @default(now()) @map("created_at")
   updatedAt       DateTime         @updatedAt @map("updated_at")
@@ -292,6 +298,7 @@ model Message {
   clientMessageId  String      @map("client_message_id")
   type             MessageType
   content          String?
+  metadataJson     Json?       @map("metadata_json")
   replyToMessageId String?     @map("reply_to_message_id")
   deletedAt        DateTime?   @map("deleted_at")
   createdAt        DateTime    @default(now()) @map("created_at")

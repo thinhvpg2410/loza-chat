@@ -395,6 +395,7 @@ export class MessagesService {
       clientMessageId: row.clientMessageId,
       type: row.type,
       content: row.content,
+      metadataJson: row.metadataJson ?? null,
       replyToMessageId: row.replyToMessageId,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,

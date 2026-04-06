@@ -1,4 +1,4 @@
-import type { MessageType } from '@prisma/client';
+import type { MessageType, Prisma } from '@prisma/client';
 import type { AttachmentPublicDto } from '../../uploads/dto/upload-complete-response.dto';
 import type { PublicUserProfile } from '../../../common/types/public-user-profile';
 
@@ -9,6 +9,7 @@ export interface MessageView {
   clientMessageId: string;
   type: MessageType;
   content: string | null;
+  metadataJson: Prisma.JsonValue | null;
   replyToMessageId: string | null;
   createdAt: Date;
   updatedAt: Date;
