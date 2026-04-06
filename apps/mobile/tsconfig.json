@@ -5,6 +5,18 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "@theme": [
+        "./theme/index.ts"
+      ],
+      "@theme/*": [
+        "./theme/*"
+      ],
+      "@ui": [
+        "./components/ui/index.ts"
+      ],
+      "@ui/*": [
+        "./components/ui/*"
       ]
     }
   },
