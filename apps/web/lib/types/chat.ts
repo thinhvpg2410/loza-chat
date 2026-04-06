@@ -9,24 +9,66 @@ export type Conversation = {
   isPinned?: boolean;
   isMuted?: boolean;
   isOnline?: boolean;
-  /** Shown under name when not online, e.g. "Hoạt động 5 phút trước" */
   lastSeenLabel?: string;
 };
 
-/** Single text message in a thread (right panel). */
-export type Message = {
-  id: string;
-  conversationId: string;
-  body: string;
-  /** Short time for bubble footer, e.g. "09:18" */
-  sentAt: string;
-  /** ISO-8601 for ordering and date separators */
-  createdAt: string;
+export type MessageReaction = {
+  emoji: string;
+  count: number;
+  viewerReacted?: boolean;
+};
+
+export type ReplyPreviewRef = {
+  messageId: string;
+  snippet: string;
   isOwn: boolean;
 };
 
-/** Full thread for mock store / future API. */
+type MessageCommon = {
+  id: string;
+  conversationId: string;
+  sentAt: string;
+  createdAt: string;
+  isOwn: boolean;
+  reactions?: MessageReaction[];
+  replyTo?: ReplyPreviewRef;
+};
+
+export type TextMessage = MessageCommon & {
+  kind: "text";
+  body: string;
+};
+
+export type ImageMessage = MessageCommon & {
+  kind: "image";
+  imageUrl: string;
+  alt?: string;
+  loading?: boolean;
+};
+
+export type FileMessage = MessageCommon & {
+  kind: "file";
+  fileName: string;
+  fileSizeBytes: number;
+  mimeType?: string;
+};
+
+export type StickerMessage = MessageCommon & {
+  kind: "sticker";
+  stickerId: string;
+  emoji: string;
+};
+
+export type SystemMessage = MessageCommon & {
+  kind: "system";
+  body: string;
+};
+
+export type Message = TextMessage | ImageMessage | FileMessage | StickerMessage | SystemMessage;
+
 export type ConversationThread = {
   conversation: Conversation;
   messages: Message[];
 };
+
+export type MessageGroupPosition = "single" | "first" | "middle" | "last";
