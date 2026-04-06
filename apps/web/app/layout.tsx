@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Loza Chat",
-  description: "Trò chuyện — giao diện tương tự Zalo",
+  description: "Web client — Zalo-style chat shell (Phase W1)",
 };
 
 export default function RootLayout({
@@ -27,7 +27,9 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-white text-[var(--zalo-text)]">{children}</body>
+      <body className="flex min-h-full flex-col bg-white text-[var(--zalo-text)]">
+        {children}
+      </body>
     </html>
   );
 }

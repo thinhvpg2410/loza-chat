@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { Composer } from "@/components/chat/Composer";
 import { MessageList } from "@/components/chat/MessageList";
@@ -18,25 +18,15 @@ function buildMessageId(): string {
   return `m-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-export function ChatPanel({ conversation }: ChatPanelProps) {
-  const [extraByConversation, setExtraByConversation] = useState<Record<string, Message[]>>({});
+type ActiveComposerProps = {
+  conversation: Conversation;
+  onSent: (message: Message) => void;
+};
 
-  const baseMessages = useMemo(
-    () => (conversation ? getMessagesForConversation(conversation.id) : []),
-    [conversation],
-  );
-
-  const extra = conversation ? extraByConversation[conversation.id] ?? [] : [];
-  const messages = useMemo(() => [...baseMessages, ...extra], [baseMessages, extra]);
-
+function ActiveComposer({ conversation, onSent }: ActiveComposerProps) {
   const [draft, setDraft] = useState("");
 
-  useEffect(() => {
-    setDraft("");
-  }, [conversation?.id]);
-
   const handleSend = () => {
-    if (!conversation) return;
     const body = draft.trim();
     if (!body) return;
 
@@ -51,11 +41,28 @@ export function ChatPanel({ conversation }: ChatPanelProps) {
       isOwn: true,
     };
 
+    onSent(newMessage);
+    setDraft("");
+  };
+
+  return <Composer value={draft} onChange={setDraft} onSend={handleSend} disabled={false} />;
+}
+
+export function ChatPanel({ conversation }: ChatPanelProps) {
+  const [extraByConversation, setExtraByConversation] = useState<Record<string, Message[]>>({});
+
+  const messages = useMemo(() => {
+    if (!conversation) return [];
+    const base = getMessagesForConversation(conversation.id);
+    const extra = extraByConversation[conversation.id] ?? [];
+    return [...base, ...extra];
+  }, [conversation, extraByConversation]);
+
+  const appendMessage = (message: Message) => {
     setExtraByConversation((prev) => ({
       ...prev,
-      [conversation.id]: [...(prev[conversation.id] ?? []), newMessage],
+      [message.conversationId]: [...(prev[message.conversationId] ?? []), message],
     }));
-    setDraft("");
   };
 
   return (
@@ -72,12 +79,11 @@ export function ChatPanel({ conversation }: ChatPanelProps) {
           </div>
         )}
       </div>
-      <Composer
-        value={draft}
-        onChange={setDraft}
-        onSend={handleSend}
-        disabled={!conversation}
-      />
+      {conversation ? (
+        <ActiveComposer key={conversation.id} conversation={conversation} onSent={appendMessage} />
+      ) : (
+        <Composer value="" onChange={() => {}} onSend={() => {}} disabled />
+      )}
     </section>
   );
 }

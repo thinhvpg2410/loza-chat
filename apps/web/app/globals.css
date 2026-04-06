@@ -11,6 +11,10 @@
   --zalo-text-muted: #6b7280;
   --zalo-list-active: #e5f0ff;
   --zalo-conversation-width: 320px;
+  /* Login / calm surfaces */
+  --zalo-login-page-bg: #eef3f7;
+  --zalo-border-soft: #e4e7ec;
+  --zalo-text-subtle: #8b919a;
 }
 
 @theme inline {
