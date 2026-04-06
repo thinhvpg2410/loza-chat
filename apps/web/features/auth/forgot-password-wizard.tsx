@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { OtpSixInput } from "@/components/auth/otp-six-input";
 import { Button } from "@/components/ui/button";
 import {
   requestForgotPasswordOtpAction,
@@ -63,20 +64,13 @@ export function ForgotPasswordWizard() {
         <form action={verifyAction} className="flex flex-col gap-5">
           <h2 className="text-center text-base font-semibold text-[var(--zalo-text)]">Bước 2 — Nhập OTP</h2>
           <input type="hidden" name="contact" value={contact} />
-          <div className="flex flex-col gap-2">
-            <label htmlFor="otp" className="text-xs font-medium text-[var(--zalo-text-subtle)]">
-              Mã OTP (6 số)
-            </label>
-            <input
-              id="otp"
-              name="otp"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={6}
-              required
-              className={`${inputClass} tracking-[0.2em]`}
-            />
-          </div>
+          <OtpSixInput
+            id="forgot-otp"
+            label="Mã OTP (6 số)"
+            name="otp"
+            disabled={verifyPending}
+            inputClassName={inputClass}
+          />
           {verifyState.error ? (
             <p className="text-sm text-red-600/90" role="alert">
               {verifyState.error}

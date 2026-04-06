@@ -15,3 +15,6 @@ export const LOZA_REGISTER_TOKEN_COOKIE = "loza_register_token";
 
 /** Short-lived JWT after forgot-password OTP (httpOnly). */
 export const LOZA_FORGOT_TOKEN_COOKIE = "loza_forgot_token";
+
+/** Short-lived JWT after /auth/login when the browser must verify via OTP (httpOnly). */
+export const LOZA_DEVICE_VERIFY_TOKEN_COOKIE = "loza_device_verify_token";

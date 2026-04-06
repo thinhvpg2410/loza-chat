@@ -10,6 +10,7 @@ import { AppScreen } from "@ui/AppScreen";
 import { AppText } from "@ui/AppText";
 import { USE_API_MOCK } from "@/constants/env";
 import { buildE164, isValidVnLength } from "@lib/auth-mock";
+import { isLoginEmailFormat } from "@lib/loginIdentifier";
 import { getApiErrorMessage, registerRequestOtp } from "@/services/api/api";
 import { colors, radius, spacing } from "@theme";
 
@@ -25,12 +26,29 @@ export default function PhoneLoginScreen() {
   const [national, setNational] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  const [useEmailLogin, setUseEmailLogin] = useState(false);
+  const [email, setEmail] = useState("");
 
   const e164 = useMemo(() => buildE164(country.dial, national), [country.dial, national]);
-  const canContinue = isValidVnLength(national);
+  const canContinuePhone = isValidVnLength(national);
+  const canContinueEmail = isLoginEmailFormat(email);
+  const canContinue = useEmailLogin ? canContinueEmail : canContinuePhone;
+
+  const onContinueEmail = () => {
+    if (!canContinueEmail) return;
+    setError(undefined);
+    router.push({
+      pathname: "/login-password",
+      params: { identifier: email.trim().toLowerCase() },
+    });
+  };
 
   const onContinue = async () => {
-    if (!canContinue) return;
+    if (useEmailLogin) {
+      onContinueEmail();
+      return;
+    }
+    if (!canContinuePhone) return;
     setError(undefined);
 
     if (USE_API_MOCK) {
@@ -98,7 +116,15 @@ export default function PhoneLoginScreen() {
       safeEdges={["top", "left", "right", "bottom"]}
       keyboardOffset={0}
     >
-      <AuthHeader showBack={false} title="Đăng nhập" subtitle="Nhập số điện thoại để nhận mã OTP." />
+      <AuthHeader
+        showBack={false}
+        title="Đăng nhập"
+        subtitle={
+          useEmailLogin
+            ? "Nhập email đã đăng ký để đăng nhập bằng mật khẩu."
+            : "Nhập số điện thoại để nhận mã OTP."
+        }
+      />
 
       <View
         style={{
@@ -109,31 +135,64 @@ export default function PhoneLoginScreen() {
           padding: spacing.md,
         }}
       >
-        <AppText variant="micro" color="textSecondary" style={{ marginBottom: 6 }}>
-          Mã vùng
-        </AppText>
-        <PhoneCountryRow value={country} onChange={setCountry} />
+        {useEmailLogin ? (
+          <AppInput
+            label="Email"
+            placeholder="ten@example.com"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoComplete="email"
+            value={email}
+            onChangeText={(t) => {
+              setEmail(t);
+              setError(undefined);
+            }}
+            compact
+            error={error}
+          />
+        ) : (
+          <>
+            <AppText variant="micro" color="textSecondary" style={{ marginBottom: 6 }}>
+              Mã vùng
+            </AppText>
+            <PhoneCountryRow value={country} onChange={setCountry} />
 
-        <View style={{ height: spacing.md }} />
+            <View style={{ height: spacing.md }} />
 
-        <AppInput
-          label="Số điện thoại"
-          placeholder="9xx xxx xxx"
-          keyboardType="phone-pad"
-          value={national}
-          onChangeText={(t) => {
-            setNational(t);
+            <AppInput
+              label="Số điện thoại"
+              placeholder="9xx xxx xxx"
+              keyboardType="phone-pad"
+              value={national}
+              onChangeText={(t) => {
+                setNational(t);
+                setError(undefined);
+              }}
+              autoComplete="tel"
+              compact
+              error={error}
+            />
+          </>
+        )}
+
+        <AppText
+          variant="micro"
+          color="primary"
+          style={{ marginTop: spacing.md, textAlign: "center" }}
+          onPress={() => {
+            setUseEmailLogin((v) => !v);
             setError(undefined);
           }}
-          autoComplete="tel"
-          compact
-          error={error}
-        />
+        >
+          {useEmailLogin ? "Đăng nhập bằng số điện thoại" : "Đăng nhập bằng email"}
+        </AppText>
       </View>
 
-      <AppText variant="micro" color="textMuted" style={{ marginTop: spacing.sm, lineHeight: 16 }}>
-        SMS xác nhận có thể tính phí nhà mạng.
-      </AppText>
+      {!useEmailLogin ? (
+        <AppText variant="micro" color="textMuted" style={{ marginTop: spacing.sm, lineHeight: 16 }}>
+          SMS xác nhận có thể tính phí nhà mạng.
+        </AppText>
+      ) : null}
     </AppScreen>
   );
 }

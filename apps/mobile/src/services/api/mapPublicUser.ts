@@ -4,6 +4,7 @@ type PublicUserLike = {
   id: string;
   displayName: string;
   phoneNumber: string | null;
+  email?: string | null;
   avatarUrl: string | null;
   username?: string | null;
   statusMessage?: string | null;
@@ -21,10 +22,12 @@ function toBirthDateIso(v: PublicUserLike["birthDate"]): string | null | undefin
 /** Maps Nest `PublicUser` fields to the mobile `AuthUser` shape. */
 export function mapPublicUserToAuthUser(u: PublicUserLike): AuthUser {
   const bd = toBirthDateIso(u.birthDate);
+  const email = u.email?.trim();
   return {
     id: u.id,
     name: u.displayName,
     phone: u.phoneNumber ?? "",
+    ...(email ? { email } : {}),
     avatarUri: u.avatarUrl ?? undefined,
     username: u.username ?? undefined,
     statusMessage: u.statusMessage ?? undefined,

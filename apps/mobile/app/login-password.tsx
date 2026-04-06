@@ -6,7 +6,7 @@ import { AppButton } from "@ui/AppButton";
 import { AppInput } from "@ui/AppInput";
 import { AppScreen } from "@ui/AppScreen";
 import { AppText } from "@ui/AppText";
-import { getApiErrorMessage, login as loginRequest } from "@/services/api/api";
+import { getApiErrorMessage, loginWithDevice } from "@/services/api/api";
 import { useAuthStore } from "@/store/authStore";
 import { spacing } from "@theme";
 
@@ -14,35 +14,48 @@ const MIN_PASSWORD = 8;
 
 export default function LoginPasswordScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ phone?: string }>();
+  const params = useLocalSearchParams<{ phone?: string; identifier?: string }>();
   const storeLogin = useAuthStore((s) => s.login);
+  const setDeviceLoginChallenge = useAuthStore((s) => s.setDeviceLoginChallenge);
 
-  const phone = params.phone ?? "";
+  const identifier = (params.identifier ?? params.phone ?? "").trim();
 
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);
 
-  const canSubmit = phone.length >= 8 && password.length >= MIN_PASSWORD;
+  const canSubmit = identifier.length >= 3 && password.length >= MIN_PASSWORD;
 
   const onSubmit = async () => {
     if (!canSubmit) return;
     setError(undefined);
     setSubmitting(true);
     try {
-      const session = await loginRequest({ identifier: phone, password });
+      const outcome = await loginWithDevice({ identifier, password });
+      if (outcome.kind === "device_challenge") {
+        setDeviceLoginChallenge({
+          deviceVerificationToken: outcome.deviceVerificationToken,
+          otpChannel: outcome.otpChannel,
+          identifier,
+          password,
+        });
+        router.push({ pathname: "/otp-verify", params: { mode: "login-device" } });
+        return;
+      }
       await storeLogin({
-        accessToken: session.accessToken,
-        refreshToken: session.refreshToken,
-        user: session.user,
+        accessToken: outcome.session.accessToken,
+        refreshToken: outcome.session.refreshToken,
+        user: outcome.session.user,
       });
       router.replace("/main");
     } catch (e) {
-      setError(getApiErrorMessage(e, "Sai số điện thoại hoặc mật khẩu."));
+      setError(getApiErrorMessage(e, "Sai số điện thoại/email hoặc mật khẩu."));
     } finally {
       setSubmitting(false);
     }
   };
+
+  const isEmail = identifier.includes("@");
 
   return (
     <AppScreen
@@ -64,7 +77,7 @@ export default function LoginPasswordScreen() {
             style={{ textAlign: "center", marginTop: spacing.sm }}
             onPress={() => router.replace("/phone-login")}
           >
-            Đổi số điện thoại
+            {isEmail ? "Đổi email" : "Đổi số điện thoại"}
           </AppText>
         </>
       }
@@ -72,7 +85,7 @@ export default function LoginPasswordScreen() {
       safeEdges={["top", "left", "right", "bottom"]}
       keyboardOffset={0}
     >
-      <AuthHeader title="Mật khẩu" subtitle={`Đăng nhập với ${phone}`} />
+      <AuthHeader title="Mật khẩu" subtitle={`Đăng nhập với ${identifier}`} />
 
       <AppInput
         label="Mật khẩu"
@@ -95,7 +108,7 @@ export default function LoginPasswordScreen() {
         onPress={() =>
           router.push({
             pathname: "/forgot-password",
-            params: { phone },
+            params: isEmail ? { email: identifier } : { phone: identifier },
           })
         }
       >

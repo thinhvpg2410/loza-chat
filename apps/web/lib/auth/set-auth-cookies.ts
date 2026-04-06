@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import {
   LOZA_ACCESS_COOKIE,
+  LOZA_DEVICE_VERIFY_TOKEN_COOKIE,
   LOZA_FORGOT_TOKEN_COOKIE,
   LOZA_REFRESH_COOKIE,
   LOZA_REGISTER_TOKEN_COOKIE,
@@ -29,4 +30,5 @@ export async function setAuthCookies(accessToken: string, refreshToken: string):
   jar.delete(LOZA_SESSION_COOKIE);
   jar.delete(LOZA_REGISTER_TOKEN_COOKIE);
   jar.delete(LOZA_FORGOT_TOKEN_COOKIE);
+  jar.delete(LOZA_DEVICE_VERIFY_TOKEN_COOKIE);
 }

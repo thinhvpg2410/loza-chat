@@ -9,11 +9,20 @@ export type AuthUser = {
   id: string;
   name: string;
   phone: string;
+  email?: string;
   avatarUri?: string;
   username?: string;
   statusMessage?: string;
   /** YYYY-MM-DD */
   birthDate?: string | null;
+};
+
+/** Thiết bị mới: lưu tạm để gọi lại login khi gửi lại OTP (chỉ RAM, không persist). */
+export type DeviceLoginChallenge = {
+  deviceVerificationToken: string;
+  otpChannel: "phone" | "email";
+  identifier: string;
+  password: string;
 };
 
 type PersistedAuth = {
@@ -32,11 +41,13 @@ type AuthState = {
   refreshToken: string | null;
   isAuthenticated: boolean;
   resetToken: string | null;
+  deviceLoginChallenge: DeviceLoginChallenge | null;
   setPhone: (phone: string) => void;
   setOtp: (otp: string) => void;
   setOtpProofToken: (token: string | null) => void;
   setUser: (user: AuthUser | null) => void;
   setResetToken: (token: string | null) => void;
+  setDeviceLoginChallenge: (challenge: DeviceLoginChallenge | null) => void;
   login: (payload: { accessToken: string; refreshToken: string; user: AuthUser }) => Promise<void>;
   logout: () => Promise<void>;
   hydrate: () => Promise<void>;
@@ -65,6 +76,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   refreshToken: null,
   isAuthenticated: false,
   resetToken: null,
+  deviceLoginChallenge: null,
 
   setPhone: (phone) => set({ phone }),
   setOtp: (otp) => set({ otp }),
@@ -82,6 +94,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
   setResetToken: (resetToken) => set({ resetToken }),
+  setDeviceLoginChallenge: (deviceLoginChallenge) => set({ deviceLoginChallenge }),
 
   login: async ({ accessToken, refreshToken, user }) => {
     set({
@@ -90,6 +103,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       user,
       isAuthenticated: true,
       otpProofToken: null,
+      deviceLoginChallenge: null,
     });
     await persistSession({
       accessToken,
@@ -118,6 +132,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       otp: "",
       otpProofToken: null,
       resetToken: null,
+      deviceLoginChallenge: null,
     });
     await appStorage.removeItem(AUTH_STORAGE_KEY);
   },

@@ -41,8 +41,33 @@ type PublicUserDto = {
   id: string;
   displayName: string;
   phoneNumber: string | null;
+  email?: string | null;
   avatarUrl: string | null;
 };
+
+type LoginSessionDto = {
+  requiresDeviceVerification: false;
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+  user: PublicUserDto;
+};
+
+type LoginChallengeDto = {
+  requiresDeviceVerification: true;
+  deviceVerificationToken: string;
+  otpChannel: "phone" | "email";
+};
+
+type LoginResponseDto = LoginSessionDto | LoginChallengeDto;
+
+export type LoginOutcome =
+  | { kind: "session"; session: AuthSessionResponse }
+  | {
+      kind: "device_challenge";
+      deviceVerificationToken: string;
+      otpChannel: "phone" | "email";
+    };
 
 function mapSession(data: {
   accessToken: string;
@@ -130,15 +155,22 @@ async function mockLogin(payload: { identifier: string; password: string }) {
   });
 }
 
-async function mockForgotPasswordRequestOtp(phoneNumber: string) {
+async function mockForgotPasswordRequestOtp(contact: { phoneNumber?: string; email?: string }) {
   await mockDelay();
-  if (!E164.test(phoneNumber)) {
+  if (contact.phoneNumber && !E164.test(contact.phoneNumber)) {
     throw { response: { data: { message: "Số điện thoại không hợp lệ" }, status: 400 } };
+  }
+  if (!contact.phoneNumber && !contact.email) {
+    throw { response: { data: { message: "Thiếu số điện thoại hoặc email" }, status: 400 } };
   }
   return { message: "If an account exists for this contact, a verification code was sent." as const };
 }
 
-async function mockForgotPasswordVerifyOtp(payload: { phoneNumber: string; otp: string }) {
+async function mockForgotPasswordVerifyOtp(payload: {
+  phoneNumber?: string;
+  email?: string;
+  otp: string;
+}) {
   await mockDelay();
   if (payload.otp !== "123456") {
     throw { response: { data: { message: "Mã OTP không đúng" }, status: 400 } };
@@ -203,48 +235,91 @@ export async function createAccount(payload: {
   return mapSession(data);
 }
 
-export async function login(payload: {
+function parseLoginResponse(data: LoginResponseDto): LoginOutcome {
+  if (data.requiresDeviceVerification === true) {
+    return {
+      kind: "device_challenge",
+      deviceVerificationToken: data.deviceVerificationToken,
+      otpChannel: data.otpChannel,
+    };
+  }
+  return { kind: "session", session: mapSession(data) };
+}
+
+/**
+ * Đăng nhập bằng SĐT (E.164) hoặc email + mật khẩu.
+ * Thiết bị tin cậy → session; thiết bị mới → challenge OTP (tin cậy chỉ sau khi backend xác nhận OTP).
+ */
+export async function loginWithDevice(payload: {
   identifier: string;
   password: string;
-}): Promise<AuthSessionResponse> {
+}): Promise<LoginOutcome> {
   if (USE_API_MOCK) {
-    return mockLogin(payload);
+    return { kind: "session", session: await mockLogin(payload) };
   }
   const device = await getDeviceSessionPayload();
-  const { data } = await apiClient.post<{
-    accessToken: string;
-    refreshToken: string;
-    expiresIn: number;
-    user: PublicUserDto;
-  }>("/auth/login", {
+  const { data } = await apiClient.post<LoginResponseDto>("/auth/login", {
     identifier: payload.identifier.trim(),
     password: payload.password,
     ...device,
   });
+  return parseLoginResponse(data);
+}
+
+export async function verifyLoginDeviceOtp(payload: {
+  deviceVerificationToken: string;
+  otp: string;
+}): Promise<AuthSessionResponse> {
+  if (USE_API_MOCK) {
+    await mockDelay();
+    if (payload.otp === "000000") {
+      throw { response: { data: { message: "Mã OTP không đúng" }, status: 400 } };
+    }
+    if (payload.otp !== "123456") {
+      throw { response: { data: { message: "Mã OTP không đúng" }, status: 400 } };
+    }
+    return mapSession({
+      accessToken: "mock-access-token",
+      refreshToken: "mock-refresh-token",
+      expiresIn: 900,
+      user: {
+        id: "mock-user-device",
+        displayName: "Người dùng",
+        phoneNumber: "+84900000000",
+        avatarUrl: null,
+      },
+    });
+  }
+  const { data } = await apiClient.post<LoginResponseDto>("/auth/login/verify-device-otp", {
+    deviceVerificationToken: payload.deviceVerificationToken,
+    otp: payload.otp,
+  });
+  if (data.requiresDeviceVerification === true) {
+    throw new Error("Unexpected device challenge after verify-device-otp");
+  }
   return mapSession(data);
 }
 
-export async function forgotPasswordRequestOtp(phoneNumber: string): Promise<{ message: string }> {
+export async function forgotPasswordRequestOtp(contact: {
+  phoneNumber?: string;
+  email?: string;
+}): Promise<{ message: string }> {
   if (USE_API_MOCK) {
-    return mockForgotPasswordRequestOtp(phoneNumber);
+    return mockForgotPasswordRequestOtp(contact);
   }
-  const { data } = await apiClient.post<{ message: string }>("/auth/forgot-password/request-otp", {
-    phoneNumber,
-  });
+  const { data } = await apiClient.post<{ message: string }>("/auth/forgot-password/request-otp", contact);
   return data;
 }
 
 export async function forgotPasswordVerifyOtp(payload: {
-  phoneNumber: string;
+  phoneNumber?: string;
+  email?: string;
   otp: string;
 }): Promise<{ token: string }> {
   if (USE_API_MOCK) {
     return mockForgotPasswordVerifyOtp(payload);
   }
-  const { data } = await apiClient.post<{ token: string }>("/auth/forgot-password/verify-otp", {
-    phoneNumber: payload.phoneNumber,
-    otp: payload.otp,
-  });
+  const { data } = await apiClient.post<{ token: string }>("/auth/forgot-password/verify-otp", payload);
   return data;
 }
 
