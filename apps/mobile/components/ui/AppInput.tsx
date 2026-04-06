@@ -14,6 +14,8 @@ type AppInputProps = TextInputProps & {
   label?: string;
   error?: string;
   containerStyle?: ViewStyle;
+  /** Tighter field for dense flows (e.g. auth). */
+  compact?: boolean;
 };
 
 export function AppInput({
@@ -22,6 +24,7 @@ export function AppInput({
   containerStyle,
   style,
   editable = true,
+  compact = false,
   onBlur,
   onFocus,
   ...rest
@@ -38,7 +41,11 @@ export function AppInput({
   return (
     <View style={[{ width: "100%" }, containerStyle]}>
       {label ? (
-        <AppText variant="caption" color="textSecondary" style={{ marginBottom: spacing.xs }}>
+        <AppText
+          variant={compact ? "micro" : "caption"}
+          color="textSecondary"
+          style={{ marginBottom: compact ? 4 : spacing.xs }}
+        >
           {label}
         </AppText>
       ) : null}
@@ -46,8 +53,8 @@ export function AppInput({
         editable={editable}
         placeholderTextColor={colors.textPlaceholder}
         style={[
-          styles.input,
-          typography.body,
+          compact ? styles.inputCompact : styles.input,
+          compact ? typography.subhead : typography.body,
           {
             borderColor,
             backgroundColor: editable ? colors.background : colors.surface,
@@ -79,6 +86,13 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  inputCompact: {
+    minHeight: 40,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
     borderRadius: radius.md,
     borderWidth: StyleSheet.hairlineWidth,
   },

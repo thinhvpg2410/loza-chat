@@ -10,7 +10,7 @@ export type { TypographyVariant } from "./typography";
 export { radius } from "./radius";
 export type { RadiusName } from "./radius";
 
-export { shadows, headerSeparator } from "./shadows";
+export { shadows, hairlineBottomBorder, headerSeparator } from "./shadows";
 
 export { avatarSizes, iconSizes } from "./sizes";
 export type { AvatarSizeName, IconSizeName } from "./sizes";

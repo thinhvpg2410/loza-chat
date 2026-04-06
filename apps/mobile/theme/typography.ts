@@ -4,10 +4,10 @@ import type { TextStyle } from "react-native";
  * Compact typography tuned for mobile chat (avoid oversized display text).
  */
 export const typography = {
-  /** Nav / screen titles */
+  /** Nav / screen titles — compact (aligned with shell / chat density) */
   title: {
-    fontSize: 17,
-    lineHeight: 22,
+    fontSize: 16,
+    lineHeight: 21,
     fontWeight: "600",
   } satisfies TextStyle,
   /** Section headers, row titles */

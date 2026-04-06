@@ -18,6 +18,8 @@ type AppButtonProps = Omit<PressableProps, "children"> & {
   variant?: ButtonVariant;
   size?: ButtonSize;
   loading?: boolean;
+  /** Slightly shorter primary-style CTA (e.g. auth). */
+  compact?: boolean;
 };
 
 const sizeStyles: Record<ButtonSize, { container: ViewStyle; textVariant: "subhead" | "body" }> = {
@@ -95,6 +97,7 @@ export function AppButton({
   variant = "primary",
   size = "md",
   loading = false,
+  compact = false,
   disabled,
   style,
   ...rest
@@ -102,6 +105,10 @@ export function AppButton({
   const isDisabled = disabled || loading;
   const vs = variantStyles(variant);
   const sz = sizeStyles[size];
+  const compactPad: ViewStyle =
+    compact && size === "md"
+      ? { minHeight: 40, paddingVertical: spacing.xs, paddingHorizontal: spacing.md }
+      : {};
 
   return (
     <Pressable
@@ -118,6 +125,7 @@ export function AppButton({
           },
           vs.container,
           sz.container,
+          compactPad,
           style as ViewStyle,
         ];
         return base;
@@ -128,7 +136,7 @@ export function AppButton({
         <ActivityIndicator color={spinnerColor(variant)} size="small" />
       ) : (
         <AppText
-          variant={sz.textVariant}
+          variant={compact && size === "md" ? "subhead" : sz.textVariant}
           color={vs.labelColor}
           style={{ fontWeight: "600" }}
         >

@@ -17,6 +17,15 @@
       ],
       "@ui/*": [
         "./components/ui/*"
+      ],
+      "@components/*": [
+        "./components/*"
+      ],
+      "@lib/*": [
+        "./lib/*"
+      ],
+      "@features/*": [
+        "./features/*"
       ]
     }
   },

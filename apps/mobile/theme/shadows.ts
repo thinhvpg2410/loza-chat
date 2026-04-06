@@ -44,8 +44,13 @@ export const shadows: Record<ShadowLevel, ViewStyle> = {
   md,
 };
 
-/** Subtle header separator without relying on shadow. */
-export const headerSeparator: ViewStyle = {
+/**
+ * Hairline bottom border — shared by headers, list rows, and toolbars
+ * (single source to avoid mismatched grays across the app).
+ */
+export const hairlineBottomBorder: ViewStyle = {
   borderBottomWidth: StyleSheet.hairlineWidth,
   borderBottomColor: colors.border,
 };
+
+export const headerSeparator: ViewStyle = hairlineBottomBorder;

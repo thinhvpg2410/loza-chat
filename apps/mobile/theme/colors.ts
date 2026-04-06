@@ -25,6 +25,15 @@ export const colors = {
 
   overlay: "rgba(0, 0, 0, 0.45)",
   scrim: "rgba(0, 0, 0, 0.06)",
+
+  /** Chat room — Zalo-like soft surfaces */
+  chatRoomBackground: "#F0F2F5",
+  /** Incoming: clean white on room bg */
+  chatBubbleIncoming: "#FFFFFF",
+  /** Hairline around incoming bubble — lighter than `border` */
+  chatBubbleIncomingBorder: "#E6E9ED",
+  /** Outgoing: soft blue-gray (softer than saturated tint) */
+  chatBubbleOutgoing: "#E8F0FA",
 } as const;
 
 export type ColorName = keyof typeof colors;
