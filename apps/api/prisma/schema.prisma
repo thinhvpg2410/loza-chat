@@ -14,25 +14,72 @@ enum FriendRequestStatus {
   cancelled
 }
 
-model User {
-  id             String   @id @default(uuid())
-  phoneNumber    String   @unique @map("phone_number")
-  username       String?  @unique
-  displayName    String   @default("") @map("display_name")
-  avatarUrl      String?  @map("avatar_url")
-  statusMessage  String?  @map("status_message")
-  isActive       Boolean  @default(true) @map("is_active")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+enum ConversationType {
+  direct
+  group
+}
 
-  devices            UserDevice[]
-  refreshTokens      RefreshToken[]
-  sentFriendRequests     FriendRequest[] @relation("SentFriendRequests")
-  receivedFriendRequests FriendRequest[] @relation("ReceivedFriendRequests")
-  friendshipsAsOne       Friendship[]    @relation("FriendshipsUserOne")
-  friendshipsAsTwo       Friendship[]    @relation("FriendshipsUserTwo")
-  blocksInitiated        Block[]         @relation("BlocksInitiated")
-  blocksReceived         Block[]         @relation("BlocksReceived")
+enum ConversationMemberRole {
+  owner
+  admin
+  member
+}
+
+enum MessageType {
+  text
+  image
+  file
+  voice
+  video
+  other
+  system
+  sticker
+}
+
+enum UploadSessionStatus {
+  pending
+  uploaded
+  failed
+  expired
+}
+
+/// Shared taxonomy for upload sessions and attachments (extensible for stickers, etc.)
+enum MediaKind {
+  image
+  file
+  voice
+  video
+  other
+}
+
+model User {
+  id            String   @id @default(uuid())
+  phoneNumber   String   @unique @map("phone_number")
+  username      String?  @unique
+  displayName   String   @default("") @map("display_name")
+  avatarUrl     String?  @map("avatar_url")
+  statusMessage String?  @map("status_message")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  devices                  UserDevice[]
+  refreshTokens            RefreshToken[]
+  sentFriendRequests       FriendRequest[]      @relation("SentFriendRequests")
+  receivedFriendRequests   FriendRequest[]      @relation("ReceivedFriendRequests")
+  friendshipsAsOne         Friendship[]         @relation("FriendshipsUserOne")
+  friendshipsAsTwo         Friendship[]         @relation("FriendshipsUserTwo")
+  blocksInitiated          Block[]              @relation("BlocksInitiated")
+  blocksReceived           Block[]              @relation("BlocksReceived")
+  conversationsCreated     Conversation[]       @relation("ConversationCreatedBy")
+  conversationMembers      ConversationMember[]
+  messagesSent             Message[]
+  directConversationsAsOne Conversation[]       @relation("DirectConversationsUserOne")
+  directConversationsAsTwo Conversation[]       @relation("DirectConversationsUserTwo")
+  uploadSessions           UploadSession[]
+  attachmentsUploaded      Attachment[]
+  recentStickers           UserRecentSticker[]
+  messageReactions         MessageReaction[]
 
   @@map("users")
 }
@@ -103,12 +150,12 @@ model FriendRequest {
 
   sender   User @relation("SentFriendRequests", fields: [senderId], references: [id], onDelete: Cascade)
   receiver User @relation("ReceivedFriendRequests", fields: [receiverId], references: [id], onDelete: Cascade)
+  // DB: partial unique index friend_requests_one_pending_per_pair (see migrations) — one pending per unordered pair
 
   @@index([senderId, status])
   @@index([receiverId, status])
   @@index([senderId, receiverId, status])
   @@map("friend_requests")
-  // DB: partial unique index friend_requests_one_pending_per_pair (see migrations) — one pending per unordered pair
 }
 
 /// Invariant: userOneId < userTwoId (lexicographic). Enforced by DB CHECK + sortUserPair().
@@ -141,4 +188,212 @@ model Block {
   @@index([blockerId])
   @@index([blockedId])
   @@map("blocks")
+}
+
+/// Invariant for type=direct: directUserOneId < directUserTwoId (lexicographic). Enforced by DB CHECK + sortUserPair().
+model Conversation {
+  id              String           @id @default(uuid())
+  type            ConversationType
+  title           String?
+  avatarUrl       String?          @map("avatar_url")
+  createdById     String?          @map("created_by_id")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  lastMessageId   String?          @unique @map("last_message_id")
+  directUserOneId String?          @map("direct_user_one_id")
+  directUserTwoId String?          @map("direct_user_two_id")
+
+  createdBy     User?                @relation("ConversationCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  directUserOne User?                @relation("DirectConversationsUserOne", fields: [directUserOneId], references: [id], onDelete: Restrict)
+  directUserTwo User?                @relation("DirectConversationsUserTwo", fields: [directUserTwoId], references: [id], onDelete: Restrict)
+  lastMessage   Message?             @relation("ConversationLastMessage", fields: [lastMessageId], references: [id], onDelete: SetNull)
+  members       ConversationMember[]
+  messages      Message[]
+  attachments   Attachment[]
+
+  @@index([updatedAt(sort: Desc)])
+  @@map("conversations")
+}
+
+model ConversationMember {
+  id                     String                  @id @default(uuid())
+  conversationId         String                  @map("conversation_id")
+  userId                 String                  @map("user_id")
+  role                   ConversationMemberRole? @map("role")
+  joinedAt               DateTime                @default(now()) @map("joined_at")
+  lastReadMessageId      String?                 @map("last_read_message_id")
+  lastDeliveredMessageId String?                 @map("last_delivered_message_id")
+  mutedUntil             DateTime?               @map("muted_until")
+  createdAt              DateTime                @default(now()) @map("created_at")
+
+  conversation         Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user                 User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastReadMessage      Message?     @relation("MemberLastRead", fields: [lastReadMessageId], references: [id], onDelete: SetNull)
+  lastDeliveredMessage Message?     @relation("MemberLastDelivered", fields: [lastDeliveredMessageId], references: [id], onDelete: SetNull)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+  @@map("conversation_members")
+}
+
+/// Tracks a client-direct upload to object storage. Bytes never touch NestJS.
+model UploadSession {
+  id               String              @id @default(uuid())
+  userId           String              @map("user_id")
+  storageKey       String              @map("storage_key")
+  bucket           String
+  mimeType         String              @map("mime_type")
+  originalFileName String              @map("original_file_name")
+  fileSize         BigInt              @map("file_size")
+  uploadType       MediaKind           @map("upload_type")
+  status           UploadSessionStatus
+  expiresAt        DateTime            @map("expires_at")
+  completedAt      DateTime?           @map("completed_at")
+  metadataJson     Json?               @map("metadata_json")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attachment  Attachment?
+
+  @@index([userId, status])
+  @@index([expiresAt])
+  @@map("upload_sessions")
+}
+
+/// Binary metadata for a message. Bound to at most one message; reuse only before binding (explicit design).
+model Attachment {
+  id              String    @id @default(uuid())
+  conversationId  String?   @map("conversation_id")
+  messageId       String?   @map("message_id")
+  uploadedById    String    @map("uploaded_by_id")
+  uploadSessionId String?   @unique @map("upload_session_id")
+  storageKey      String    @map("storage_key")
+  bucket          String
+  mimeType        String    @map("mime_type")
+  originalFileName String   @map("original_file_name")
+  fileSize        BigInt    @map("file_size")
+  attachmentType  MediaKind @map("attachment_type")
+  width           Int?
+  height          Int?
+  durationSeconds Int?      @map("duration_seconds")
+  thumbnailKey    String?   @map("thumbnail_key")
+  sortOrder       Int       @default(0) @map("sort_order")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  conversation  Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  message       Message?      @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  uploadedBy    User          @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+  uploadSession UploadSession? @relation(fields: [uploadSessionId], references: [id], onDelete: SetNull)
+
+  @@index([uploadSessionId])
+  @@index([messageId])
+  @@index([uploadedById])
+  @@index([conversationId])
+  @@map("attachments")
+}
+
+model StickerPack {
+  id           String   @id @default(uuid())
+  name         String
+  slug         String   @unique
+  description  String?
+  thumbnailUrl String?  @map("thumbnail_url")
+  isActive     Boolean  @default(true) @map("is_active")
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  stickers Sticker[]
+
+  @@index([isActive, sortOrder])
+  @@map("sticker_packs")
+}
+
+model Sticker {
+  id        String   @id @default(uuid())
+  packId    String   @map("pack_id")
+  code      String?
+  name      String
+  assetUrl  String   @map("asset_url")
+  width     Int?
+  height    Int?
+  fileSize  Int?     @map("file_size")
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  pack           StickerPack         @relation(fields: [packId], references: [id], onDelete: Cascade)
+  messages       Message[]
+  recentUsages   UserRecentSticker[]
+
+  @@index([packId, isActive, sortOrder])
+  @@map("stickers")
+}
+
+model UserRecentSticker {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  stickerId  String   @map("sticker_id")
+  lastUsedAt DateTime @default(now()) @map("last_used_at")
+  useCount   Int      @default(1) @map("use_count")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sticker Sticker @relation(fields: [stickerId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, stickerId])
+  @@index([userId, lastUsedAt(sort: Desc)])
+  @@map("user_recent_stickers")
+}
+
+model MessageReaction {
+  id        String   @id @default(uuid())
+  messageId String   @map("message_id")
+  userId    String   @map("user_id")
+  reaction  String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, reaction])
+  @@index([messageId])
+  @@index([userId])
+  @@map("message_reactions")
+}
+
+model Message {
+  id               String      @id @default(uuid())
+  conversationId   String      @map("conversation_id")
+  senderId         String      @map("sender_id")
+  clientMessageId  String      @map("client_message_id")
+  type             MessageType
+  content          String?
+  metadataJson     Json?       @map("metadata_json")
+  replyToMessageId String?     @map("reply_to_message_id")
+  stickerId        String?     @map("sticker_id")
+  deletedAt        DateTime?   @map("deleted_at")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+
+  conversation           Conversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender                 User                 @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  replyTo                Message?             @relation("MessageReplies", fields: [replyToMessageId], references: [id], onDelete: SetNull)
+  replies                Message[]            @relation("MessageReplies")
+  sticker                Sticker?             @relation(fields: [stickerId], references: [id], onDelete: SetNull)
+  reactions              MessageReaction[]
+  lastMessageFor         Conversation?        @relation("ConversationLastMessage")
+  lastReadByMembers      ConversationMember[] @relation("MemberLastRead")
+  lastDeliveredByMembers ConversationMember[] @relation("MemberLastDelivered")
+  attachments            Attachment[]
+
+  @@unique([conversationId, senderId, clientMessageId])
+  @@index([conversationId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([stickerId])
+  @@map("messages")
 }

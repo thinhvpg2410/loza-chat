@@ -8,7 +8,14 @@ import { AppService } from './app.service';
 import { AuthModule } from './modules/auth/auth.module';
 import { BlocksModule } from './modules/blocks/blocks.module';
 import { DevicesModule } from './modules/devices/devices.module';
+import { ConversationsModule } from './modules/conversations/conversations.module';
 import { FriendsModule } from './modules/friends/friends.module';
+import { GroupsModule } from './modules/groups/groups.module';
+import { MessagesModule } from './modules/messages/messages.module';
+import { RealtimeModule } from './modules/realtime/realtime.module';
+import { StickersModule } from './modules/stickers/stickers.module';
+import { StorageModule } from './modules/storage/storage.module';
+import { UploadsModule } from './modules/uploads/uploads.module';
 import { UsersModule } from './modules/users/users.module';
 import { PrismaModule } from './prisma/prisma.module';
 
@@ -26,6 +33,13 @@ import { PrismaModule } from './prisma/prisma.module';
     DevicesModule,
     BlocksModule,
     FriendsModule,
+    GroupsModule,
+    ConversationsModule,
+    StorageModule,
+    UploadsModule,
+    MessagesModule,
+    StickersModule,
+    RealtimeModule,
     UsersModule,
   ],
   controllers: [AppController],
