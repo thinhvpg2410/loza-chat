@@ -18,6 +18,7 @@ type ChatListItemProps = {
 export function ChatListItem({ item, onPress }: ChatListItemProps) {
   const hasUnread = (item.unreadCount ?? 0) > 0;
   const previewMuted = item.isMuted && !hasUnread;
+  const isGroup = item.kind === "group";
 
   return (
     <Pressable
@@ -44,8 +45,13 @@ export function ChatListItem({ item, onPress }: ChatListItemProps) {
           contentFit="cover"
           transition={160}
         />
-        {item.isOnline && !item.verified ? <View style={styles.onlineDot} /> : null}
-        {item.verified ? (
+        {isGroup ? (
+          <View style={styles.groupBadge}>
+            <Ionicons name="people" size={9} color={colors.textInverse} />
+          </View>
+        ) : null}
+        {!isGroup && item.isOnline && !item.verified ? <View style={styles.onlineDot} /> : null}
+        {!isGroup && item.verified ? (
           <View style={styles.verifiedBadge}>
             <Ionicons name="checkmark" size={9} color={colors.textInverse} />
           </View>
@@ -96,7 +102,7 @@ export function ChatListItem({ item, onPress }: ChatListItemProps) {
               },
             ]}
           >
-            {item.lastMessage}
+            {isGroup && item.memberCount != null ? `${item.memberCount} · ${item.lastMessage}` : item.lastMessage}
           </AppText>
           <UnreadBadge count={item.unreadCount ?? 0} />
         </View>
@@ -146,6 +152,19 @@ const styles = StyleSheet.create({
     backgroundColor: "#F97316",
     alignItems: "center",
     justifyContent: "center",
+  },
+  groupBadge: {
+    position: "absolute",
+    right: -1,
+    bottom: -1,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: colors.background,
   },
   body: {
     flex: 1,

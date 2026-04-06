@@ -1,20 +1,49 @@
 /**
- * Chat room message model — structured for future reactions, attachments, realtime sync.
+ * Chat room message model — text, media, stickers, replies, reactions (realtime-ready).
  */
 export type MessageSenderRole = "me" | "peer";
 
-/** Delivery UI for outgoing messages (last in group shows label). */
 export type OutgoingDeliveryState = "sending" | "sent" | "delivered" | "seen";
+
+export type MessageKind = "text" | "image" | "file" | "sticker";
+
+export type ReplyReference = {
+  id: string;
+  senderLabel: string;
+  /** Short preview line */
+  preview: string;
+};
+
+export type MessageReaction = {
+  emoji: string;
+  count: number;
+  /** True if the current user added this emoji */
+  reactedByMe?: boolean;
+};
 
 export type ChatRoomMessage = {
   id: string;
   conversationId: string;
   senderRole: MessageSenderRole;
-  body: string;
-  /** ISO 8601 */
   createdAt: string;
-  /** Outgoing only — optional per message; UI shows status on last bubble in group */
   delivery?: OutgoingDeliveryState;
+  kind: MessageKind;
+  /** Primary text (text messages) or optional caption */
+  body?: string;
+  imageUrl?: string;
+  imageWidth?: number;
+  imageHeight?: number;
+  file?: {
+    name: string;
+    sizeBytes: number;
+    mime?: string;
+  };
+  /** Remote sticker asset — or use stickerEmoji for simple mock */
+  stickerUrl?: string;
+  stickerId?: string;
+  stickerEmoji?: string;
+  replyTo?: ReplyReference;
+  reactions?: MessageReaction[];
 };
 
 export type MessageFeedItem =

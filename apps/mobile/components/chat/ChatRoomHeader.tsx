@@ -16,6 +16,10 @@ type ChatRoomHeaderProps = {
   onCallPress?: () => void;
   onVideoPress?: () => void;
   onMorePress?: () => void;
+  /** Group chat — tap title/avatar opens group info */
+  onTitlePress?: () => void;
+  /** Hide call/video affordances in group threads */
+  isGroup?: boolean;
 };
 
 export function ChatRoomHeader({
@@ -26,6 +30,8 @@ export function ChatRoomHeader({
   onCallPress,
   onVideoPress,
   onMorePress,
+  onTitlePress,
+  isGroup,
 }: ChatRoomHeaderProps) {
   const insets = useSafeAreaInsets();
 
@@ -42,39 +48,59 @@ export function ChatRoomHeader({
           <Ionicons name="chevron-back" size={24} color={colors.primary} />
         </Pressable>
 
-        <View style={styles.center}>
-          <View style={styles.titleRow}>
-            <AppAvatar uri={avatarUrl} name={title} size="xs" />
-            <View style={styles.titleText}>
-              <AppText variant="headline" numberOfLines={1} style={styles.title}>
-                {title}
-              </AppText>
-              <AppText variant="micro" color="textMuted" numberOfLines={1} style={styles.status}>
-                {status}
-              </AppText>
+        {onTitlePress ? (
+          <Pressable accessibilityRole="button" onPress={onTitlePress} style={styles.center}>
+            <View style={styles.titleRow}>
+              <AppAvatar uri={avatarUrl} name={title} size="xs" />
+              <View style={styles.titleText}>
+                <AppText variant="headline" numberOfLines={1} style={styles.title}>
+                  {title}
+                </AppText>
+                <AppText variant="micro" color="textMuted" numberOfLines={1} style={styles.status}>
+                  {status}
+                </AppText>
+              </View>
+            </View>
+          </Pressable>
+        ) : (
+          <View style={styles.center}>
+            <View style={styles.titleRow}>
+              <AppAvatar uri={avatarUrl} name={title} size="xs" />
+              <View style={styles.titleText}>
+                <AppText variant="headline" numberOfLines={1} style={styles.title}>
+                  {title}
+                </AppText>
+                <AppText variant="micro" color="textMuted" numberOfLines={1} style={styles.status}>
+                  {status}
+                </AppText>
+              </View>
             </View>
           </View>
-        </View>
+        )}
 
         <View style={styles.actions}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Gọi thoại"
-            hitSlop={6}
-            onPress={onCallPress ?? (() => {})}
-            style={({ pressed }) => [styles.iconHit, pressed && styles.pressed]}
-          >
-            <Ionicons name="call-outline" size={20} color={colors.primary} />
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Gọi video"
-            hitSlop={6}
-            onPress={onVideoPress ?? (() => {})}
-            style={({ pressed }) => [styles.iconHit, pressed && styles.pressed]}
-          >
-            <Ionicons name="videocam-outline" size={20} color={colors.primary} />
-          </Pressable>
+          {!isGroup ? (
+            <>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Gọi thoại"
+                hitSlop={6}
+                onPress={onCallPress ?? (() => {})}
+                style={({ pressed }) => [styles.iconHit, pressed && styles.pressed]}
+              >
+                <Ionicons name="call-outline" size={20} color={colors.primary} />
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Gọi video"
+                hitSlop={6}
+                onPress={onVideoPress ?? (() => {})}
+                style={({ pressed }) => [styles.iconHit, pressed && styles.pressed]}
+              >
+                <Ionicons name="videocam-outline" size={20} color={colors.primary} />
+              </Pressable>
+            </>
+          ) : null}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Thêm"

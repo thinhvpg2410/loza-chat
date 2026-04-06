@@ -6,7 +6,9 @@ import { AppAvatar } from "@ui/AppAvatar";
 import type { ChatRoomMessage, MessageSenderRole, OutgoingDeliveryState } from "@features/chat-room/types";
 import { spacing } from "@theme";
 
-import { MessageBubble, type BubblePosition } from "./MessageBubble";
+import { MessageContent } from "./MessageContent";
+import { ReactionBar } from "./ReactionBar";
+import type { BubblePosition } from "./bubbleShape";
 
 function bubblePosition(index: number, total: number): BubblePosition {
   if (total === 1) return "single";
@@ -35,9 +37,22 @@ type MessageGroupProps = {
   role: MessageSenderRole;
   peerAvatarUrl?: string;
   peerName?: string;
+  onMessagePress?: (message: ChatRoomMessage) => void;
+  onMessageLongPress?: (message: ChatRoomMessage) => void;
+  onImagePress?: (uri: string) => void;
+  onReactionEmoji?: (messageId: string, emoji: string) => void;
 };
 
-function UnpackedMessageGroup({ messages, role, peerAvatarUrl, peerName }: MessageGroupProps) {
+function UnpackedMessageGroup({
+  messages,
+  role,
+  peerAvatarUrl,
+  peerName,
+  onMessagePress,
+  onMessageLongPress,
+  onImagePress,
+  onReactionEmoji,
+}: MessageGroupProps) {
   const last = messages[messages.length - 1];
   const showDelivery = role === "me" && last.delivery !== undefined;
 
@@ -52,9 +67,7 @@ function UnpackedMessageGroup({ messages, role, peerAvatarUrl, peerName }: Messa
     <View style={[styles.row, isOutgoing ? styles.rowOutgoing : styles.rowIncoming]}>
       {!isOutgoing ? (
         <View style={styles.avatarCol}>
-          <View style={styles.avatarSlot}>
-            <AppAvatar uri={peerAvatarUrl} name={peerName ?? "?"} size="xs" />
-          </View>
+          <AppAvatar uri={peerAvatarUrl} name={peerName ?? "?"} size="xs" />
         </View>
       ) : null}
 
@@ -63,12 +76,22 @@ function UnpackedMessageGroup({ messages, role, peerAvatarUrl, peerName }: Messa
           <View
             key={m.id}
             style={[
-              styles.bubbleWrap,
-              index > 0 && styles.bubbleStacked,
-              isOutgoing && styles.bubbleWrapOut,
+              styles.msgBlock,
+              index > 0 && styles.msgStacked,
+              isOutgoing && styles.msgBlockOut,
             ]}
           >
-            <MessageBubble role={role} position={bubblePosition(index, messages.length)} text={m.body} />
+            <MessageContent
+              message={m}
+              role={role}
+              position={bubblePosition(index, messages.length)}
+              onPress={() => onMessagePress?.(m)}
+              onLongPress={() => onMessageLongPress?.(m)}
+              onImagePress={(uri) => onImagePress?.(uri)}
+            />
+            <View style={[styles.reactionWrap, isOutgoing && styles.reactionWrapOut]}>
+              <ReactionBar reactions={m.reactions} onPressEmoji={(emoji) => onReactionEmoji?.(m.id, emoji)} />
+            </View>
           </View>
         ))}
 
@@ -91,23 +114,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     width: "100%",
     marginBottom: spacing.sm,
+    alignItems: "flex-end",
   },
   rowIncoming: {
-    alignItems: "flex-start",
     justifyContent: "flex-start",
   },
   rowOutgoing: {
-    alignItems: "flex-end",
     justifyContent: "flex-end",
   },
+  /** Single peer avatar per group — stretch to bubble column height, pin avatar to bottom (last bubble) */
   avatarCol: {
     width: 30,
     marginRight: 6,
-    alignItems: "flex-start",
-  },
-  avatarSlot: {
-    width: 30,
-    justifyContent: "flex-start",
+    alignSelf: "stretch",
+    alignItems: "center",
+    justifyContent: "flex-end",
   },
   avatarColSpacer: {
     width: 30,
@@ -119,14 +140,23 @@ const styles = StyleSheet.create({
   bubbleColOut: {
     alignItems: "flex-end",
   },
-  bubbleWrap: {
+  msgBlock: {
     alignSelf: "flex-start",
+    maxWidth: "100%",
   },
-  bubbleWrapOut: {
+  msgBlockOut: {
     alignSelf: "flex-end",
   },
-  bubbleStacked: {
-    marginTop: 0,
+  /** Same gap after text, image, file, sticker — reads as one run */
+  msgStacked: {
+    marginTop: 3,
+  },
+  reactionWrap: {
+    alignSelf: "flex-start",
+    maxWidth: "100%",
+  },
+  reactionWrapOut: {
+    alignSelf: "flex-end",
   },
   delivery: {
     marginTop: 2,

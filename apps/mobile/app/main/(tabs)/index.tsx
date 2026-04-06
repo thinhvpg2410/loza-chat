@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { Pressable, RefreshControl, SectionList, View } from "react-native";
+import { Alert, Pressable, RefreshControl, SectionList, View } from "react-native";
 
 import type { MockConversation } from "@/constants/mockData";
 import { ChatListItem, ChatListSkeleton, ChatSearchBar } from "@components/chat";
@@ -82,7 +82,12 @@ export default function ChatsTabScreen() {
       <Pressable
         accessibilityLabel="Tạo mới"
         hitSlop={8}
-        onPress={() => {}}
+        onPress={() =>
+          Alert.alert("Tạo mới", undefined, [
+            { text: "Tạo nhóm", onPress: () => router.push("/main/group/create") },
+            { text: "Hủy", style: "cancel" },
+          ])
+        }
         style={({ pressed }) => ({ opacity: pressed ? 0.65 : 1, padding: spacing.xs })}
       >
         <Ionicons name="add-outline" size={22} color={colors.primary} />

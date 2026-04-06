@@ -12,10 +12,14 @@ type MessageListProps = {
   messages: ChatRoomMessage[];
   peerAvatarUrl?: string;
   peerName?: string;
+  onMessagePress?: (message: ChatRoomMessage) => void;
+  onMessageLongPress?: (message: ChatRoomMessage) => void;
+  onImagePress?: (uri: string) => void;
+  onReactionEmoji?: (messageId: string, emoji: string) => void;
 };
 
 export const MessageList = forwardRef<FlatList<MessageFeedItem>, MessageListProps>(function MessageList(
-  { messages, peerAvatarUrl, peerName },
+  { messages, peerAvatarUrl, peerName, onMessagePress, onMessageLongPress, onImagePress, onReactionEmoji },
   ref,
 ) {
   const feed = useMemo(() => buildMessageFeed(messages), [messages]);
@@ -31,10 +35,14 @@ export const MessageList = forwardRef<FlatList<MessageFeedItem>, MessageListProp
           role={item.role}
           peerAvatarUrl={peerAvatarUrl}
           peerName={peerName}
+          onMessagePress={onMessagePress}
+          onMessageLongPress={onMessageLongPress}
+          onImagePress={onImagePress}
+          onReactionEmoji={onReactionEmoji}
         />
       );
     },
-    [peerAvatarUrl, peerName],
+    [peerAvatarUrl, peerName, onMessagePress, onMessageLongPress, onImagePress, onReactionEmoji],
   );
 
   const keyExtractor = useCallback((item: MessageFeedItem) => item.key, []);

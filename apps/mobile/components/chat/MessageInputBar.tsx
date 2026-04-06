@@ -11,7 +11,10 @@ import {
   type TextInputContentSizeChangeEventData,
 } from "react-native";
 
+import type { ReplyReference } from "@features/chat-room/types";
 import { colors, radius, spacing } from "@theme";
+
+import { ReplyPreviewBanner } from "./ReplyPreview";
 
 /** Single-line composer height — Zalo-like compact row */
 const MIN_INPUT = 28;
@@ -27,6 +30,9 @@ type MessageInputBarProps = {
   /** Safe area bottom inset (home indicator) */
   bottomInset: number;
   placeholder?: string;
+  replyingTo?: ReplyReference | null;
+  onCancelReply?: () => void;
+  onOpenAttachment?: () => void;
 };
 
 export function MessageInputBar({
@@ -35,6 +41,9 @@ export function MessageInputBar({
   onSend,
   bottomInset,
   placeholder = "Tin nhắn",
+  replyingTo,
+  onCancelReply,
+  onOpenAttachment,
 }: MessageInputBarProps) {
   const [inputHeight, setInputHeight] = useState(MIN_INPUT);
   const trimmed = value.trim();
@@ -62,6 +71,7 @@ export function MessageInputBar({
 
   return (
     <View style={[styles.bar, { paddingBottom: bottomInset + 5 }]}>
+      {replyingTo && onCancelReply ? <ReplyPreviewBanner reply={replyingTo} onClose={onCancelReply} /> : null}
       <View style={styles.inner}>
         <Pressable
           accessibilityRole="button"
@@ -96,10 +106,10 @@ export function MessageInputBar({
           accessibilityRole="button"
           accessibilityLabel="Đính kèm"
           hitSlop={8}
-          onPress={() => {}}
+          onPress={() => onOpenAttachment?.()}
           style={({ pressed }) => [styles.iconBtn, pressed && styles.iconPressed]}
         >
-          <Ionicons name="attach-outline" size={ICON_GLYPH} color={colors.textMuted} />
+          <Ionicons name="add" size={ICON_GLYPH + 2} color={colors.textMuted} />
         </Pressable>
 
         <Pressable
