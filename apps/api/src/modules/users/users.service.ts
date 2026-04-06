@@ -33,12 +33,26 @@ export class UsersService {
     return user;
   }
 
+  async isUsernameAvailable(
+    username: string,
+    viewerId: string,
+  ): Promise<{ available: boolean }> {
+    const taken = await this.prisma.user.findFirst({
+      where: {
+        username,
+        NOT: { id: viewerId },
+      },
+    });
+    return { available: !taken };
+  }
+
   async updateProfile(userId: string, dto: UpdateProfileDto): Promise<PublicUser> {
     const hasField =
       dto.displayName !== undefined ||
       dto.avatarUrl !== undefined ||
       dto.statusMessage !== undefined ||
-      dto.username !== undefined;
+      dto.username !== undefined ||
+      dto.birthDate !== undefined;
     if (!hasField) {
       throw new BadRequestException('Provide at least one field to update');
     }
@@ -71,6 +85,14 @@ export class UsersService {
           ? { statusMessage: dto.statusMessage }
           : {}),
         ...(username !== undefined ? { username } : {}),
+        ...(dto.birthDate !== undefined
+          ? {
+              birthDate:
+                dto.birthDate === null
+                  ? null
+                  : new Date(`${dto.birthDate}T12:00:00.000Z`),
+            }
+          : {}),
       },
     });
     return toPublicUser(user);

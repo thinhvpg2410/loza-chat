@@ -5,6 +5,7 @@ import { GetUser } from '../auth/decorators/get-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { SearchUsersQueryDto } from './dto/search-users-query.dto';
+import { UsernameAvailableQueryDto } from './dto/username-available-query.dto';
 import { UpdateAvatarDto } from './dto/update-avatar.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UsersService } from './users.service';
@@ -20,6 +21,17 @@ export class UsersController {
   @ApiOperation({ summary: 'Current user profile' })
   getMe(@GetUser() user: PublicUser) {
     return { user: this.usersService.getMe(user) };
+  }
+
+  @Get('username-available')
+  @ApiOperation({
+    summary: 'Check if username is free for the current user (edit profile)',
+  })
+  usernameAvailable(
+    @GetUser('id') viewerId: string,
+    @Query() query: UsernameAvailableQueryDto,
+  ) {
+    return this.usersService.isUsernameAvailable(query.username, viewerId);
   }
 
   @Get('search')

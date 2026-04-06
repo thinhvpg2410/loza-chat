@@ -11,12 +11,13 @@ import { colors } from "@theme";
 
 export default function MainTabsLayout() {
   const insets = useSafeAreaInsets();
+  const authUser = useAuthStore((s) => s.user);
   const fetchConversations = useChatStore((s) => s.fetchConversations);
   const conversations = useChatStore((s) => s.conversations);
 
   useEffect(() => {
-    useUserStore.getState().setUserFromAuth(useAuthStore.getState().user);
-  }, []);
+    useUserStore.getState().setUserFromAuth(authUser);
+  }, [authUser]);
 
   useEffect(() => {
     void fetchConversations();

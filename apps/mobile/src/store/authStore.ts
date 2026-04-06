@@ -10,6 +10,10 @@ export type AuthUser = {
   name: string;
   phone: string;
   avatarUri?: string;
+  username?: string;
+  statusMessage?: string;
+  /** YYYY-MM-DD */
+  birthDate?: string | null;
 };
 
 type PersistedAuth = {
@@ -65,7 +69,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setPhone: (phone) => set({ phone }),
   setOtp: (otp) => set({ otp }),
   setOtpProofToken: (otpProofToken) => set({ otpProofToken }),
-  setUser: (user) => set({ user }),
+  setUser: (user) => {
+    set({ user });
+    const snap = get();
+    if (snap.isAuthenticated && snap.accessToken && user) {
+      void persistSession({
+        accessToken: snap.accessToken,
+        refreshToken: snap.refreshToken,
+        user,
+        isAuthenticated: true,
+      });
+    }
+  },
   setResetToken: (resetToken) => set({ resetToken }),
 
   login: async ({ accessToken, refreshToken, user }) => {
