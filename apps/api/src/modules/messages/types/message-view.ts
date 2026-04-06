@@ -1,6 +1,12 @@
 import type { MessageType, Prisma } from '@prisma/client';
 import type { AttachmentPublicDto } from '../../uploads/dto/upload-complete-response.dto';
 import type { PublicUserProfile } from '../../../common/types/public-user-profile';
+import type { StickerPublicDto } from '../../stickers/dto/sticker-public.dto';
+
+export interface ReactionSummaryView {
+  counts: { reaction: string; count: number }[];
+  mine: string[];
+}
 
 export interface MessageView {
   id: string;
@@ -15,6 +21,8 @@ export interface MessageView {
   updatedAt: Date;
   sender: PublicUserProfile;
   attachments: AttachmentPublicDto[];
+  sticker: StickerPublicDto | null;
+  reactions: ReactionSummaryView;
 }
 
 /** Message row plus derived receipt hints for direct chat (peer pointers on `ConversationMember`). */

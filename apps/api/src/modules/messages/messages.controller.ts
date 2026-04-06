@@ -4,6 +4,7 @@ import { GetUser } from '../auth/decorators/get-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { SendMessageWithAttachmentsDto } from './dto/send-message-with-attachments.dto';
 import { SendMessageDto } from './dto/send-message.dto';
+import { SendStickerMessageDto } from './dto/send-sticker-message.dto';
 import { MessagesService } from './messages.service';
 
 @ApiTags('messages')
@@ -23,6 +24,18 @@ export class MessagesController {
     @Body() dto: SendMessageWithAttachmentsDto,
   ) {
     return this.messagesService.sendMessageWithAttachments(userId, dto);
+  }
+
+  @Post('sticker')
+  @ApiOperation({
+    summary:
+      'Send a sticker message (idempotent via clientMessageId per sender/conversation)',
+  })
+  async sendSticker(
+    @GetUser('id') userId: string,
+    @Body() dto: SendStickerMessageDto,
+  ) {
+    return this.messagesService.sendStickerMessage(userId, dto);
   }
 
   @Post()

@@ -33,6 +33,7 @@ enum MessageType {
   video
   other
   system
+  sticker
 }
 
 enum UploadSessionStatus {
@@ -77,6 +78,8 @@ model User {
   directConversationsAsTwo Conversation[]       @relation("DirectConversationsUserTwo")
   uploadSessions           UploadSession[]
   attachmentsUploaded      Attachment[]
+  recentStickers           UserRecentSticker[]
+  messageReactions         MessageReaction[]
 
   @@map("users")
 }
@@ -291,6 +294,79 @@ model Attachment {
   @@map("attachments")
 }
 
+model StickerPack {
+  id           String   @id @default(uuid())
+  name         String
+  slug         String   @unique
+  description  String?
+  thumbnailUrl String?  @map("thumbnail_url")
+  isActive     Boolean  @default(true) @map("is_active")
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  stickers Sticker[]
+
+  @@index([isActive, sortOrder])
+  @@map("sticker_packs")
+}
+
+model Sticker {
+  id        String   @id @default(uuid())
+  packId    String   @map("pack_id")
+  code      String?
+  name      String
+  assetUrl  String   @map("asset_url")
+  width     Int?
+  height    Int?
+  fileSize  Int?     @map("file_size")
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  pack           StickerPack         @relation(fields: [packId], references: [id], onDelete: Cascade)
+  messages       Message[]
+  recentUsages   UserRecentSticker[]
+
+  @@index([packId, isActive, sortOrder])
+  @@map("stickers")
+}
+
+model UserRecentSticker {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  stickerId  String   @map("sticker_id")
+  lastUsedAt DateTime @default(now()) @map("last_used_at")
+  useCount   Int      @default(1) @map("use_count")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sticker Sticker @relation(fields: [stickerId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, stickerId])
+  @@index([userId, lastUsedAt(sort: Desc)])
+  @@map("user_recent_stickers")
+}
+
+model MessageReaction {
+  id        String   @id @default(uuid())
+  messageId String   @map("message_id")
+  userId    String   @map("user_id")
+  reaction  String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, reaction])
+  @@index([messageId])
+  @@index([userId])
+  @@map("message_reactions")
+}
+
 model Message {
   id               String      @id @default(uuid())
   conversationId   String      @map("conversation_id")
@@ -300,6 +376,7 @@ model Message {
   content          String?
   metadataJson     Json?       @map("metadata_json")
   replyToMessageId String?     @map("reply_to_message_id")
+  stickerId        String?     @map("sticker_id")
   deletedAt        DateTime?   @map("deleted_at")
   createdAt        DateTime    @default(now()) @map("created_at")
   updatedAt        DateTime    @updatedAt @map("updated_at")
@@ -308,6 +385,8 @@ model Message {
   sender                 User                 @relation(fields: [senderId], references: [id], onDelete: Cascade)
   replyTo                Message?             @relation("MessageReplies", fields: [replyToMessageId], references: [id], onDelete: SetNull)
   replies                Message[]            @relation("MessageReplies")
+  sticker                Sticker?             @relation(fields: [stickerId], references: [id], onDelete: SetNull)
+  reactions              MessageReaction[]
   lastMessageFor         Conversation?        @relation("ConversationLastMessage")
   lastReadByMembers      ConversationMember[] @relation("MemberLastRead")
   lastDeliveredByMembers ConversationMember[] @relation("MemberLastDelivered")
@@ -315,5 +394,6 @@ model Message {
 
   @@unique([conversationId, senderId, clientMessageId])
   @@index([conversationId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([stickerId])
   @@map("messages")
 }

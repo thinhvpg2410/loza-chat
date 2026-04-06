@@ -37,8 +37,9 @@ export class SendMessageWithAttachmentsDto {
     description: 'Must not be `text` (use POST /messages for text-only).',
   })
   @IsEnum(MessageType)
-  @IsNotIn([MessageType.text], {
-    message: 'Use POST /messages for text-only messages',
+  @IsNotIn([MessageType.text, MessageType.sticker], {
+    message:
+      'Use POST /messages for text-only messages and POST /messages/sticker for stickers',
   })
   type!: MessageType;
 

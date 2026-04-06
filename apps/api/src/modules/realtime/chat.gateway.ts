@@ -21,6 +21,7 @@ import { Subscription } from 'rxjs';
 import { ConversationMembershipService } from '../conversations/conversation-membership.service';
 import { FriendsService } from '../friends/friends.service';
 import { GroupDomainEventsService } from '../groups/group-domain-events.service';
+import { MessageDomainEventsService } from '../messages/message-domain-events.service';
 import { MessageReceiptsService } from '../messages/message-receipts.service';
 import { MessagesService } from '../messages/messages.service';
 import { ConversationJoinDto } from './dto/conversation-join.dto';
@@ -53,6 +54,7 @@ export class ChatGateway
   server!: Server;
 
   private groupEventsSub?: Subscription;
+  private messageEventsSub?: Subscription;
 
   constructor(
     private readonly socketAuth: SocketAuthService,
@@ -63,6 +65,7 @@ export class ChatGateway
     private readonly typing: TypingStateService,
     private readonly friends: FriendsService,
     private readonly groupDomainEvents: GroupDomainEventsService,
+    private readonly messageDomainEvents: MessageDomainEventsService,
   ) {}
 
   onModuleInit(): void {
@@ -99,10 +102,31 @@ export class ChatGateway
         }
       }
     });
+
+    this.messageEventsSub = this.messageDomainEvents.events$.subscribe((ev) => {
+      const room = conversationRoomId(ev.conversationId);
+      switch (ev.type) {
+        case 'message.created':
+          this.server.to(room).emit('message:new', { message: ev.message });
+          break;
+        case 'message.reaction_updated':
+          this.server.to(room).emit('message:reaction_updated', {
+            conversationId: ev.conversationId,
+            messageId: ev.messageId,
+            summary: ev.summary,
+          });
+          break;
+        default: {
+          const _x: never = ev;
+          void _x;
+        }
+      }
+    });
   }
 
   onModuleDestroy(): void {
     this.groupEventsSub?.unsubscribe();
+    this.messageEventsSub?.unsubscribe();
   }
 
   async handleConnection(client: Socket): Promise<void> {

@@ -65,6 +65,10 @@ export class UploadRulesService {
     switch (messageType) {
       case MessageType.system:
         throw new BadRequestException('System messages cannot have attachments');
+      case MessageType.sticker:
+        throw new BadRequestException(
+          'Use POST /messages/sticker for sticker messages',
+        );
       case MessageType.voice:
         if (attachmentCount !== 1) {
           throw new BadRequestException(
@@ -110,10 +114,12 @@ export class UploadRulesService {
 }
 
 function messageTypeToMediaKind(t: MessageType): MediaKind | null {
-  switch (t) {
-    case MessageType.system:
-      return null;
-    case MessageType.image:
+    switch (t) {
+      case MessageType.system:
+        return null;
+      case MessageType.sticker:
+        return null;
+      case MessageType.image:
       return MediaKind.image;
     case MessageType.file:
       return MediaKind.file;

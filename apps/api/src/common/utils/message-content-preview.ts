@@ -39,6 +39,8 @@ export function messageContentPreview(
       return '[Video]';
     case MessageType.other:
       return '[Attachment]';
+    case MessageType.sticker:
+      return '[Sticker]';
     case MessageType.text:
     default:
       return null;
