@@ -16,11 +16,29 @@ import type { CreateAccountDto } from './dto/create-account.dto';
 import type { ForgotPasswordResetDto } from './dto/forgot-password-reset.dto';
 import type { LoginDto } from './dto/login.dto';
 import type { VerifyContactOtpDto } from './dto/contact-otp.dto';
+import type { VerifyLoginDeviceOtpDto } from './dto/verify-login-device-otp.dto';
+import type { LoginDeviceChallengePayload } from './interfaces/login-device-challenge-payload.interface';
 import type { OtpProofPayload } from './interfaces/otp-proof-payload.interface';
 import { OtpRequestsService } from './otp-requests.service';
 import { TokenService } from './token.service';
 
 const PASSWORD_BCRYPT_ROUNDS = 12;
+
+export type LoginSessionPayload = {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+  user: PublicUser;
+  device: { id: string; deviceId: string; platform: string };
+};
+
+export type LoginResult =
+  | ({ requiresDeviceVerification: false } & LoginSessionPayload)
+  | {
+      requiresDeviceVerification: true;
+      deviceVerificationToken: string;
+      otpChannel: 'phone' | 'email';
+    };
 
 @Injectable()
 export class AuthService {
@@ -230,6 +248,7 @@ export class AuthService {
           deviceName: device.deviceName,
         },
         tx,
+        { markTrusted: true },
       );
 
       await tx.refreshToken.create({
@@ -261,13 +280,11 @@ export class AuthService {
     };
   }
 
-  async login(dto: LoginDto): Promise<{
-    accessToken: string;
-    refreshToken: string;
-    expiresIn: number;
-    user: PublicUser;
-    device: { id: string; deviceId: string; platform: string };
-  }> {
+  async login(
+    dto: LoginDto,
+    ipAddress: string | undefined,
+    userAgent: string | undefined,
+  ): Promise<LoginResult> {
     const id = parseLoginIdentifier(dto.identifier);
     const user = await this.prisma.user.findFirst({
       where:
@@ -288,6 +305,106 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    const existing = await this.prisma.userDevice.findUnique({
+      where: {
+        userId_deviceId: { userId: user.id, deviceId: dto.deviceId },
+      },
+    });
+
+    if (existing?.isTrusted === true) {
+      const session = await this.openPasswordSession(user, dto, {});
+      return { requiresDeviceVerification: false, ...session };
+    }
+
+    const dest = this.resolveLoginDeviceOtpDestination(user);
+    await this.otpRequests.startOtpRequest(
+      OtpPurpose.LOGIN_DEVICE,
+      dest.phoneNumber,
+      dest.email,
+      ipAddress,
+      userAgent,
+    );
+
+    const challenge: LoginDeviceChallengePayload = {
+      typ: 'login_device_challenge',
+      userId: user.id,
+      deviceId: dto.deviceId,
+      platform: dto.platform,
+      appVersion: dto.appVersion,
+      deviceName: dto.deviceName?.trim() ? dto.deviceName.trim() : null,
+      otpChannel: dest.otpChannel,
+      otpPhone: dest.phoneNumber ?? null,
+      otpEmail: dest.email ?? null,
+    };
+
+    const deviceVerificationToken =
+      await this.tokens.signLoginDeviceChallengeToken(challenge);
+
+    return {
+      requiresDeviceVerification: true,
+      deviceVerificationToken,
+      otpChannel: dest.otpChannel,
+    };
+  }
+
+  async verifyLoginDeviceOtp(dto: VerifyLoginDeviceOtpDto): Promise<LoginResult> {
+    const challenge =
+      await this.tokens.verifyLoginDeviceChallengeToken(
+        dto.deviceVerificationToken,
+      );
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: challenge.userId },
+    });
+
+    if (!user || !user.isActive || !user.passwordHash) {
+      throw new UnauthorizedException('Invalid or expired device verification');
+    }
+
+    await this.otpRequests.verifyOtpAndConsume(
+      OtpPurpose.LOGIN_DEVICE,
+      challenge.otpPhone ?? undefined,
+      challenge.otpEmail ?? undefined,
+      dto.otp,
+    );
+
+    const session = await this.openPasswordSession(
+      user,
+      {
+        deviceId: challenge.deviceId,
+        platform: challenge.platform,
+        appVersion: challenge.appVersion,
+        deviceName: challenge.deviceName ?? undefined,
+      },
+      { markTrusted: true },
+    );
+
+    return { requiresDeviceVerification: false, ...session };
+  }
+
+  private resolveLoginDeviceOtpDestination(user: User): {
+    otpChannel: 'phone' | 'email';
+    phoneNumber?: string;
+    email?: string;
+  } {
+    const phone = user.phoneNumber?.trim();
+    if (phone && phone.length > 0) {
+      return { otpChannel: 'phone', phoneNumber: phone };
+    }
+    const email = user.email?.trim().toLowerCase();
+    if (email && email.length > 0) {
+      return { otpChannel: 'email', email };
+    }
+    throw new BadRequestException(
+      'Add a phone number or email to your account to sign in from new devices',
+    );
+  }
+
+  private async openPasswordSession(
+    user: User,
+    dto: Pick<LoginDto, 'deviceId' | 'platform' | 'appVersion' | 'deviceName'>,
+    deviceOptions: { markTrusted?: boolean },
+  ): Promise<LoginSessionPayload> {
     const refreshRaw = this.tokens.generateRefreshToken();
     const tokenHash = this.tokens.hashRefreshToken(refreshRaw);
     const expiresAt = this.tokens.getRefreshExpiresAt();
@@ -302,6 +419,7 @@ export class AuthService {
           deviceName: dto.deviceName,
         },
         tx,
+        deviceOptions.markTrusted ? { markTrusted: true } : undefined,
       );
 
       await tx.refreshToken.updateMany({

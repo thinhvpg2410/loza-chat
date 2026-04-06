@@ -8,6 +8,7 @@ import { ContactOtpDto, VerifyContactOtpDto } from './dto/contact-otp.dto';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { ForgotPasswordResetDto } from './dto/forgot-password-reset.dto';
 import { LoginDto } from './dto/login.dto';
+import { VerifyLoginDeviceOtpDto } from './dto/verify-login-device-otp.dto';
 import { LogoutBodyDto } from './dto/logout-body.dto';
 import { RefreshBodyDto } from './dto/refresh-body.dto';
 
@@ -45,9 +46,25 @@ export class AuthController {
   }
 
   @Post('login')
-  @ApiOperation({ summary: 'Login with email or phone + password' })
-  login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  @ApiOperation({
+    summary:
+      'Login with email or phone + password; trusted device returns tokens, new device returns verification challenge',
+  })
+  login(@Body() dto: LoginDto, @Req() req: Request) {
+    return this.authService.login(
+      dto,
+      this.clientIp(req),
+      this.clientUa(req),
+    );
+  }
+
+  @Post('login/verify-device-otp')
+  @ApiOperation({
+    summary:
+      'Complete login on an untrusted device after OTP sent to account phone (preferred) or email',
+  })
+  verifyLoginDeviceOtp(@Body() dto: VerifyLoginDeviceOtpDto) {
+    return this.authService.verifyLoginDeviceOtp(dto);
   }
 
   @Post('forgot-password/request-otp')

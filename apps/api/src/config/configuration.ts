@@ -13,6 +13,8 @@ export type AppConfiguration = {
     refreshExpiresDays: number;
     /** Short-lived JWT after OTP proof (register / forgot password) */
     otpProofExpiresIn: string;
+    /** Short-lived JWT after password OK on an untrusted device (before device OTP) */
+    loginDeviceChallengeExpiresIn: string;
   };
   otp: {
     expiresMinutes: number;
@@ -56,6 +58,8 @@ export default (): AppConfiguration => ({
       10,
     ),
     otpProofExpiresIn: process.env.JWT_OTP_PROOF_EXPIRES_IN ?? '15m',
+    loginDeviceChallengeExpiresIn:
+      process.env.JWT_LOGIN_DEVICE_CHALLENGE_EXPIRES_IN ?? '10m',
   },
   otp: {
     expiresMinutes: parseInt(process.env.OTP_EXPIRES_MINUTES ?? '2', 10),

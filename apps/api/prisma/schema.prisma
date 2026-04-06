@@ -113,6 +113,8 @@ model UserDevice {
   platform   String
   appVersion String   @map("app_version")
   deviceName String?  @map("device_name")
+  /// Known/trusted after login device OTP (or true at registration on first device).
+  isTrusted  Boolean  @default(false) @map("is_trusted")
   lastSeenAt DateTime @default(now()) @map("last_seen_at")
   isActive   Boolean  @default(true) @map("is_active")
   createdAt  DateTime @default(now()) @map("created_at")
