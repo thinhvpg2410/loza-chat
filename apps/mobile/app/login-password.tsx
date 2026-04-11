@@ -1,5 +1,7 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
+import { Pressable } from "react-native";
 
 import { AuthHeader } from "@components/auth";
 import { AppButton } from "@ui/AppButton";
@@ -8,7 +10,7 @@ import { AppScreen } from "@ui/AppScreen";
 import { AppText } from "@ui/AppText";
 import { getApiErrorMessage, loginWithDevice } from "@/services/api/api";
 import { useAuthStore } from "@/store/authStore";
-import { spacing } from "@theme";
+import { colors, spacing } from "@theme";
 
 const MIN_PASSWORD = 8;
 
@@ -21,6 +23,7 @@ export default function LoginPasswordScreen() {
   const identifier = (params.identifier ?? params.phone ?? "").trim();
 
   const [password, setPassword] = useState("");
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);
 
@@ -95,10 +98,25 @@ export default function LoginPasswordScreen() {
           setPassword(t);
           setError(undefined);
         }}
-        secureTextEntry
+        secureTextEntry={!passwordVisible}
         autoCapitalize="none"
         compact
         error={error}
+        endAdornment={
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={passwordVisible ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+            hitSlop={10}
+            onPress={() => setPasswordVisible((v) => !v)}
+            style={({ pressed }) => ({ opacity: pressed ? 0.65 : 1 })}
+          >
+            <Ionicons
+              name={passwordVisible ? "eye-off-outline" : "eye-outline"}
+              size={22}
+              color={colors.textMuted}
+            />
+          </Pressable>
+        }
       />
 
       <AppText

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useState } from "react";
 import {
   StyleSheet,
@@ -16,6 +17,8 @@ type AppInputProps = TextInputProps & {
   containerStyle?: ViewStyle;
   /** Tighter field for dense flows (e.g. auth). */
   compact?: boolean;
+  /** Nút/icon bên phải (ví dụ hiện/ẩn mật khẩu). */
+  endAdornment?: ReactNode;
 };
 
 export function AppInput({
@@ -25,6 +28,7 @@ export function AppInput({
   style,
   editable = true,
   compact = false,
+  endAdornment,
   onBlur,
   onFocus,
   ...rest
@@ -38,6 +42,16 @@ export function AppInput({
       ? colors.primary
       : colors.border;
 
+  const inputShellStyle = [
+    compact ? styles.inputCompact : styles.input,
+    compact ? typography.subhead : typography.body,
+    {
+      backgroundColor: editable ? colors.background : colors.surface,
+      color: colors.text,
+    },
+    style,
+  ];
+
   return (
     <View style={[{ width: "100%" }, containerStyle]}>
       {label ? (
@@ -49,29 +63,54 @@ export function AppInput({
           {label}
         </AppText>
       ) : null}
-      <TextInput
-        editable={editable}
-        placeholderTextColor={colors.textPlaceholder}
-        style={[
-          compact ? styles.inputCompact : styles.input,
-          compact ? typography.subhead : typography.body,
-          {
-            borderColor,
-            backgroundColor: editable ? colors.background : colors.surface,
-            color: colors.text,
-          },
-          style,
-        ]}
-        onBlur={(e) => {
-          setFocused(false);
-          onBlur?.(e);
-        }}
-        onFocus={(e) => {
-          setFocused(true);
-          onFocus?.(e);
-        }}
-        {...rest}
-      />
+      {endAdornment ? (
+        <View
+          style={[
+            styles.inputRow,
+            compact ? styles.inputRowCompact : styles.inputRowDefault,
+            {
+              borderColor,
+              backgroundColor: editable ? colors.background : colors.surface,
+            },
+          ]}
+        >
+          <TextInput
+            editable={editable}
+            placeholderTextColor={colors.textPlaceholder}
+            style={[inputShellStyle, styles.inputInRow]}
+            onBlur={(e) => {
+              setFocused(false);
+              onBlur?.(e);
+            }}
+            onFocus={(e) => {
+              setFocused(true);
+              onFocus?.(e);
+            }}
+            {...rest}
+          />
+          <View style={styles.endAdornment}>{endAdornment}</View>
+        </View>
+      ) : (
+        <TextInput
+          editable={editable}
+          placeholderTextColor={colors.textPlaceholder}
+          style={[
+            inputShellStyle,
+            {
+              borderColor,
+            },
+          ]}
+          onBlur={(e) => {
+            setFocused(false);
+            onBlur?.(e);
+          }}
+          onFocus={(e) => {
+            setFocused(true);
+            onFocus?.(e);
+          }}
+          {...rest}
+        />
+      )}
       {hasError ? (
         <AppText variant="caption" color="danger" style={{ marginTop: spacing.xs }}>
           {error}
@@ -95,5 +134,31 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     borderRadius: radius.md,
     borderWidth: StyleSheet.hairlineWidth,
+  },
+  inputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    minWidth: 0,
+  },
+  inputRowDefault: {
+    minHeight: 44,
+    paddingRight: spacing.xs,
+  },
+  inputRowCompact: {
+    minHeight: 40,
+    paddingRight: spacing.xs,
+  },
+  inputInRow: {
+    flex: 1,
+    minWidth: 0,
+    borderWidth: 0,
+    paddingRight: spacing.xs,
+  },
+  endAdornment: {
+    justifyContent: "center",
+    alignItems: "center",
+    paddingRight: spacing.sm,
   },
 });

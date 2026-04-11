@@ -17,7 +17,6 @@ import {
   type MockSticker,
   ReactionPickerSheet,
   StickerPickerSheet,
-  TypingIndicator,
 } from "@components/chat";
 import { getMockThreadMessages, toggleReactionOnMessage, type ChatRoomMessage, type ReplyReference } from "@features/chat-room";
 import { MOCK_CONVERSATIONS } from "@/constants/mockData";
@@ -113,7 +112,6 @@ export default function ChatRoomScreen() {
 
   const [messages, setMessages] = useState<ChatRoomMessage[]>(() => getMockThreadMessages(id));
   const [draft, setDraft] = useState("");
-  const [peerTyping, setPeerTyping] = useState(false);
 
   const [replyingTo, setReplyingTo] = useState<ReplyReference | null>(null);
 
@@ -129,15 +127,6 @@ export default function ChatRoomScreen() {
   useEffect(() => {
     setMessages(getMockThreadMessages(id));
     setReplyingTo(null);
-  }, [id]);
-
-  useEffect(() => {
-    const show = setTimeout(() => setPeerTyping(true), 1800);
-    const hide = setTimeout(() => setPeerTyping(false), 5200);
-    return () => {
-      clearTimeout(show);
-      clearTimeout(hide);
-    };
   }, [id]);
 
   const openImageViewer = useCallback((uri: string) => {
@@ -323,7 +312,6 @@ export default function ChatRoomScreen() {
           onImagePress={openImageViewer}
           onReactionEmoji={onReactionEmoji}
         />
-        <TypingIndicator visible={peerTyping} />
         <MessageInputBar
           value={draft}
           onChangeText={setDraft}

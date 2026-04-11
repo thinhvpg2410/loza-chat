@@ -366,3 +366,27 @@ export async function logoutRequest(refreshToken: string): Promise<{ message: st
   const { data } = await apiClient.post<{ message: string }>("/auth/logout", { refreshToken });
   return data;
 }
+
+export async function qrLoginScan(sessionToken: string): Promise<{ ok: true }> {
+  if (USE_API_MOCK) {
+    throw new Error("QR đăng nhập web cần API thật (tắt EXPO_PUBLIC_USE_API_MOCK).");
+  }
+  const { data } = await apiClient.post<{ ok: true }>("/auth/qr/scan", { sessionToken });
+  return data;
+}
+
+export async function qrLoginApprove(sessionToken: string): Promise<{ ok: true }> {
+  if (USE_API_MOCK) {
+    throw new Error("QR đăng nhập web cần API thật (tắt EXPO_PUBLIC_USE_API_MOCK).");
+  }
+  const { data } = await apiClient.post<{ ok: true }>("/auth/qr/approve", { sessionToken });
+  return data;
+}
+
+export async function qrLoginReject(sessionToken: string): Promise<{ ok: true }> {
+  if (USE_API_MOCK) {
+    throw new Error("QR đăng nhập web cần API thật (tắt EXPO_PUBLIC_USE_API_MOCK).");
+  }
+  const { data } = await apiClient.post<{ ok: true }>("/auth/qr/reject", { sessionToken });
+  return data;
+}

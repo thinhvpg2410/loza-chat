@@ -2,10 +2,7 @@ import type { MockConversation } from "@/constants/mockData";
 import { MOCK_CONVERSATIONS } from "@/constants/mockData";
 import { create } from "zustand";
 
-/**
- * Conversation list + mock fetch — used by Expo Router tabs.
- * Thread UI uses `features/chat-room` local state; no duplicate message store here.
- */
+
 type ChatState = {
   conversations: MockConversation[];
   loading: boolean;

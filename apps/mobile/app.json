@@ -9,7 +9,10 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Ứng dụng cần camera để quét mã QR đăng nhập web."
+      }
     },
     "android": {
       "softwareKeyboardLayoutMode": "resize",
@@ -30,6 +33,13 @@
         "expo-image-picker",
         {
           "photosPermission": "Ứng dụng cần truy cập ảnh để đặt ảnh đại diện."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Ứng dụng cần camera để quét mã QR đăng nhập web.",
+          "recordAudioAndroid": false
         }
       ],
       [

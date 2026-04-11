@@ -62,6 +62,7 @@ export default function ProfileEditScreen() {
     setError(undefined);
     try {
       const u = await fetchCurrentProfile();
+      setUser(u);
       const bd = u.birthDate ? isoToDdMmYyyy(u.birthDate) : "";
       setDisplayName(u.name);
       setUsername(u.username ?? "");
@@ -82,7 +83,7 @@ export default function ProfileEditScreen() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [setUser]);
 
   useEffect(() => {
     void load();

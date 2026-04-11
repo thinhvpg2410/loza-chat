@@ -49,6 +49,10 @@ type AuthState = {
   setResetToken: (token: string | null) => void;
   setDeviceLoginChallenge: (challenge: DeviceLoginChallenge | null) => void;
   login: (payload: { accessToken: string; refreshToken: string; user: AuthUser }) => Promise<void>;
+  /** Cập nhật cặp token sau /auth/refresh (giữ user hiện tại, ghi lại storage). */
+  applyTokenRefresh: (payload: { accessToken: string; refreshToken: string }) => Promise<void>;
+  /** Gọi GET /users/me và cập nhật user trong store (đồng bộ web ↔ mobile). */
+  syncProfileFromServer: () => Promise<void>;
   logout: () => Promise<void>;
   hydrate: () => Promise<void>;
 };
@@ -66,6 +70,9 @@ async function readSession(): Promise<PersistedAuth | null> {
     return null;
   }
 }
+
+let lastProfileSyncAtMs = 0;
+const PROFILE_SYNC_MIN_INTERVAL_MS = 4000;
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   phone: "",
@@ -111,6 +118,34 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       user,
       isAuthenticated: true,
     });
+  },
+
+  applyTokenRefresh: async ({ accessToken, refreshToken }) => {
+    const user = get().user;
+    if (!user) return;
+    set({ accessToken, refreshToken });
+    await persistSession({
+      accessToken,
+      refreshToken,
+      user,
+      isAuthenticated: true,
+    });
+  },
+
+  syncProfileFromServer: async () => {
+    if (USE_API_MOCK) return;
+    const { isAuthenticated, accessToken } = get();
+    if (!isAuthenticated || !accessToken) return;
+    const now = Date.now();
+    if (now - lastProfileSyncAtMs < PROFILE_SYNC_MIN_INTERVAL_MS) return;
+    lastProfileSyncAtMs = now;
+    try {
+      const { fetchCurrentProfile } = await import("@/services/profile/profileApi");
+      const u = await fetchCurrentProfile();
+      get().setUser(u);
+    } catch {
+      // Transient network / auth errors: keep cached user.
+    }
   },
 
   logout: async () => {

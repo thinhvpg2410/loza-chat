@@ -74,7 +74,7 @@ export default function ChatsTabScreen() {
       <Pressable
         accessibilityLabel="Quét QR"
         hitSlop={8}
-        onPress={() => {}}
+        onPress={() => router.push("/main/qr-login-scan")}
         style={({ pressed }) => ({ opacity: pressed ? 0.65 : 1, padding: spacing.xs })}
       >
         <Ionicons name="qr-code-outline" size={20} color={colors.primary} />
@@ -126,7 +126,7 @@ export default function ChatsTabScreen() {
               <EmptyState
                 icon="chatbubbles-outline"
                 title="Chưa có trò chuyện"
-                description="Danh sách sẽ cập nhật khi có tin nhắn mới."
+                description="Hãy kết bạn để có thể bắt đầu trò chuyện."
               />
             ) : searchEmpty ? (
               <EmptyState

@@ -1,8 +1,10 @@
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
-import { Alert, Pressable, View } from "react-native";
+import { Alert, Pressable, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 
+import { TermsOfServiceModal } from "@components/legal/TermsOfServiceModal";
 import { AuthHeader } from "@components/auth";
 import { AppAvatar } from "@ui/AppAvatar";
 import { AppButton } from "@ui/AppButton";
@@ -13,7 +15,7 @@ import { USE_API_MOCK } from "@/constants/env";
 import { createAccount, getApiErrorMessage } from "@/services/api/api";
 import { uploadAvatarFromLocalUri } from "@/services/profile/uploadAvatarFromUri";
 import { useAuthStore } from "@/store/authStore";
-import { spacing } from "@theme";
+import { colors, spacing } from "@theme";
 
 const MIN_PASSWORD = 8;
 
@@ -31,8 +33,10 @@ export default function ProfileSetupScreen() {
   const [busy, setBusy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | undefined>();
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [termsModalVisible, setTermsModalVisible] = useState(false);
 
-  const canContinueMock = name.trim().length >= 2;
+  const canContinueMock = name.trim().length >= 2 && termsAccepted;
 
   const passwordError = useMemo(() => {
     if (USE_API_MOCK) return undefined;
@@ -45,7 +49,8 @@ export default function ProfileSetupScreen() {
     name.trim().length >= 2 &&
     password.length >= MIN_PASSWORD &&
     password === passwordConfirm &&
-    Boolean(otpProofToken);
+    Boolean(otpProofToken) &&
+    termsAccepted;
 
   const pickAvatar = async () => {
     setBusy(true);
@@ -214,6 +219,45 @@ export default function ProfileSetupScreen() {
         autoCorrect
         compact
       />
+
+      <View style={{ height: spacing.md }} />
+
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: spacing.sm }}>
+        <Pressable
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: termsAccepted }}
+          accessibilityLabel="Đã đọc điều khoản và dịch vụ"
+          onPress={() => setTermsAccepted((v) => !v)}
+          style={{ paddingTop: 2 }}
+          hitSlop={8}
+        >
+          <Ionicons
+            name={termsAccepted ? "checkbox" : "square-outline"}
+            size={22}
+            color={termsAccepted ? colors.primary : colors.textMuted}
+          />
+        </Pressable>
+        <Text
+          maxFontSizeMultiplier={1.25}
+          style={{
+            flex: 1,
+            fontSize: 13,
+            lineHeight: 18,
+            color: colors.text,
+          }}
+        >
+          <Text onPress={() => setTermsAccepted((v) => !v)}>Tôi đã đọc </Text>
+          <Text
+            style={{ color: colors.primary, textDecorationLine: "underline" }}
+            onPress={() => setTermsModalVisible(true)}
+          >
+            Điều khoản và dịch vụ
+          </Text>
+          <Text onPress={() => setTermsAccepted((v) => !v)}>.</Text>
+        </Text>
+      </View>
+
+      <TermsOfServiceModal visible={termsModalVisible} onClose={() => setTermsModalVisible(false)} />
 
       {formError ? (
         <AppText variant="caption" color="danger" style={{ marginTop: spacing.sm }}>

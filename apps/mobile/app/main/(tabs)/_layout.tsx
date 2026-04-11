@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { Tabs } from "expo-router";
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -18,6 +19,12 @@ export default function MainTabsLayout() {
   useEffect(() => {
     useUserStore.getState().setUserFromAuth(authUser);
   }, [authUser]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void useAuthStore.getState().syncProfileFromServer();
+    }, []),
+  );
 
   useEffect(() => {
     void fetchConversations();
