@@ -1,11 +1,13 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
+  IsDateString,
   IsOptional,
   IsString,
   Matches,
   MaxLength,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 
 export class UpdateProfileDto {
@@ -51,4 +53,12 @@ export class UpdateProfileDto {
       'username must contain only lowercase letters, digits, and underscores',
   })
   username?: string;
+
+  @ApiPropertyOptional({
+    description: 'YYYY-MM-DD; send null to clear',
+  })
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null && v !== undefined)
+  @IsDateString()
+  birthDate?: string | null;
 }

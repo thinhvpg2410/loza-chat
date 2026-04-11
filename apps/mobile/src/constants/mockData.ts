@@ -1,3 +1,5 @@
+export type ConversationKind = "direct" | "group";
+
 export type MockConversation = {
   id: string;
   name: string;
@@ -7,6 +9,14 @@ export type MockConversation = {
   avatarUrl: string;
   isPinned?: boolean;
   verified?: boolean;
+  /** Muted conversation — preview muted styling + icon */
+  isMuted?: boolean;
+  /** Peer online (direct chat / last seen UX placeholder) */
+  isOnline?: boolean;
+  /** Group thread — list row + chat header use group UX */
+  kind?: ConversationKind;
+  /** Group only — shown on list row / header */
+  memberCount?: number;
 };
 
 export type MockFriend = {
@@ -15,6 +25,21 @@ export type MockFriend = {
   avatarUrl: string;
   isOnline: boolean;
   subtitle?: string;
+  /** @loza_username style */
+  username?: string;
+  phone?: string;
+};
+
+/** Incoming friend request — mock */
+export type MockFriendRequest = {
+  id: string;
+  peer: MockFriend;
+};
+
+/** Outgoing friend request — mock */
+export type MockOutgoingFriendRequest = {
+  id: string;
+  peer: MockFriend;
 };
 
 export type MockPost = {
@@ -29,56 +54,8 @@ export type MockPost = {
   timeLabel: string;
 };
 
-export const MOCK_CONVERSATIONS: MockConversation[] = [
-  {
-    id: "1",
-    name: "Em 🫶",
-    lastMessage: "Ok nhé anh, em gửi file sau",
-    time: "22 giờ",
-    unreadCount: 2,
-    avatarUrl: "https://i.pravatar.cc/150?img=32",
-    isPinned: true,
-  },
-  {
-    id: "2",
-    name: "My Documents",
-    lastMessage: "Bạn đã nhận được tài liệu",
-    time: "37 phút",
-    avatarUrl: "https://i.pravatar.cc/150?img=12",
-    verified: true,
-  },
-  {
-    id: "3",
-    name: "Nhóm 12 KTPM",
-    lastMessage: "Lan: @Bạn có thể xem lịch thi...",
-    time: "3 giờ",
-    unreadCount: 1,
-    avatarUrl: "https://i.pravatar.cc/150?img=5",
-  },
-  {
-    id: "4",
-    name: "Zalo Official",
-    lastMessage: "Cập nhật tính năng mới",
-    time: "Hôm qua",
-    avatarUrl: "https://i.pravatar.cc/150?img=60",
-    verified: true,
-  },
-  {
-    id: "5",
-    name: "Anh Tuấn",
-    lastMessage: "👍👍",
-    time: "T2",
-    avatarUrl: "https://i.pravatar.cc/150?img=15",
-  },
-  {
-    id: "6",
-    name: "Team Design",
-    lastMessage: "Đã upload Figma",
-    time: "CN",
-    unreadCount: 5,
-    avatarUrl: "https://i.pravatar.cc/150?img=45",
-  },
-];
+/** Tạm thời trống — trải nghiệm như tài khoản mới, chưa có hội thoại. */
+export const MOCK_CONVERSATIONS: MockConversation[] = [];
 
 export const MOCK_FRIENDS: MockFriend[] = [
   {
@@ -87,6 +64,8 @@ export const MOCK_FRIENDS: MockFriend[] = [
     avatarUrl: "https://i.pravatar.cc/150?img=1",
     isOnline: true,
     subtitle: "Đang hoạt động",
+    username: "minh.anh",
+    phone: "+84 901 234 567",
   },
   {
     id: "f2",
@@ -94,6 +73,8 @@ export const MOCK_FRIENDS: MockFriend[] = [
     avatarUrl: "https://i.pravatar.cc/150?img=2",
     isOnline: true,
     subtitle: "Đang nghe nhạc",
+    username: "qhuy.dev",
+    phone: "+84 902 111 222",
   },
   {
     id: "f3",
@@ -101,6 +82,8 @@ export const MOCK_FRIENDS: MockFriend[] = [
     avatarUrl: "https://i.pravatar.cc/150?img=3",
     isOnline: false,
     subtitle: "30 phút trước",
+    username: "thuha",
+    phone: "+84 903 333 444",
   },
   {
     id: "f4",
@@ -108,12 +91,122 @@ export const MOCK_FRIENDS: MockFriend[] = [
     avatarUrl: "https://i.pravatar.cc/150?img=4",
     isOnline: false,
     subtitle: "Hôm qua",
+    username: "ducthang",
+    phone: "+84 904 555 666",
   },
   {
     id: "f5",
     name: "Lan Chi",
     avatarUrl: "https://i.pravatar.cc/150?img=5",
     isOnline: true,
+    username: "lan.chi",
+    phone: "+84 905 777 888",
+  },
+  {
+    id: "f6",
+    name: "An Bình",
+    avatarUrl: "https://i.pravatar.cc/150?img=6",
+    isOnline: false,
+    subtitle: "Đang bận",
+    username: "an.binh",
+    phone: "+84 906 000 001",
+  },
+  {
+    id: "f7",
+    name: "Bảo Ngọc",
+    avatarUrl: "https://i.pravatar.cc/150?img=7",
+    isOnline: true,
+    username: "baongoc",
+    phone: "+84 907 000 002",
+  },
+  {
+    id: "f8",
+    name: "Cường Lê",
+    avatarUrl: "https://i.pravatar.cc/150?img=8",
+    isOnline: false,
+    subtitle: "2 giờ trước",
+    username: "cuong.le",
+    phone: "+84 908 000 003",
+  },
+  {
+    id: "f9",
+    name: "Hoàng Nam",
+    avatarUrl: "https://i.pravatar.cc/150?img=9",
+    isOnline: true,
+    username: "hoangnam",
+    phone: "+84 909 000 004",
+  },
+  {
+    id: "f10",
+    name: "Ngọc Trâm",
+    avatarUrl: "https://i.pravatar.cc/150?img=10",
+    isOnline: false,
+    subtitle: "Vừa xong",
+    username: "ngoctram",
+    phone: "+84 910 000 005",
+  },
+];
+
+/** Mock — lời mời đến */
+export const MOCK_INCOMING_FRIEND_REQUESTS: MockFriendRequest[] = [
+  {
+    id: "req-in-1",
+    peer: {
+      id: "u-in-1",
+      name: "Phương Linh",
+      avatarUrl: "https://i.pravatar.cc/150?img=25",
+      isOnline: true,
+      subtitle: "3 bạn chung",
+      username: "phuonglinh",
+      phone: "+84 911 222 333",
+    },
+  },
+  {
+    id: "req-in-2",
+    peer: {
+      id: "u-in-2",
+      name: "Trần Kiên",
+      avatarUrl: "https://i.pravatar.cc/150?img=26",
+      isOnline: false,
+      username: "kientran",
+      phone: "+84 912 444 555",
+    },
+  },
+];
+
+/** Mock — đã gửi lời mời */
+export const MOCK_OUTGOING_FRIEND_REQUESTS: MockOutgoingFriendRequest[] = [
+  {
+    id: "req-out-1",
+    peer: {
+      id: "u-out-1",
+      name: "Mai Phương",
+      avatarUrl: "https://i.pravatar.cc/150?img=27",
+      isOnline: false,
+      subtitle: "Chờ phản hồi",
+      username: "maiphuong",
+      phone: "+84 913 666 777",
+    },
+  },
+];
+
+/** Users discoverable by search (not necessarily friends) — demo lookup */
+export const MOCK_SEARCH_USERS: MockFriend[] = [
+  {
+    id: "u-search-1",
+    name: "Văn Tài",
+    avatarUrl: "https://i.pravatar.cc/150?img=30",
+    isOnline: false,
+    username: "vantai",
+    phone: "+84 990 000 001",
+  },
+  {
+    id: "u-search-2",
+    name: "Lệ Hằng",
+    avatarUrl: "https://i.pravatar.cc/150?img=31",
+    isOnline: true,
+    username: "lehang",
+    phone: "+84 990 000 002",
   },
 ];
 

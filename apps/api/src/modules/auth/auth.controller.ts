@@ -1,33 +1,153 @@
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { GetUser } from './decorators/get-user.decorator';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { AuthService } from './auth.service';
+import { ContactOtpDto, VerifyContactOtpDto } from './dto/contact-otp.dto';
+import { CreateAccountDto } from './dto/create-account.dto';
+import { ForgotPasswordResetDto } from './dto/forgot-password-reset.dto';
+import { LoginDto } from './dto/login.dto';
+import { QrCreateDto } from './dto/qr-create.dto';
+import { QrSessionTokenDto } from './dto/qr-session-token.dto';
+import { VerifyLoginDeviceOtpDto } from './dto/verify-login-device-otp.dto';
 import { LogoutBodyDto } from './dto/logout-body.dto';
 import { RefreshBodyDto } from './dto/refresh-body.dto';
-import { RequestOtpDto } from './dto/request-otp.dto';
-import { VerifyOtpDto } from './dto/verify-otp.dto';
-import { AuthService } from './auth.service';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  @Post('request-otp')
-  @ApiOperation({ summary: 'Request SMS OTP (logged in development only)' })
-  requestOtp(@Body() dto: RequestOtpDto, @Req() req: Request) {
-    return this.authService.requestOtp(
+  @Post('register/request-otp')
+  @ApiOperation({ summary: 'Request OTP for registration (SMS/email dev-only)' })
+  registerRequestOtp(
+    @Body() dto: ContactOtpDto,
+    @Req() req: Request,
+  ): Promise<{ message: string }> {
+    return this.authService.registerRequestOtp(
       dto.phoneNumber,
+      dto.email,
       this.clientIp(req),
       this.clientUa(req),
     );
   }
 
-  @Post('verify-otp')
-  @ApiOperation({ summary: 'Verify OTP and open session (device required)' })
-  verifyOtp(@Body() dto: VerifyOtpDto) {
-    return this.authService.verifyOtp(dto);
+  @Post('register/verify-otp')
+  @ApiOperation({ summary: 'Verify registration OTP; returns short-lived token for create-account' })
+  registerVerifyOtp(@Body() dto: VerifyContactOtpDto): Promise<{ token: string }> {
+    return this.authService.registerVerifyOtp(dto);
+  }
+
+  @Post('register/create-account')
+  @ApiOperation({
+    summary: 'Create password and account after registration OTP; opens session',
+  })
+  createAccount(@Body() dto: CreateAccountDto) {
+    return this.authService.createAccount(dto);
+  }
+
+  @Post('login')
+  @ApiOperation({
+    summary:
+      'Login with email or phone + password; trusted device returns tokens, new device returns verification challenge',
+  })
+  login(@Body() dto: LoginDto, @Req() req: Request) {
+    return this.authService.login(
+      dto,
+      this.clientIp(req),
+      this.clientUa(req),
+    );
+  }
+
+  @Post('login/verify-device-otp')
+  @ApiOperation({
+    summary:
+      'Complete login on an untrusted device after OTP sent to account phone (preferred) or email',
+  })
+  verifyLoginDeviceOtp(@Body() dto: VerifyLoginDeviceOtpDto) {
+    return this.authService.verifyLoginDeviceOtp(dto);
+  }
+
+  @Post('qr/create')
+  @ApiOperation({
+    summary:
+      'Create a short-lived QR login session (web). Put sessionToken in QR for mobile to scan.',
+  })
+  qrCreate(@Body() dto: QrCreateDto) {
+    return this.authService.qrCreate(dto);
+  }
+
+  @Get('qr/status/:sessionToken')
+  @ApiOperation({
+    summary:
+      'Poll QR login status; when approved, first poll returns access/refresh (one-time)',
+  })
+  qrStatus(@Param('sessionToken') sessionToken: string) {
+    return this.authService.qrGetStatus(sessionToken);
+  }
+
+  @Post('qr/scan')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Authenticated mobile: record scan of web QR session' })
+  qrScan(@GetUser('id') userId: string, @Body() dto: QrSessionTokenDto) {
+    return this.authService.qrScan(userId, dto.sessionToken);
+  }
+
+  @Post('qr/approve')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary:
+      'Authenticated mobile: approve web login (issues same session as password login)',
+  })
+  qrApprove(@GetUser('id') userId: string, @Body() dto: QrSessionTokenDto) {
+    return this.authService.qrApprove(userId, dto.sessionToken);
+  }
+
+  @Post('qr/reject')
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Authenticated mobile: reject web QR login after scan' })
+  qrReject(@GetUser('id') userId: string, @Body() dto: QrSessionTokenDto) {
+    return this.authService.qrReject(userId, dto.sessionToken);
+  }
+
+  @Post('forgot-password/request-otp')
+  @ApiOperation({ summary: 'Request OTP for password reset' })
+  forgotPasswordRequestOtp(
+    @Body() dto: ContactOtpDto,
+    @Req() req: Request,
+  ): Promise<{ message: string }> {
+    return this.authService.forgotPasswordRequestOtp(
+      dto.phoneNumber,
+      dto.email,
+      this.clientIp(req),
+      this.clientUa(req),
+    );
+  }
+
+  @Post('forgot-password/verify-otp')
+  @ApiOperation({ summary: 'Verify forgot-password OTP; returns reset token' })
+  forgotPasswordVerifyOtp(
+    @Body() dto: VerifyContactOtpDto,
+  ): Promise<{ token: string }> {
+    return this.authService.forgotPasswordVerifyOtp(dto);
+  }
+
+  @Post('forgot-password/reset')
+  @ApiOperation({ summary: 'Set new password after forgot-password OTP' })
+  forgotPasswordReset(@Body() dto: ForgotPasswordResetDto) {
+    return this.authService.forgotPasswordReset(dto);
   }
 
   @Post('refresh')

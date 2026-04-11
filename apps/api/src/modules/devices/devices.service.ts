@@ -11,6 +11,11 @@ export type DeviceLoginInput = {
   deviceName?: string;
 };
 
+export type UpsertDeviceOptions = {
+  /** When true, mark device as trusted (registration or login device OTP). */
+  markTrusted?: boolean;
+};
+
 @Injectable()
 export class DevicesService {
   constructor(private readonly prisma: PrismaService) {}
@@ -19,7 +24,9 @@ export class DevicesService {
     userId: string,
     input: DeviceLoginInput,
     db: DeviceDbClient = this.prisma,
+    options?: UpsertDeviceOptions,
   ): Promise<UserDevice> {
+    const markTrusted = options?.markTrusted === true;
     return db.userDevice.upsert({
       where: {
         userId_deviceId: { userId, deviceId: input.deviceId },
@@ -31,6 +38,7 @@ export class DevicesService {
         appVersion: input.appVersion,
         deviceName: input.deviceName ?? null,
         lastSeenAt: new Date(),
+        isTrusted: markTrusted,
       },
       update: {
         platform: input.platform,
@@ -40,6 +48,7 @@ export class DevicesService {
           : {}),
         lastSeenAt: new Date(),
         isActive: true,
+        ...(markTrusted ? { isTrusted: true } : {}),
       },
     });
   }

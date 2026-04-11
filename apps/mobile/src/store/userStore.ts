@@ -41,6 +41,7 @@ export const useUserStore = create<UserState>((set) => ({
         id: authUser.id,
         name: authUser.name,
         avatarUrl: authUser.avatarUri,
+        bio: authUser.statusMessage,
       },
     });
   },

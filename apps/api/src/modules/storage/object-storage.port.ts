@@ -9,6 +9,8 @@ export type CreatePresignedPutParams = {
   key: string;
   contentType: string;
   expiresInSeconds: number;
+  /** Set for mock storage so the presigned URL targets PUT /uploads/mock-upload/:id */
+  uploadSessionId?: string;
 };
 
 export type VerifyObjectParams = {

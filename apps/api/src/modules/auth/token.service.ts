@@ -1,8 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { createHash, randomBytes } from 'crypto';
+import type { SignOptions } from 'jsonwebtoken';
 import type { AccessTokenPayload } from './interfaces/jwt-payload.interface';
+import type { LoginDeviceChallengePayload } from './interfaces/login-device-challenge-payload.interface';
+import type { OtpProofPayload } from './interfaces/otp-proof-payload.interface';
 
 @Injectable()
 export class TokenService {
@@ -55,5 +58,167 @@ export class TokenService {
   getRefreshExpiresAt(): Date {
     const days = this.config.get<number>('jwt.refreshExpiresDays') ?? 30;
     return new Date(Date.now() + days * 86400000);
+  }
+
+  signOtpProofToken(payload: OtpProofPayload): Promise<string> {
+    const expiresIn = (this.config.get<string>('jwt.otpProofExpiresIn') ??
+      '15m') as SignOptions['expiresIn'];
+    const secret = this.config.getOrThrow<string>('jwt.accessSecret');
+    return this.jwtService.signAsync({ ...payload }, { secret, expiresIn });
+  }
+
+  async verifyOtpProofToken(token: string): Promise<OtpProofPayload> {
+    const secret = this.config.getOrThrow<string>('jwt.accessSecret');
+    let decoded: unknown;
+    try {
+      decoded = await this.jwtService.verifyAsync(token, { secret });
+    } catch {
+      throw new UnauthorizedException('Invalid or expired session token');
+    }
+    const p = this.parseOtpProofPayload(decoded);
+    if (!p) {
+      throw new UnauthorizedException('Invalid or expired session token');
+    }
+    return p;
+  }
+
+  private parseOtpProofPayload(data: unknown): OtpProofPayload | null {
+    if (!data || typeof data !== 'object') {
+      return null;
+    }
+    const o = data as Record<string, unknown>;
+    if (o.typ !== 'otp_proof') {
+      return null;
+    }
+    if (o.purpose === 'register') {
+      if (o.channel === 'email') {
+        if (typeof o.email !== 'string' || o.email.length === 0) {
+          return null;
+        }
+        return {
+          typ: 'otp_proof',
+          purpose: 'register',
+          channel: 'email',
+          email: o.email,
+          phoneNumber: null,
+        };
+      }
+      if (o.channel === 'phone') {
+        if (typeof o.phoneNumber !== 'string' || o.phoneNumber.length === 0) {
+          return null;
+        }
+        return {
+          typ: 'otp_proof',
+          purpose: 'register',
+          channel: 'phone',
+          email: null,
+          phoneNumber: o.phoneNumber,
+        };
+      }
+      return null;
+    }
+    if (o.purpose === 'forgot_password') {
+      if (typeof o.userId !== 'string' || o.userId.length === 0) {
+        return null;
+      }
+      return {
+        typ: 'otp_proof',
+        purpose: 'forgot_password',
+        userId: o.userId,
+        email: typeof o.email === 'string' ? o.email : null,
+        phoneNumber: typeof o.phoneNumber === 'string' ? o.phoneNumber : null,
+      };
+    }
+    return null;
+  }
+
+  signLoginDeviceChallengeToken(
+    payload: LoginDeviceChallengePayload,
+  ): Promise<string> {
+    const expiresIn = (this.config.get<string>(
+      'jwt.loginDeviceChallengeExpiresIn',
+    ) ?? '10m') as SignOptions['expiresIn'];
+    const secret = this.config.getOrThrow<string>('jwt.accessSecret');
+    return this.jwtService.signAsync({ ...payload }, { secret, expiresIn });
+  }
+
+  async verifyLoginDeviceChallengeToken(
+    token: string,
+  ): Promise<LoginDeviceChallengePayload> {
+    const secret = this.config.getOrThrow<string>('jwt.accessSecret');
+    let decoded: unknown;
+    try {
+      decoded = await this.jwtService.verifyAsync(token, { secret });
+    } catch {
+      throw new UnauthorizedException('Invalid or expired device verification');
+    }
+    const p = this.parseLoginDeviceChallengePayload(decoded);
+    if (!p) {
+      throw new UnauthorizedException('Invalid or expired device verification');
+    }
+    return p;
+  }
+
+  private parseLoginDeviceChallengePayload(
+    data: unknown,
+  ): LoginDeviceChallengePayload | null {
+    if (!data || typeof data !== 'object') {
+      return null;
+    }
+    const o = data as Record<string, unknown>;
+    if (o.typ !== 'login_device_challenge') {
+      return null;
+    }
+    if (typeof o.userId !== 'string' || o.userId.length === 0) {
+      return null;
+    }
+    if (typeof o.deviceId !== 'string' || o.deviceId.length === 0) {
+      return null;
+    }
+    if (typeof o.platform !== 'string' || o.platform.length === 0) {
+      return null;
+    }
+    if (typeof o.appVersion !== 'string' || o.appVersion.length === 0) {
+      return null;
+    }
+    if (o.otpChannel !== 'phone' && o.otpChannel !== 'email') {
+      return null;
+    }
+    const deviceName =
+      o.deviceName === null || o.deviceName === undefined
+        ? null
+        : typeof o.deviceName === 'string'
+          ? o.deviceName
+          : null;
+    const otpPhone =
+      typeof o.otpPhone === 'string' ? o.otpPhone : null;
+    const otpEmail =
+      typeof o.otpEmail === 'string' ? o.otpEmail : null;
+    if (o.otpChannel === 'phone') {
+      if (!otpPhone || otpPhone.length === 0) {
+        return null;
+      }
+      if (otpEmail && otpEmail.length > 0) {
+        return null;
+      }
+    } else {
+      if (!otpEmail || otpEmail.length === 0) {
+        return null;
+      }
+      if (otpPhone && otpPhone.length > 0) {
+        return null;
+      }
+    }
+    return {
+      typ: 'login_device_challenge',
+      userId: o.userId,
+      deviceId: o.deviceId,
+      platform: o.platform,
+      appVersion: o.appVersion,
+      deviceName,
+      otpChannel: o.otpChannel,
+      otpPhone,
+      otpEmail,
+    };
   }
 }

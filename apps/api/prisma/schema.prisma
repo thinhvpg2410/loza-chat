@@ -52,13 +52,24 @@ enum MediaKind {
   other
 }
 
+enum QrLoginSessionStatus {
+  pending
+  scanned
+  approved
+  rejected
+  expired
+}
+
 model User {
   id            String   @id @default(uuid())
-  phoneNumber   String   @unique @map("phone_number")
+  email         String?  @unique @map("email")
+  phoneNumber   String?  @unique @map("phone_number")
+  passwordHash  String?  @map("password_hash")
   username      String?  @unique
   displayName   String   @default("") @map("display_name")
   avatarUrl     String?  @map("avatar_url")
   statusMessage String?  @map("status_message")
+  birthDate     DateTime? @map("birth_date")
   isActive      Boolean  @default(true) @map("is_active")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
@@ -86,7 +97,8 @@ model User {
 
 model OtpRequest {
   id          String    @id @default(uuid())
-  phoneNumber String    @map("phone_number")
+  phoneNumber String?   @map("phone_number")
+  email       String?   @map("email")
   otpCodeHash String    @map("otp_code_hash")
   purpose     String
   expiredAt   DateTime  @map("expired_at")
@@ -98,7 +110,38 @@ model OtpRequest {
   createdAt   DateTime  @default(now()) @map("created_at")
 
   @@index([phoneNumber, createdAt])
+  @@index([email, createdAt])
   @@map("otp_requests")
+}
+
+/// Ephemeral web login via mobile scan + approve. `public_token` is the QR secret (not a JWT).
+model QrLoginSession {
+  id          String               @id @default(uuid())
+  publicToken String               @unique @map("public_token")
+  status      QrLoginSessionStatus
+  expiresAt   DateTime             @map("expires_at")
+  createdAt   DateTime             @default(now()) @map("created_at")
+
+  webDeviceId   String  @map("web_device_id")
+  webPlatform   String  @map("web_platform")
+  webAppVersion String  @map("web_app_version")
+  webDeviceName String? @map("web_device_name")
+
+  scannedByUserId String?   @map("scanned_by_user_id")
+  scannedAt       DateTime? @map("scanned_at")
+
+  approvedByUserId String?   @map("approved_by_user_id")
+  approvedAt       DateTime? @map("approved_at")
+
+  rejectedAt DateTime? @map("rejected_at")
+
+  /// One-time handoff to browser poll (cleared after first successful GET status).
+  accessTokenForDelivery  String?   @map("access_token_for_delivery")
+  refreshTokenForDelivery String?   @map("refresh_token_for_delivery")
+  tokensDeliveredAt       DateTime? @map("tokens_delivered_at")
+
+  @@index([expiresAt])
+  @@map("qr_login_sessions")
 }
 
 model UserDevice {
@@ -108,6 +151,8 @@ model UserDevice {
   platform   String
   appVersion String   @map("app_version")
   deviceName String?  @map("device_name")
+  /// Known/trusted after login device OTP (or true at registration on first device).
+  isTrusted  Boolean  @default(false) @map("is_trusted")
   lastSeenAt DateTime @default(now()) @map("last_seen_at")
   isActive   Boolean  @default(true) @map("is_active")
   createdAt  DateTime @default(now()) @map("created_at")

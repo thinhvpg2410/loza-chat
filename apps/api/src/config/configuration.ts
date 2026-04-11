@@ -1,11 +1,20 @@
 export type AppConfiguration = {
   nodeEnv: string;
   port: number;
+  /**
+   * Public base URL clients use to reach this API (e.g. http://192.168.1.10:3000).
+   * Required for mock storage presigned PUT and mock public media URLs.
+   */
+  apiPublicBaseUrl: string;
   jwt: {
     accessSecret: string;
     refreshSecret: string;
     accessExpiresIn: string;
     refreshExpiresDays: number;
+    /** Short-lived JWT after OTP proof (register / forgot password) */
+    otpProofExpiresIn: string;
+    /** Short-lived JWT after password OK on an untrusted device (before device OTP) */
+    loginDeviceChallengeExpiresIn: string;
   };
   otp: {
     expiresMinutes: number;
@@ -34,11 +43,16 @@ export type AppConfiguration = {
     maxOtherBytes: number;
     maxAttachmentsPerMessage: number;
   };
+  qr: {
+    /** Browser QR login session lifetime */
+    loginSessionTtlMinutes: number;
+  };
 };
 
 export default (): AppConfiguration => ({
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: parseInt(process.env.PORT ?? '3000', 10),
+  apiPublicBaseUrl: (process.env.API_PUBLIC_BASE_URL ?? '').trim(),
   jwt: {
     accessSecret: process.env.JWT_ACCESS_SECRET ?? '',
     refreshSecret: process.env.JWT_REFRESH_SECRET ?? '',
@@ -47,6 +61,9 @@ export default (): AppConfiguration => ({
       process.env.JWT_REFRESH_EXPIRES_DAYS ?? '30',
       10,
     ),
+    otpProofExpiresIn: process.env.JWT_OTP_PROOF_EXPIRES_IN ?? '15m',
+    loginDeviceChallengeExpiresIn:
+      process.env.JWT_LOGIN_DEVICE_CHALLENGE_EXPIRES_IN ?? '10m',
   },
   otp: {
     expiresMinutes: parseInt(process.env.OTP_EXPIRES_MINUTES ?? '2', 10),
@@ -104,6 +121,12 @@ export default (): AppConfiguration => ({
     ),
     maxAttachmentsPerMessage: parseInt(
       process.env.UPLOAD_MAX_ATTACHMENTS_PER_MESSAGE ?? '10',
+      10,
+    ),
+  },
+  qr: {
+    loginSessionTtlMinutes: parseInt(
+      process.env.QR_LOGIN_SESSION_TTL_MINUTES ?? '5',
       10,
     ),
   },
