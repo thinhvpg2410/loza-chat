@@ -20,10 +20,6 @@ export async function requestRegisterOtpAction(
   formData: FormData,
 ): Promise<RegisterStepState> {
   const contact = String(formData.get("contact") ?? "").trim();
-  const terms = formData.get("terms") === "on";
-  if (!terms) {
-    return { error: "Vui lòng đồng ý điều khoản sử dụng." };
-  }
   const payload = contactToApiPayload(contact);
   if (!payload) {
     return { error: "Vui lòng nhập email hợp lệ hoặc số điện thoại (VD: 0901234567 hoặc +84901234567)." };
@@ -89,6 +85,10 @@ export async function createAccountAction(
   const password = String(formData.get("password") ?? "");
   const confirmPassword = String(formData.get("confirmPassword") ?? "");
   const displayName = String(formData.get("displayName") ?? "").trim();
+  const termsRead = formData.get("termsRead") === "on";
+  if (!termsRead) {
+    return { error: "Vui lòng xác nhận đã đọc Điều khoản và dịch vụ." };
+  }
   if (password.length < 8) {
     return { error: "Mật khẩu tối thiểu 8 ký tự." };
   }

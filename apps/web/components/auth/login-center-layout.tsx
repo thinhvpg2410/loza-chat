@@ -6,6 +6,7 @@ import { AppLogo } from "@/components/common/app-logo";
 import { IconPhone, IconQrCode } from "@/components/chat/icons";
 import { ApiLoginForm } from "@/features/auth/api-login-form";
 import { PhoneLoginForm } from "@/features/auth/phone-login-form";
+import { QrLoginPanel } from "@/features/auth/qr-login-panel";
 
 type LoginMode = "qr" | "account";
 
@@ -44,33 +45,37 @@ export function LoginCenterLayout({ apiEnabled }: LoginCenterLayoutProps) {
         </button>
 
         {mode === "qr" ? (
-          <div className="flex flex-col items-center">
-            <h2 className="mb-6 text-center text-base font-semibold text-[var(--zalo-text)]">
-              Đăng nhập qua mã QR
-            </h2>
-            <div
-              className="flex h-56 w-56 items-center justify-center rounded-lg border border-[var(--zalo-border-soft)] bg-white sm:h-60 sm:w-60"
-              aria-hidden
-            >
-              <div className="flex flex-col items-center gap-3">
-                <div className="grid h-32 w-32 grid-cols-6 gap-px opacity-[0.35]">
-                  {Array.from({ length: 36 }).map((_, i) => (
-                    <span
-                      key={i}
-                      className={`rounded-[1px] ${i % 7 === 0 || i % 11 === 0 ? "bg-[var(--zalo-text)]" : "bg-transparent"}`}
-                    />
-                  ))}
+          apiEnabled ? (
+            <QrLoginPanel />
+          ) : (
+            <div className="flex flex-col items-center">
+              <h2 className="mb-6 text-center text-base font-semibold text-[var(--zalo-text)]">
+                Đăng nhập qua mã QR
+              </h2>
+              <div
+                className="flex h-56 w-56 items-center justify-center rounded-lg border border-[var(--zalo-border-soft)] bg-white sm:h-60 sm:w-60"
+                aria-hidden
+              >
+                <div className="flex flex-col items-center gap-3">
+                  <div className="grid h-32 w-32 grid-cols-6 gap-px opacity-[0.35]">
+                    {Array.from({ length: 36 }).map((_, i) => (
+                      <span
+                        key={i}
+                        className={`rounded-[1px] ${i % 7 === 0 || i % 11 === 0 ? "bg-[var(--zalo-text)]" : "bg-transparent"}`}
+                      />
+                    ))}
+                  </div>
+                  <span className="text-[11px] font-medium text-[var(--zalo-text-subtle)]">Mã QR</span>
                 </div>
-                <span className="text-[11px] font-medium text-[var(--zalo-text-subtle)]">Mã QR</span>
               </div>
+              <p className="mt-6 max-w-xs text-center text-xs leading-relaxed text-[var(--zalo-text-muted)]">
+                Bật API (LOZA_API_BASE_URL) để đăng nhập web bằng mã QR từ ứng dụng di động.
+              </p>
+              <p className="mt-3 text-center text-[11px] text-[var(--zalo-text-subtle)]">
+                Chỉ dùng để đăng nhập Loza Chat trên máy tính.
+              </p>
             </div>
-            <p className="mt-6 max-w-xs text-center text-xs leading-relaxed text-[var(--zalo-text-muted)]">
-              Mở ứng dụng Loza Chat trên điện thoại → Cài đặt → Quét mã QR trên web để đăng nhập.
-            </p>
-            <p className="mt-3 text-center text-[11px] text-[var(--zalo-text-subtle)]">
-              Chỉ dùng để đăng nhập Loza Chat trên máy tính.
-            </p>
-          </div>
+          )
         ) : apiEnabled ? (
           <div>
             <h2 className="mb-6 pr-10 text-center text-base font-semibold text-[var(--zalo-text)]">

@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { OtpSixInput } from "@/components/auth/otp-six-input";
 import { Button } from "@/components/ui/button";
+import { TermsOfServiceModal } from "@/components/auth/terms-of-service-modal";
 import {
   createAccountAction,
   requestRegisterOtpAction,
@@ -16,6 +17,9 @@ const inputClass =
 
 export function RegisterWizard() {
   const [contact, setContact] = useState("");
+  /** Bước 3 — hồ sơ: bắt buộc tick sau khi đọc điều khoản. */
+  const [termsRead, setTermsRead] = useState(false);
+  const [termsModalOpen, setTermsModalOpen] = useState(false);
   /** Remount wizard to reset server action state (e.g. Quay lại). */
   const [wizardKey, setWizardKey] = useState(0);
 
@@ -52,14 +56,6 @@ export function RegisterWizard() {
               className={inputClass}
             />
           </div>
-          <label className="flex cursor-pointer items-start gap-2 text-left text-sm text-[var(--zalo-text)]">
-            <input
-              type="checkbox"
-              name="terms"
-              className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--zalo-border-soft)]"
-            />
-            <span>Tôi đồng ý với điều khoản sử dụng và chính sách bảo mật của Loza Chat.</span>
-          </label>
           {reqState.error ? (
             <p className="text-sm text-red-600/90" role="alert">
               {reqState.error}
@@ -143,12 +139,38 @@ export function RegisterWizard() {
               className={inputClass}
             />
           </div>
+          <div className="flex items-start gap-2.5 text-left text-sm text-[var(--zalo-text)]">
+            <input
+              id="register-terms-read"
+              type="checkbox"
+              name="termsRead"
+              checked={termsRead}
+              onChange={(e) => setTermsRead(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--zalo-border-soft)]"
+            />
+            <div className="min-w-0 leading-snug">
+              <label htmlFor="register-terms-read" className="cursor-pointer">
+                Tôi đã đọc{" "}
+              </label>
+              <button
+                type="button"
+                className="inline p-0 text-[var(--zalo-blue)] underline decoration-[var(--zalo-blue)]/40 underline-offset-2"
+                onClick={() => setTermsModalOpen(true)}
+              >
+                Điều khoản và dịch vụ
+              </button>
+              <label htmlFor="register-terms-read" className="cursor-pointer">
+                .
+              </label>
+            </div>
+          </div>
+          <TermsOfServiceModal open={termsModalOpen} onClose={() => setTermsModalOpen(false)} />
           {createState.error ? (
             <p className="text-sm text-red-600/90" role="alert">
               {createState.error}
             </p>
           ) : null}
-          <Button type="submit" disabled={createPending} className="w-full">
+          <Button type="submit" disabled={createPending || !termsRead} className="w-full">
             {createPending ? "Đang tạo tài khoản…" : "Hoàn tất đăng ký"}
           </Button>
           <button

@@ -6,7 +6,6 @@ import type { AttachmentAction } from "@/components/chat/AttachmentPanel";
 import { ImagePreviewModal } from "@/components/chat/ImagePreviewModal";
 import { MessageInput } from "@/components/chat/MessageInput";
 import { MessageList } from "@/components/chat/MessageList";
-import { TypingIndicatorSession } from "@/components/chat/TypingIndicator";
 import { getMessagesForConversation } from "@/lib/mock-chat";
 import { messageSnippet } from "@/lib/message-snippet";
 import { toggleViewerReaction } from "@/lib/reaction-utils";
@@ -215,12 +214,6 @@ export function ChatPanel({ conversation }: ChatPanelProps) {
               }}
               onOpenImage={setPreviewUrl}
             />
-            <div className="px-2">
-              <TypingIndicatorSession
-                key={conversation.id}
-                label="Minh Anh đang nhập"
-              />
-            </div>
           </>
         ) : (
           <div className="flex h-full min-h-[200px] items-center justify-center px-6">
