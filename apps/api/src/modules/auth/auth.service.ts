@@ -552,6 +552,24 @@ export class AuthService {
       return { status: 'expired', expiresAt: row.expiresAt };
     }
 
+    if (
+      row.status === QrLoginSessionStatus.approved &&
+      row.expiresAt <= now
+    ) {
+      await this.prisma.qrLoginSession.updateMany({
+        where: {
+          id: row.id,
+          status: QrLoginSessionStatus.approved,
+        },
+        data: {
+          status: QrLoginSessionStatus.expired,
+          accessTokenForDelivery: null,
+          refreshTokenForDelivery: null,
+        },
+      });
+      return { status: 'expired', expiresAt: row.expiresAt };
+    }
+
     if (row.status === QrLoginSessionStatus.rejected) {
       return { status: 'rejected', expiresAt: row.expiresAt };
     }
