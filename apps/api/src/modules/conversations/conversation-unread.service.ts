@@ -25,12 +25,12 @@ export class ConversationUnreadService {
       SELECT m.conversation_id, COUNT(*)::bigint AS cnt
       FROM messages m
       INNER JOIN conversation_members cm
-        ON cm.conversation_id = m.conversation_id AND cm.user_id = ${userId}::uuid
+        ON cm.conversation_id = m.conversation_id AND cm.user_id = ${userId}
       LEFT JOIN messages lr ON lr.id = cm.last_read_message_id
       WHERE m.deleted_at IS NULL
-        AND m.sender_id <> ${userId}::uuid
+        AND m.sender_id <> ${userId}
         AND m.conversation_id IN (${Prisma.join(
-          conversationIds.map((id) => Prisma.sql`${id}::uuid`),
+          conversationIds.map((id) => Prisma.sql`${id}`),
         )})
         AND (
           cm.last_read_message_id IS NULL
