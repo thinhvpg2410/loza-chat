@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { ConversationList } from "@/components/chat/ConversationList";
@@ -17,6 +18,9 @@ export function ChatWorkspace({
   initialApiConversations = [],
   listError = null,
 }: ChatWorkspaceProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [conversations, setConversations] = useState<Conversation[]>(() =>
     chatSource === "api" ? initialApiConversations : mockConversations,
   );
@@ -25,6 +29,16 @@ export function ChatWorkspace({
     const list = chatSource === "api" ? initialApiConversations : mockConversations;
     return list[0]?.id ?? null;
   });
+
+  const openConversationId = searchParams.get("open");
+
+  useEffect(() => {
+    if (chatSource !== "api" || !openConversationId) return;
+    queueMicrotask(() => {
+      setSelectedId(openConversationId);
+      router.replace("/", { scroll: false });
+    });
+  }, [chatSource, openConversationId, router]);
 
   useEffect(() => {
     if (chatSource !== "api") return;
@@ -47,7 +61,14 @@ export function ChatWorkspace({
   const activeConversation = useMemo(() => {
     if (!selectedId) return null;
     if (chatSource === "api") {
-      return conversations.find((c) => c.id === selectedId) ?? null;
+      const found = conversations.find((c) => c.id === selectedId);
+      if (found) return found;
+      return {
+        id: selectedId,
+        title: "Trò chuyện",
+        lastMessagePreview: "",
+        lastMessageAt: new Date().toISOString(),
+      };
     }
     return getConversationById(selectedId) ?? null;
   }, [chatSource, conversations, selectedId]);

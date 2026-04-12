@@ -13,7 +13,7 @@ export function ProfileHeader({ user }: ProfileHeaderProps) {
         {user.displayName}
       </h2>
       <p className="mt-1 text-center text-[12px] text-[var(--zalo-text-muted)]">
-        @{user.username}
+        {user.username ? `@${user.username}` : "Chưa đặt username"}
         {user.phone ? ` · ${user.phone}` : ""}
       </p>
       {user.bio ? (

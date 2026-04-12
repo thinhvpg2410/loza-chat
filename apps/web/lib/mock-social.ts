@@ -172,6 +172,7 @@ export const mockSelfProfile: ProfileUser = {
   bio: "Available on Loza Chat",
   mutualFriendsCount: 0,
   isSelf: true,
+  relationshipStatus: "self",
 };
 
 export function getProfileForFriend(friend: Friend): ProfileUser {

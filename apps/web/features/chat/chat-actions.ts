@@ -1,22 +1,20 @@
 "use server";
 
-import { cookies } from "next/headers";
-import { apiFetchJson, getApiBaseUrl } from "@/lib/api/server";
+import { apiFetchJson } from "@/lib/api/server";
+import { getWebApiSession } from "@/lib/auth/web-api-session";
 import type { ApiConversationListItem, ApiMessageWithReceipt } from "@/lib/chat/api-dtos";
 import { mapConversationListItem } from "@/lib/chat/map-api-conversation";
 import { mapApiMessagesToChatMessages, mapSingleApiMessage } from "@/lib/chat/map-api-message";
-import { LOZA_ACCESS_COOKIE, LOZA_SESSION_COOKIE } from "@/lib/auth/constants";
 import type { Conversation, Message } from "@/lib/types/chat";
 
 async function assertApiChatEnabled(): Promise<
   { ok: true; base: string } | { ok: false; error: string }
 > {
-  const base = getApiBaseUrl();
-  const jar = await cookies();
-  if (!base || jar.get(LOZA_SESSION_COOKIE)?.value === "mock" || !jar.get(LOZA_ACCESS_COOKIE)?.value) {
+  const session = await getWebApiSession();
+  if (!session.active) {
     return { ok: false, error: "Chỉ khả dụng khi đăng nhập qua API." };
   }
-  return { ok: true, base };
+  return { ok: true, base: session.baseUrl };
 }
 
 export type FetchMessagesResult =

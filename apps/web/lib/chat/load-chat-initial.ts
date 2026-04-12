@@ -1,6 +1,5 @@
-import { cookies } from "next/headers";
-import { apiFetchJson, getApiBaseUrl } from "@/lib/api/server";
-import { LOZA_ACCESS_COOKIE, LOZA_SESSION_COOKIE } from "@/lib/auth/constants";
+import { apiFetchJson } from "@/lib/api/server";
+import { getWebApiSession } from "@/lib/auth/web-api-session";
 import type { ApiConversationListItem } from "@/lib/chat/api-dtos";
 import { mapConversationListItem } from "@/lib/chat/map-api-conversation";
 import type { Conversation } from "@/lib/types/chat";
@@ -15,14 +14,11 @@ export type ChatHomeInitial =
     };
 
 export async function loadChatHomeInitial(): Promise<ChatHomeInitial> {
-  const base = getApiBaseUrl();
-  const jar = await cookies();
-  const isMockSession = jar.get(LOZA_SESSION_COOKIE)?.value === "mock";
-  const token = jar.get(LOZA_ACCESS_COOKIE)?.value;
-
-  if (!base || isMockSession || !token) {
+  const session = await getWebApiSession();
+  if (!session.active) {
     return { source: "mock" };
   }
+  const base = session.baseUrl;
 
   try {
     const { conversations } = await apiFetchJson<{ conversations: ApiConversationListItem[] }>(

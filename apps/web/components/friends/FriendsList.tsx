@@ -12,6 +12,9 @@ type FriendsListProps = {
   searchEmpty?: boolean;
   filterEmpty?: boolean;
   listEmpty?: boolean;
+  source?: "mock" | "api";
+  onUnfriend?: (id: string) => void;
+  onBlock?: (id: string) => void;
 };
 
 export function FriendsList({
@@ -22,6 +25,9 @@ export function FriendsList({
   searchEmpty,
   filterEmpty,
   listEmpty,
+  source = "mock",
+  onUnfriend,
+  onBlock,
 }: FriendsListProps) {
   if (listEmpty) {
     return (
@@ -59,6 +65,9 @@ export function FriendsList({
           isSelected={selectedId === f.id}
           onSelect={onSelectFriend}
           onMessage={onMessage}
+          source={source}
+          onUnfriend={onUnfriend}
+          onBlock={onBlock}
         />
       ))}
     </div>
