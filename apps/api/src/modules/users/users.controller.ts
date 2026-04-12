@@ -15,7 +15,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import type { PublicUser } from '../../common/utils/user-public';
+import type { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import {
   UsernameAvailableOpenApiDto,
   UserSearchOpenApiDto,
@@ -46,7 +46,7 @@ export class UsersController {
   @ApiOperation({ summary: 'Current user profile' })
   @ApiOkResponse({ type: MeResponseOpenApiDto })
   @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
-  getMe(@GetUser() user: PublicUser) {
+  getMe(@GetUser() user: AuthenticatedUser) {
     return { user: this.usersService.getMe(user) };
   }
 

@@ -14,6 +14,8 @@ import type { PublicUser } from '../../common/utils/user-public';
 import { toPublicUser } from '../../common/utils/user-public';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FriendsService } from '../friends/friends.service';
+import { AuthErrorMessage } from '../auth/auth-errors';
+import type { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import type { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import type { UpdateAvatarDto } from './dto/update-avatar.dto';
@@ -29,8 +31,9 @@ export class UsersService {
     private readonly config: ConfigService<AppConfiguration, true>,
   ) {}
 
-  getMe(user: PublicUser): PublicUser {
-    return user;
+  getMe(user: AuthenticatedUser): PublicUser {
+    const { tokenDeviceId: _omit, ...rest } = user;
+    return rest;
   }
 
   async isUsernameAvailable(
@@ -140,13 +143,24 @@ export class UsersService {
     }
     const match = await bcrypt.compare(dto.currentPassword, user.passwordHash);
     if (!match) {
-      throw new UnauthorizedException('Current password is incorrect');
+      throw new UnauthorizedException(AuthErrorMessage.INVALID_CREDENTIALS);
     }
     const newHash = await bcrypt.hash(dto.newPassword, PASSWORD_BCRYPT_ROUNDS);
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { passwordHash: newHash },
-    });
+    const now = new Date();
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { passwordHash: newHash },
+      }),
+      this.prisma.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: now },
+      }),
+      this.prisma.userDevice.updateMany({
+        where: { userId },
+        data: { isActive: false },
+      }),
+    ]);
     return { message: 'Password updated' };
   }
 

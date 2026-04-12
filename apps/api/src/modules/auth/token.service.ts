@@ -6,6 +6,7 @@ import type { SignOptions } from 'jsonwebtoken';
 import type { AccessTokenPayload } from './interfaces/jwt-payload.interface';
 import type { LoginDeviceChallengePayload } from './interfaces/login-device-challenge-payload.interface';
 import type { OtpProofPayload } from './interfaces/otp-proof-payload.interface';
+import { AuthErrorMessage } from './auth-errors';
 
 @Injectable()
 export class TokenService {
@@ -73,11 +74,11 @@ export class TokenService {
     try {
       decoded = await this.jwtService.verifyAsync(token, { secret });
     } catch {
-      throw new UnauthorizedException('Invalid or expired session token');
+      throw new UnauthorizedException(AuthErrorMessage.INVALID_TOKEN_FOR_STEP);
     }
     const p = this.parseOtpProofPayload(decoded);
     if (!p) {
-      throw new UnauthorizedException('Invalid or expired session token');
+      throw new UnauthorizedException(AuthErrorMessage.INVALID_TOKEN_FOR_STEP);
     }
     return p;
   }
@@ -150,11 +151,11 @@ export class TokenService {
     try {
       decoded = await this.jwtService.verifyAsync(token, { secret });
     } catch {
-      throw new UnauthorizedException('Invalid or expired device verification');
+      throw new UnauthorizedException(AuthErrorMessage.DEVICE_VERIFICATION_EXPIRED);
     }
     const p = this.parseLoginDeviceChallengePayload(decoded);
     if (!p) {
-      throw new UnauthorizedException('Invalid or expired device verification');
+      throw new UnauthorizedException(AuthErrorMessage.DEVICE_VERIFICATION_EXPIRED);
     }
     return p;
   }

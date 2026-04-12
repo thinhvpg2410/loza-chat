@@ -10,6 +10,7 @@ import * as bcrypt from 'bcrypt';
 import { OtpPurpose, type OtpPurposeValue } from '../../common/constants/otp-purpose';
 import { normalizeEmail } from '../../common/utils/contact-identifiers';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuthErrorMessage } from './auth-errors';
 
 const BCRYPT_ROUNDS = 10;
 
@@ -73,6 +74,8 @@ export class OtpRequestsService {
     const expiresMinutes = this.config.get<number>('otp.expiresMinutes') ?? 2;
     const maxResends =
       this.config.get<number>('otp.maxResendsPerActiveCode') ?? 3;
+    const resendCooldownSeconds =
+      this.config.get<number>('otp.resendCooldownSeconds') ?? 60;
 
     const windowStart = new Date(Date.now() - rateWindowMinutes * 60 * 1000);
     const recentWhere =
@@ -109,6 +112,13 @@ export class OtpRequestsService {
     const expiredAt = new Date(Date.now() + expiresMinutes * 60 * 1000);
 
     if (active) {
+      const sinceLastSendMs = Date.now() - active.lastSentAt.getTime();
+      if (sinceLastSendMs < resendCooldownSeconds * 1000) {
+        throw new HttpException(
+          'Please wait before requesting another verification code.',
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
       if (active.resendCount >= maxResends) {
         throw new HttpException(
           'Too many resend attempts for this verification. Request a new code later.',
@@ -124,6 +134,7 @@ export class OtpRequestsService {
           ipAddress: ipAddress ?? null,
           userAgent: userAgent ?? null,
           attempts: 0,
+          lastSentAt: new Date(),
         },
       });
     } else {
@@ -171,12 +182,14 @@ export class OtpRequestsService {
     });
 
     if (!row) {
-      throw new UnauthorizedException('Invalid or expired verification code');
+      throw new UnauthorizedException(
+        AuthErrorMessage.INVALID_OR_EXPIRED_VERIFICATION,
+      );
     }
 
     if (row.attempts >= maxAttempts) {
       throw new UnauthorizedException(
-        'Too many failed attempts. Request a new code.',
+        AuthErrorMessage.TOO_MANY_VERIFICATION_ATTEMPTS,
       );
     }
 
@@ -186,7 +199,9 @@ export class OtpRequestsService {
         where: { id: row.id },
         data: { attempts: { increment: 1 } },
       });
-      throw new UnauthorizedException('Invalid verification code');
+      throw new UnauthorizedException(
+        AuthErrorMessage.INVALID_OR_EXPIRED_VERIFICATION,
+      );
     }
 
     await this.prisma.otpRequest.update({

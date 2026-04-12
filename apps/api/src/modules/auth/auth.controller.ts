@@ -86,7 +86,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Request OTP for registration (SMS/email dev-only)',
     description:
-      'Sends a one-time code. In development, delivery may be logged instead of SMS/email.',
+      'Sends a one-time code. In development, delivery may be logged instead of SMS/email. Re-requests for the same contact while a code is active rotate the code subject to rate limits, max resends, and `OTP_RESEND_COOLDOWN_SECONDS` between sends.',
   })
   @ApiCreatedResponse({ type: SimpleMessageOpenApiDto })
   @ApiResponse({ status: 409, type: ApiErrorEnvelopeDto })
@@ -130,6 +130,8 @@ export class AuthController {
   @ApiOperation({
     summary:
       'Login with email or phone + password; trusted device returns tokens, new device returns verification challenge',
+    description:
+      'When a device OTP is issued, repeat logins for the same account/contact reuse the same OTP row and are subject to resend limits and cooldown.',
   })
   @ApiCreatedResponse({
     description: 'Either a full session or a device verification challenge',
@@ -229,7 +231,11 @@ export class AuthController {
   }
 
   @Post('forgot-password/request-otp')
-  @ApiOperation({ summary: 'Request OTP for password reset' })
+  @ApiOperation({
+    summary: 'Request OTP for password reset',
+    description:
+      'Same resend rules as registration: rate limits, max resends per active code, and cooldown between sends.',
+  })
   @ApiCreatedResponse({ type: SimpleMessageOpenApiDto })
   forgotPasswordRequestOtp(
     @Body() dto: ContactOtpDto,

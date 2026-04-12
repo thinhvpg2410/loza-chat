@@ -1,11 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import {
-  IsOptional,
-  IsString,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
+import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsStrongPassword } from '../../../common/validators/strong-password.decorator';
 import { DeviceSessionDto } from './device-session.dto';
 
 export class CreateAccountDto extends DeviceSessionDto {
@@ -18,8 +14,8 @@ export class CreateAccountDto extends DeviceSessionDto {
 
   @ApiProperty()
   @IsString()
-  @MinLength(8)
   @MaxLength(128)
+  @IsStrongPassword()
   password!: string;
 
   @ApiPropertyOptional({ maxLength: 100 })

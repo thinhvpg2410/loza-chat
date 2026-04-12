@@ -29,6 +29,7 @@ import type { LoginDeviceChallengePayload } from './interfaces/login-device-chal
 import type { OtpProofPayload } from './interfaces/otp-proof-payload.interface';
 import { OtpRequestsService } from './otp-requests.service';
 import { TokenService } from './token.service';
+import { AuthErrorMessage } from './auth-errors';
 
 const PASSWORD_BCRYPT_ROUNDS = 12;
 
@@ -150,7 +151,9 @@ export class AuthService {
   }> {
     const proof = await this.tokens.verifyOtpProofToken(dto.token);
     if (proof.purpose !== 'register') {
-      throw new BadRequestException('Invalid token for account creation');
+      throw new BadRequestException(
+        AuthErrorMessage.INVALID_ACCOUNT_CREATION_TOKEN,
+      );
     }
 
     const passwordHash = await bcrypt.hash(dto.password, PASSWORD_BCRYPT_ROUNDS);
@@ -303,15 +306,15 @@ export class AuthService {
     });
 
     if (!user || !user.passwordHash) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException(AuthErrorMessage.INVALID_CREDENTIALS);
     }
     if (!user.isActive) {
-      throw new UnauthorizedException('Account is disabled');
+      throw new UnauthorizedException(AuthErrorMessage.ACCOUNT_DISABLED);
     }
 
     const ok = await bcrypt.compare(dto.password, user.passwordHash);
     if (!ok) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException(AuthErrorMessage.INVALID_CREDENTIALS);
     }
 
     const existing = await this.prisma.userDevice.findUnique({
@@ -367,7 +370,9 @@ export class AuthService {
     });
 
     if (!user || !user.isActive || !user.passwordHash) {
-      throw new UnauthorizedException('Invalid or expired device verification');
+      throw new UnauthorizedException(
+        AuthErrorMessage.DEVICE_VERIFICATION_EXPIRED,
+      );
     }
 
     await this.otpRequests.verifyOtpAndConsume(
@@ -754,7 +759,7 @@ export class AuthService {
 
       const user = await tx.user.findUnique({ where: { id: actorUserId } });
       if (!user?.isActive) {
-        throw new UnauthorizedException('Account is disabled');
+        throw new UnauthorizedException(AuthErrorMessage.ACCOUNT_DISABLED);
       }
 
       const { deviceRow, refreshRaw } = await this.openPasswordSessionWithTx(
@@ -895,7 +900,9 @@ export class AuthService {
     }
 
     if (!user || !user.passwordHash) {
-      throw new BadRequestException('Invalid request');
+      throw new BadRequestException(
+        AuthErrorMessage.INVALID_OR_EXPIRED_VERIFICATION,
+      );
     }
 
     const proof: OtpProofPayload = {
@@ -915,7 +922,9 @@ export class AuthService {
   ): Promise<{ message: string }> {
     const proof = await this.tokens.verifyOtpProofToken(dto.token);
     if (proof.purpose !== 'forgot_password') {
-      throw new BadRequestException('Invalid token for password reset');
+      throw new BadRequestException(
+        AuthErrorMessage.INVALID_PASSWORD_RESET_TOKEN,
+      );
     }
 
     const newHash = await bcrypt.hash(dto.newPassword, PASSWORD_BCRYPT_ROUNDS);
@@ -923,7 +932,9 @@ export class AuthService {
     await this.prisma.$transaction(async (tx) => {
       const u = await tx.user.findUnique({ where: { id: proof.userId } });
       if (!u) {
-        throw new BadRequestException('Invalid request');
+        throw new BadRequestException(
+          AuthErrorMessage.INVALID_OR_EXPIRED_VERIFICATION,
+        );
       }
 
       await tx.user.update({
@@ -934,6 +945,11 @@ export class AuthService {
       await tx.refreshToken.updateMany({
         where: { userId: proof.userId, revokedAt: null },
         data: { revokedAt: new Date() },
+      });
+
+      await tx.userDevice.updateMany({
+        where: { userId: proof.userId },
+        data: { isActive: false },
       });
     });
 
@@ -963,7 +979,9 @@ export class AuthService {
         existing.expiresAt <= now ||
         !existing.user.isActive
       ) {
-        throw new UnauthorizedException('Invalid or expired session');
+        throw new UnauthorizedException(
+          AuthErrorMessage.INVALID_OR_EXPIRED_SESSION,
+        );
       }
 
       const revoked = await tx.refreshToken.updateMany({
@@ -971,7 +989,9 @@ export class AuthService {
         data: { revokedAt: new Date() },
       });
       if (revoked.count === 0) {
-        throw new UnauthorizedException('Invalid or expired session');
+        throw new UnauthorizedException(
+          AuthErrorMessage.INVALID_OR_EXPIRED_SESSION,
+        );
       }
 
       await tx.refreshToken.create({
@@ -1017,16 +1037,25 @@ export class AuthService {
       data: { revokedAt: new Date() },
     });
     if (result.count === 0) {
-      throw new UnauthorizedException('Invalid or expired session');
+      throw new UnauthorizedException(
+        AuthErrorMessage.INVALID_OR_EXPIRED_SESSION,
+      );
     }
     return { message: 'Logged out' };
   }
 
   async logoutAll(userId: string): Promise<{ message: string }> {
-    await this.prisma.refreshToken.updateMany({
-      where: { userId, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
+    const now = new Date();
+    await this.prisma.$transaction([
+      this.prisma.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: now },
+      }),
+      this.prisma.userDevice.updateMany({
+        where: { userId },
+        data: { isActive: false },
+      }),
+    ]);
     return { message: 'Logged out from all devices' };
   }
 }
