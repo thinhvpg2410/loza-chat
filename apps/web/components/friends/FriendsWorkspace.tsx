@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconAdd } from "@/components/chat/icons";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { SearchInput } from "@/components/common/SearchInput";
 import { AddFriendModal } from "@/components/friends/AddFriendModal";
 import { FriendsList } from "@/components/friends/FriendsList";
-import { createOrGetDirectConversationAction } from "@/features/chat/conversation-actions";
+import { openDirectChatWithUser } from "@/features/chat/open-direct-chat";
 import {
   acceptIncomingForUserAction,
   blockUserAction,
@@ -76,6 +76,8 @@ export function FriendsWorkspace({
   const [addFriendOpen, setAddFriendOpen] = useState(false);
   const [addFriendKey, setAddFriendKey] = useState(0);
   const [confirm, setConfirm] = useState<ConfirmState>(null);
+  const [openingDirectChatUserId, setOpeningDirectChatUserId] = useState<string | null>(null);
+  const openingDirectChatLock = useRef(false);
 
   const showOnlineRecentFilters = !isApi;
 
@@ -169,18 +171,29 @@ export function FriendsWorkspace({
     searchQuery.trim().length === 0 &&
     filtered.length === 0;
 
-  const runOpenChat = async (friendUserId: string) => {
-    if (!isApi) {
-      setToast("Đăng nhập qua API để nhắn tin.");
-      return;
-    }
-    const r = await createOrGetDirectConversationAction(friendUserId);
-    if (!r.ok) {
-      setToast(r.error);
-      return;
-    }
-    router.push(`/?open=${encodeURIComponent(r.conversationId)}`);
-  };
+  const runOpenChat = useCallback(
+    async (friendUserId: string, options?: { closeProfileOnSuccess?: boolean }) => {
+      if (!isApi) {
+        setToast("Đăng nhập qua API để nhắn tin.");
+        return;
+      }
+      if (openingDirectChatLock.current) return;
+      openingDirectChatLock.current = true;
+      setOpeningDirectChatUserId(friendUserId);
+      try {
+        const r = await openDirectChatWithUser(friendUserId, router);
+        if (!r.ok) {
+          setToast(r.error);
+          return;
+        }
+        if (options?.closeProfileOnSuccess) setProfileUserId(null);
+      } finally {
+        openingDirectChatLock.current = false;
+        setOpeningDirectChatUserId(null);
+      }
+    },
+    [isApi, router],
+  );
 
   const handleUnfriend = async (otherUserId: string) => {
     setActionBusy(true);
@@ -300,6 +313,7 @@ export function FriendsWorkspace({
           <FriendsList
             friends={filtered}
             selectedId={selectedId}
+            openingDirectChatUserId={openingDirectChatUserId}
             onSelectFriend={(id) => {
               setSelectedId(id);
               setProfileUserId(id);
@@ -355,9 +369,15 @@ export function FriendsWorkspace({
           setDrawerError(null);
         }}
         onMessage={() => {
-          if (profileUser && !profileUser.isSelf) void runOpenChat(profileUser.id);
-          setProfileUserId(null);
+          if (!profileUser || profileUser.isSelf) return;
+          void runOpenChat(profileUser.id, { closeProfileOnSuccess: true });
         }}
+        messageOpening={
+          profileUser != null &&
+          !profileUser.isSelf &&
+          openingDirectChatUserId !== null &&
+          openingDirectChatUserId === profileUser.id
+        }
         onAddFriend={async () => {
           if (!profileUser || profileUser.isSelf) return;
           setActionBusy(true);

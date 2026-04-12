@@ -11,6 +11,8 @@ const btnDangerOutline =
 type ProfileActionBarProps = {
   isSelf?: boolean;
   relationshipStatus?: RelationshipStatus;
+  /** Disables only the “Nhắn tin” action while opening a direct chat. */
+  messageOpening?: boolean;
   onMessage?: () => void;
   onAddFriend?: () => void;
   onBlock?: () => void;
@@ -25,6 +27,7 @@ type ProfileActionBarProps = {
 export function ProfileActionBar({
   isSelf,
   relationshipStatus = "none",
+  messageOpening = false,
   onMessage,
   onAddFriend,
   onBlock,
@@ -90,8 +93,13 @@ export function ProfileActionBar({
   if (relationshipStatus === "friend") {
     return (
       <div className="flex flex-wrap gap-2 px-4 py-3">
-        <button type="button" className={btnPrimary} onClick={onMessage} disabled={disabled}>
-          Nhắn tin
+        <button
+          type="button"
+          className={btnPrimary}
+          onClick={onMessage}
+          disabled={disabled || messageOpening}
+        >
+          {messageOpening ? "Đang mở…" : "Nhắn tin"}
         </button>
         <button type="button" className={btnOutline} onClick={onUnfriend} disabled={disabled}>
           Hủy kết bạn

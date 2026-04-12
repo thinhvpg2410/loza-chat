@@ -49,12 +49,13 @@ export function ChatWorkspace({
 
   useEffect(() => {
     if (!selectedId) return;
+    if (chatSource === "api") return;
     if (!conversations.some((c) => c.id === selectedId)) {
       queueMicrotask(() => {
         setSelectedId(conversations[0]?.id ?? null);
       });
     }
-  }, [conversations, selectedId]);
+  }, [chatSource, conversations, selectedId]);
 
   const [searchQuery, setSearchQuery] = useState("");
 

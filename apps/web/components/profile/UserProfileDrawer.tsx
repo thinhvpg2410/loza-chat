@@ -21,6 +21,7 @@ type UserProfileDrawerProps = {
   onRejectRequest?: () => void;
   onCancelOutgoing?: () => void;
   actionBusy?: boolean;
+  messageOpening?: boolean;
 };
 
 export function UserProfileDrawer({
@@ -38,6 +39,7 @@ export function UserProfileDrawer({
   onRejectRequest,
   onCancelOutgoing,
   actionBusy = false,
+  messageOpening = false,
 }: UserProfileDrawerProps) {
   const titleId = useId();
 
@@ -96,6 +98,7 @@ export function UserProfileDrawer({
               <ProfileActionBar
                 isSelf={user.isSelf}
                 relationshipStatus={user.relationshipStatus}
+                messageOpening={messageOpening}
                 onMessage={onMessage}
                 onAddFriend={onAddFriend}
                 onBlock={onBlock}
