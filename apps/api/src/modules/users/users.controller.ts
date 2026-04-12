@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -12,12 +14,14 @@ import {
   ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import type { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import {
   UsernameAvailableOpenApiDto,
+  UserPublicProfileResponseOpenApiDto,
   UserSearchOpenApiDto,
 } from '../../common/swagger/friends-openapi.dto';
 import { ApiErrorEnvelopeDto } from '../../common/swagger/http-error.dto';
@@ -65,9 +69,10 @@ export class UsersController {
 
   @Get('search')
   @ApiOperation({
-    summary: 'Search by exact phoneNumber (E.164) or exact username',
+    summary:
+      'Search by exact phoneNumber (E.164), exact email, or exact username',
     description:
-      'Provide exactly one query parameter: `phoneNumber` or `username`.',
+      'Provide exactly one query parameter: `phoneNumber`, `email`, or `username`.',
   })
   @ApiOkResponse({ type: UserSearchOpenApiDto })
   @ApiResponse({ status: 400, type: ApiErrorEnvelopeDto })
@@ -76,8 +81,26 @@ export class UsersController {
     return this.usersService.searchUsers(
       viewerId,
       query.phoneNumber,
+      query.email,
       query.username,
     );
+  }
+
+  @Get(':id/public-profile')
+  @ApiOperation({
+    summary: 'Public profile of another user (safe fields only)',
+    description:
+      'Inactive users or any block between you and the target respond as not found.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'Target user id' })
+  @ApiOkResponse({ type: UserPublicProfileResponseOpenApiDto })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 404, type: ApiErrorEnvelopeDto })
+  async publicProfile(
+    @GetUser('id') viewerId: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) targetUserId: string,
+  ) {
+    return this.usersService.getPublicProfileForViewer(viewerId, targetUserId);
   }
 
   @Patch('me')

@@ -13,4 +13,7 @@ export class PublicUserProfileOpenApiDto {
 
   @ApiPropertyOptional({ nullable: true })
   username!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  statusMessage!: string | null;
 }

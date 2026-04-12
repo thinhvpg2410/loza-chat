@@ -3,7 +3,7 @@ import type { User } from '@prisma/client';
 /** Safe fields for search, friend lists, and request payloads (no phone, tokens, etc.). */
 export type PublicUserProfile = Pick<
   User,
-  'id' | 'displayName' | 'avatarUrl' | 'username'
+  'id' | 'displayName' | 'avatarUrl' | 'username' | 'statusMessage'
 >;
 
 export function toPublicUserProfile(user: User): PublicUserProfile {
@@ -12,5 +12,6 @@ export function toPublicUserProfile(user: User): PublicUserProfile {
     displayName: user.displayName,
     avatarUrl: user.avatarUrl,
     username: user.username,
+    statusMessage: user.statusMessage,
   };
 }

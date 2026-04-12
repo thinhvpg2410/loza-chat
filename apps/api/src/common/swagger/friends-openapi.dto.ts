@@ -24,6 +24,20 @@ export class UserSearchResultOpenApiDto {
   @ApiPropertyOptional({ nullable: true })
   username!: string | null;
 
+  @ApiPropertyOptional({ nullable: true })
+  statusMessage!: string | null;
+
+  @ApiProperty({
+    enum: RelationshipStatusEnum,
+    enumName: 'RelationshipStatus',
+  })
+  relationshipStatus!: (typeof RelationshipStatusEnum)[number];
+}
+
+export class UserPublicProfileResponseOpenApiDto {
+  @ApiProperty({ type: PublicUserProfileOpenApiDto })
+  profile!: PublicUserProfileOpenApiDto;
+
   @ApiProperty({
     enum: RelationshipStatusEnum,
     enumName: 'RelationshipStatus',

@@ -10,9 +10,12 @@ import type { User } from '@prisma/client';
 import { MediaKind, UploadSessionStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import type { AppConfiguration } from '../../config/configuration';
+import { toPublicUserProfile } from '../../common/types/public-user-profile';
 import type { PublicUser } from '../../common/utils/user-public';
 import { toPublicUser } from '../../common/utils/user-public';
+import { normalizeEmail } from '../../common/utils/contact-identifiers';
 import { PrismaService } from '../../prisma/prisma.service';
+import { BlocksService } from '../blocks/blocks.service';
 import { FriendsService } from '../friends/friends.service';
 import { AuthErrorMessage } from '../auth/auth-errors';
 import type { AuthenticatedUser } from '../auth/types/authenticated-user.type';
@@ -20,6 +23,7 @@ import type { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import type { UpdateAvatarDto } from './dto/update-avatar.dto';
 import type { UserSearchPublic } from './dto/user-search-result.dto';
+import type { UserPublicProfileResponse } from './types/user-public-profile-view';
 
 const PASSWORD_BCRYPT_ROUNDS = 12;
 
@@ -28,6 +32,7 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly friends: FriendsService,
+    private readonly blocks: BlocksService,
     private readonly config: ConfigService<AppConfiguration, true>,
   ) {}
 
@@ -181,14 +186,16 @@ export class UsersService {
   async searchUsers(
     viewerId: string,
     phoneNumber?: string,
+    email?: string,
     username?: string,
   ): Promise<{ results: UserSearchPublic[] }> {
     const n =
       (phoneNumber !== undefined && phoneNumber !== '' ? 1 : 0) +
+      (email !== undefined && email !== '' ? 1 : 0) +
       (username !== undefined && username !== '' ? 1 : 0);
     if (n !== 1) {
       throw new BadRequestException(
-        'Provide exactly one of phoneNumber or username',
+        'Provide exactly one of phoneNumber, email, or username',
       );
     }
 
@@ -196,6 +203,10 @@ export class UsersService {
     if (phoneNumber !== undefined && phoneNumber !== '') {
       target = await this.prisma.user.findUnique({
         where: { phoneNumber },
+      });
+    } else if (email !== undefined && email !== '') {
+      target = await this.prisma.user.findUnique({
+        where: { email: normalizeEmail(email) },
       });
     } else if (username !== undefined && username !== '') {
       target = await this.prisma.user.findUnique({
@@ -217,9 +228,35 @@ export class UsersService {
       displayName: target.displayName,
       avatarUrl: target.avatarUrl,
       username: target.username,
+      statusMessage: target.statusMessage,
       relationshipStatus,
     };
 
     return { results: [row] };
+  }
+
+  async getPublicProfileForViewer(
+    viewerId: string,
+    targetUserId: string,
+  ): Promise<UserPublicProfileResponse> {
+    const target = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+    });
+    if (!target || !target.isActive) {
+      throw new NotFoundException('User not found');
+    }
+    if (await this.blocks.isEitherBlocked(viewerId, targetUserId)) {
+      throw new NotFoundException('User not found');
+    }
+
+    const relationshipStatus = await this.friends.getRelationshipStatus(
+      viewerId,
+      targetUserId,
+    );
+
+    return {
+      profile: toPublicUserProfile(target),
+      relationshipStatus,
+    };
   }
 }

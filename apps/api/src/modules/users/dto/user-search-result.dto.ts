@@ -5,5 +5,6 @@ export type UserSearchPublic = {
   displayName: string;
   avatarUrl: string | null;
   username: string | null;
+  statusMessage: string | null;
   relationshipStatus: RelationshipStatus;
 };
