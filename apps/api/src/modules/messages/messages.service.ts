@@ -146,6 +146,14 @@ export class MessagesService {
       }
     });
 
+    if (result.created) {
+      this.domainEvents.emit({
+        type: 'message.created',
+        conversationId: dto.conversationId,
+        message: result.message,
+      });
+    }
+
     return { message: result.message };
   }
 
@@ -419,6 +427,14 @@ export class MessagesService {
         throw err;
       }
     });
+
+    if (result.created) {
+      this.domainEvents.emit({
+        type: 'message.created',
+        conversationId: dto.conversationId,
+        message: result.message,
+      });
+    }
 
     return { message: result.message };
   }

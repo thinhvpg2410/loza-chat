@@ -210,16 +210,12 @@ export class ChatGateway
         throw new WsPayloadValidationError('Only text messages are supported');
       }
 
-      const { message } = await this.messages.sendTextMessage(user.id, {
+      await this.messages.sendTextMessage(user.id, {
         conversationId: dto.conversationId,
         clientMessageId: dto.clientMessageId,
         content: dto.content,
         replyToMessageId: dto.replyToMessageId,
       });
-
-      this.server
-        .to(conversationRoomId(dto.conversationId))
-        .emit('message:new', { message });
 
       return { ok: true };
     } catch (err) {
