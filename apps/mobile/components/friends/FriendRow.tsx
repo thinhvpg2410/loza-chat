@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { Platform, Pressable, StyleSheet, View } from "react-native";
 
@@ -11,24 +12,13 @@ const AVATAR = 36;
 type FriendRowProps = {
   user: MockFriend;
   onPress: () => void;
+  /** Opens direct chat; shows trailing icon without duplicating row navigation. */
+  onMessagePress?: () => void;
 };
 
-export function FriendRow({ user, onPress }: FriendRowProps) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={user.name}
-      onPress={onPress}
-      android_ripple={{ color: "rgba(0,0,0,0.06)" }}
-      style={({ pressed }) => [
-        styles.row,
-        hairlineBottomBorder,
-        {
-          backgroundColor:
-            Platform.OS === "ios" ? (pressed ? "rgba(0,0,0,0.03)" : colors.background) : colors.background,
-        },
-      ]}
-    >
+export function FriendRow({ user, onPress, onMessagePress }: FriendRowProps) {
+  const main = (
+    <>
       <View style={styles.avatarWrap}>
         {user.avatarUrl ? (
           <Image source={{ uri: user.avatarUrl }} style={styles.avatar} contentFit="cover" transition={120} />
@@ -49,7 +39,55 @@ export function FriendRow({ user, onPress }: FriendRowProps) {
           {user.subtitle ?? (user.isOnline ? "Đang hoạt động" : "Offline")}
         </AppText>
       </View>
-    </Pressable>
+    </>
+  );
+
+  if (!onMessagePress) {
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={user.name}
+        onPress={onPress}
+        android_ripple={{ color: "rgba(0,0,0,0.06)" }}
+        style={({ pressed }) => [
+          styles.row,
+          styles.rowPad,
+          hairlineBottomBorder,
+          {
+            backgroundColor:
+              Platform.OS === "ios" ? (pressed ? "rgba(0,0,0,0.03)" : colors.background) : colors.background,
+          },
+        ]}
+      >
+        {main}
+      </Pressable>
+    );
+  }
+
+  return (
+    <View style={[styles.row, styles.rowSplit, hairlineBottomBorder, { backgroundColor: colors.background }]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={user.name}
+        onPress={onPress}
+        android_ripple={{ color: "rgba(0,0,0,0.06)" }}
+        style={({ pressed }) => [
+          styles.rowMain,
+          Platform.OS === "ios" && pressed ? { backgroundColor: "rgba(0,0,0,0.03)" } : null,
+        ]}
+      >
+        {main}
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Nhắn tin ${user.name}`}
+        hitSlop={10}
+        onPress={onMessagePress}
+        style={({ pressed }) => [styles.msgIcon, pressed && { opacity: 0.65 }]}
+      >
+        <Ionicons name="chatbubble-outline" size={20} color={colors.primary} />
+      </Pressable>
+    </View>
   );
 }
 
@@ -57,9 +95,27 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: spacing.md,
     paddingVertical: 2,
     minHeight: 46,
+  },
+  rowPad: {
+    paddingHorizontal: spacing.md,
+  },
+  rowSplit: {
+    paddingLeft: spacing.md,
+  },
+  rowMain: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    minWidth: 0,
+    paddingRight: spacing.xs,
+  },
+  msgIcon: {
+    paddingRight: spacing.md,
+    paddingVertical: spacing.xs,
+    justifyContent: "center",
+    alignItems: "center",
   },
   avatarWrap: {
     position: "relative",

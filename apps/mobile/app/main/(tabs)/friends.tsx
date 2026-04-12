@@ -13,6 +13,7 @@ import type { MockFriend } from "@/constants/mockData";
 import { USE_API_MOCK } from "@/constants/env";
 import { MOCK_FRIENDS, MOCK_INCOMING_FRIEND_REQUESTS } from "@/constants/mockData";
 import { buildFriendSections } from "@features/friends";
+import { openDirectChatWithPeer } from "@/services/conversations/openDirectChat";
 import { useFriendsStore } from "@/store/friendsStore";
 import { colors, spacing } from "@theme";
 
@@ -76,6 +77,17 @@ export default function FriendsTabScreen() {
           name: encodeURIComponent(u.name),
           avatarUrl: encodeURIComponent(u.avatarUrl ?? ""),
         },
+      });
+    },
+    [router],
+  );
+
+  const onMessageFriend = useCallback(
+    (u: MockFriend) => {
+      void openDirectChatWithPeer(router, {
+        peerUserId: u.id,
+        displayName: u.name,
+        avatarUrl: u.avatarUrl,
       });
     },
     [router],
@@ -211,7 +223,13 @@ export default function FriendsTabScreen() {
         <SectionList
           sections={sections}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <FriendRow user={item} onPress={() => openProfile(item)} />}
+          renderItem={({ item }) => (
+            <FriendRow
+              user={item}
+              onPress={() => openProfile(item)}
+              onMessagePress={() => void onMessageFriend(item)}
+            />
+          )}
           renderSectionHeader={({ section: { title } }) => <AppSectionHeader title={title} compact />}
           stickySectionHeadersEnabled={false}
           contentContainerStyle={

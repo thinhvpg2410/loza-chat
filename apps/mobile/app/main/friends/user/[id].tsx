@@ -11,7 +11,7 @@ import { USE_API_MOCK } from "@/constants/env";
 import { findUserById, getFriendRelation } from "@features/friends";
 import { getApiErrorMessage } from "@/services/api/api";
 import { blockUserApi, unblockUserApi } from "@/services/blocks/blocksApi";
-import { createOrGetDirectConversationApi } from "@/services/conversations/conversationsApi";
+import { openDirectChatWithPeer } from "@/services/conversations/openDirectChat";
 import {
   acceptFriendRequestApi,
   cancelFriendRequestApi,
@@ -220,39 +220,15 @@ export default function UserProfileScreen() {
   const isSelf = !USE_API_MOCK && viewerId && id === viewerId;
 
   const openChat = useCallback(async () => {
-    if (USE_API_MOCK) {
-      router.push({
-        pathname: "/main/chat/[id]",
-        params: {
-          id: user.id,
-          title: encodeURIComponent(user.name),
-          peerAvatar: encodeURIComponent(user.avatarUrl ?? ""),
-          peerId: user.id,
-        },
-      });
-      return;
-    }
-    setActionBusy(true);
-    try {
-      const { conversation } = await createOrGetDirectConversationApi(user.id);
-      const title =
-        conversation.otherParticipant?.displayName?.trim() || user.name;
-      const av =
-        conversation.otherParticipant?.avatarUrl ?? user.avatarUrl ?? "";
-      router.push({
-        pathname: "/main/chat/[id]",
-        params: {
-          id: conversation.id,
-          title: encodeURIComponent(title),
-          peerAvatar: encodeURIComponent(av),
-          peerId: user.id,
-        },
-      });
-    } catch (e) {
-      Alert.alert("Nhắn tin", getApiErrorMessage(e));
-    } finally {
-      setActionBusy(false);
-    }
+    await openDirectChatWithPeer(
+      router,
+      {
+        peerUserId: user.id,
+        displayName: user.name,
+        avatarUrl: user.avatarUrl,
+      },
+      { setLoading: setActionBusy },
+    );
   }, [router, user.avatarUrl, user.id, user.name]);
 
   const onAddFriend = useCallback(async () => {
