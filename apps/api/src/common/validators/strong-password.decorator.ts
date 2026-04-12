@@ -8,7 +8,7 @@ function isStrongPasswordValue(value: unknown): boolean {
   if (typeof value !== 'string') {
     return false;
   }
-  if (value.length < 10 || value.length > 128) {
+  if (value.length < 8 || value.length > 128) {
     return false;
   }
   if (!/[a-z]/.test(value)) {
@@ -38,7 +38,7 @@ export function IsStrongPassword(validationOptions?: ValidationOptions) {
           return isStrongPasswordValue(value);
         },
         defaultMessage(_args: ValidationArguments) {
-          return 'Password must be 10–128 characters and include uppercase, lowercase, a number, and a special character';
+          return 'Password must be 8–128 characters and include uppercase, lowercase, a number, and a special character';
         },
       },
     });
