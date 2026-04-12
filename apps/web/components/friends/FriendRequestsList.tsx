@@ -7,6 +7,7 @@ type FriendRequestsListProps = {
   requests: FriendRequest[];
   emptyTitle: string;
   emptyDescription?: string;
+  busyRequestId?: string | null;
   onAccept?: (id: string) => void;
   onReject?: (id: string) => void;
   onCancel?: (id: string) => void;
@@ -17,6 +18,7 @@ export function FriendRequestsList({
   requests,
   emptyTitle,
   emptyDescription,
+  busyRequestId,
   onAccept,
   onReject,
   onCancel,
@@ -40,6 +42,7 @@ export function FriendRequestsList({
             <FriendRequestRow
               key={r.id}
               request={r}
+              busy={busyRequestId === r.id}
               onAccept={onAccept}
               onReject={onReject}
               onCancel={onCancel}

@@ -7,6 +7,7 @@ export type ActionMenuItem = {
   id: string;
   label: string;
   danger?: boolean;
+  disabled?: boolean;
   onSelect: () => void;
 };
 
@@ -77,12 +78,16 @@ export function ActionMenu({
               <button
                 type="button"
                 role="menuitem"
+                disabled={item.disabled}
                 className={
-                  item.danger
-                    ? "flex w-full px-3 py-1.5 text-left text-[13px] text-red-600 transition hover:bg-red-50"
-                    : "flex w-full px-3 py-1.5 text-left text-[13px] text-[var(--zalo-text)] transition hover:bg-[var(--zalo-surface)]"
+                  item.disabled
+                    ? "flex w-full cursor-not-allowed px-3 py-1.5 text-left text-[13px] text-[var(--zalo-text-muted)] opacity-50"
+                    : item.danger
+                      ? "flex w-full px-3 py-1.5 text-left text-[13px] text-red-600 transition hover:bg-red-50"
+                      : "flex w-full px-3 py-1.5 text-left text-[13px] text-[var(--zalo-text)] transition hover:bg-[var(--zalo-surface)]"
                 }
                 onClick={() => {
+                  if (item.disabled) return;
                   item.onSelect();
                   close();
                 }}

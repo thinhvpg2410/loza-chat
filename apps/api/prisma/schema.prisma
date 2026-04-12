@@ -105,6 +105,8 @@ model OtpRequest {
   verifiedAt  DateTime? @map("verified_at")
   attempts    Int       @default(0)
   resendCount Int       @default(0) @map("resend_count")
+  /// Last time a code was issued (create or resend); used for resend cooldown.
+  lastSentAt  DateTime  @default(now()) @map("last_sent_at")
   ipAddress   String?   @map("ip_address")
   userAgent   String?   @map("user_agent")
   createdAt   DateTime  @default(now()) @map("created_at")
@@ -257,6 +259,7 @@ model Conversation {
   attachments   Attachment[]
 
   @@index([updatedAt(sort: Desc)])
+  /// Direct threads: at most one row per (directUserOneId, directUserTwoId); enforced by partial unique index `conversations_direct_pair_uidx` in migrations.
   @@map("conversations")
 }
 

@@ -1,6 +1,21 @@
 import { cookies } from "next/headers";
 import { LOZA_ACCESS_COOKIE } from "@/lib/auth/constants";
 
+function parseFailedJsonMessage(raw: unknown): string | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.message === "string") return o.message;
+  if (Array.isArray(o.message) && o.message.every((x) => typeof x === "string")) {
+    return o.message.join(", ");
+  }
+  const err = o.error;
+  if (err && typeof err === "object") {
+    const em = (err as Record<string, unknown>).message;
+    if (typeof em === "string") return em;
+  }
+  return undefined;
+}
+
 export function getApiBaseUrl(): string | undefined {
   const u = process.env.LOZA_API_BASE_URL?.trim();
   return u && u.length > 0 ? u.replace(/\/$/, "") : undefined;
@@ -21,9 +36,8 @@ export async function apiFetchPublicJson<T>(path: string, init: RequestInit = {}
   if (!res.ok) {
     let msg = res.statusText;
     try {
-      const j = (await res.json()) as { message?: string | string[] };
-      if (typeof j.message === "string") msg = j.message;
-      else if (Array.isArray(j.message)) msg = j.message.join(", ");
+      const parsed = parseFailedJsonMessage(await res.json());
+      if (parsed) msg = parsed;
     } catch {
       /* ignore */
     }
@@ -54,9 +68,8 @@ export async function apiFetchJson<T>(path: string, init: RequestInit = {}): Pro
   if (!res.ok) {
     let msg = res.statusText;
     try {
-      const j = (await res.json()) as { message?: string | string[] };
-      if (typeof j.message === "string") msg = j.message;
-      else if (Array.isArray(j.message)) msg = j.message.join(", ");
+      const parsed = parseFailedJsonMessage(await res.json());
+      if (parsed) msg = parsed;
     } catch {
       /* ignore */
     }

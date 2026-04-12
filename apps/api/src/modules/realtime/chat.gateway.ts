@@ -36,6 +36,21 @@ import type { ChatSocketData } from './types/chat-socket-data';
 import { TypingStateService } from './typing-state.service';
 import { WsPayloadValidationError, parseWsPayload } from './ws-payload.util';
 
+/**
+ * Direct text chat (Milestone 2 Phase 7) — Socket.IO protocol:
+ *
+ * **Client → server**
+ * - `conversation:join` — join `{ conversationId }` (members only); required to receive room events.
+ * - `message:send` — same payload shape as REST `POST /messages` text; delegates to {@link MessagesService.sendTextMessage}.
+ * - `typing:start` / `typing:stop` — `{ conversationId }`.
+ * - `message:delivered` / `message:seen` — `{ conversationId, messageId }`; delegates to {@link MessageReceiptsService}.
+ *
+ * **Server → client (conversation room unless noted)**
+ * - `message:new` — `{ message }` after a **new** persisted row (idempotent retries do not re-emit).
+ * - `typing:update` — `{ conversationId, userId, isTyping }`.
+ * - `message:delivered` / `message:seen` — receipt payloads from {@link MessageReceiptsService}.
+ * - `error` — validation or HTTP-shaped failures for the triggering event.
+ */
 @SkipThrottle()
 @WebSocketGateway({
   cors: { origin: true, credentials: true },
@@ -210,16 +225,12 @@ export class ChatGateway
         throw new WsPayloadValidationError('Only text messages are supported');
       }
 
-      const { message } = await this.messages.sendTextMessage(user.id, {
+      await this.messages.sendTextMessage(user.id, {
         conversationId: dto.conversationId,
         clientMessageId: dto.clientMessageId,
         content: dto.content,
         replyToMessageId: dto.replyToMessageId,
       });
-
-      this.server
-        .to(conversationRoomId(dto.conversationId))
-        .emit('message:new', { message });
 
       return { ok: true };
     } catch (err) {

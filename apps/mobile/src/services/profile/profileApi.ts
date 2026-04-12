@@ -72,3 +72,38 @@ export async function updateProfileRemote(payload: UpdateProfilePayload): Promis
     throw new Error(getApiErrorMessage(e, "Không cập nhật được hồ sơ."));
   }
 }
+
+const MOCK_DELAY_MS = 650;
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * POST /users/change-password — revokes refresh tokens and untrusts devices on the server.
+ * Caller should log out locally and send the user to sign-in again.
+ */
+export async function changePasswordRemote(payload: {
+  currentPassword: string;
+  newPassword: string;
+}): Promise<{ message: string }> {
+  if (USE_API_MOCK) {
+    await delay(MOCK_DELAY_MS);
+    if (!payload.currentPassword.trim()) {
+      throw new Error("Nhập mật khẩu hiện tại.");
+    }
+    if (payload.newPassword.length < 8) {
+      throw new Error("Mật khẩu mới quá ngắn.");
+    }
+    return { message: "Password updated" };
+  }
+  try {
+    const { data } = await apiClient.post<{ message: string }>("/users/change-password", {
+      currentPassword: payload.currentPassword,
+      newPassword: payload.newPassword,
+    });
+    return data;
+  } catch (e) {
+    throw new Error(getApiErrorMessage(e, "Không đổi được mật khẩu."));
+  }
+}

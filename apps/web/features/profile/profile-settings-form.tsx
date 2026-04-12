@@ -12,7 +12,9 @@ import {
   uploadAvatarAction,
 } from "@/features/profile/profile-actions";
 import { ChangePasswordForm } from "@/features/profile/change-password-form";
+import { SessionsSection } from "@/features/profile/sessions-section";
 import type { ProfileSettingsLoad } from "@/lib/profile/load-profile";
+import type { SessionsSettingsLoad } from "@/lib/profile/load-sessions";
 import { USERNAME_FORMAT_MESSAGE, USERNAME_RE } from "@/lib/profile/username";
 
 const inputClass =
@@ -20,9 +22,10 @@ const inputClass =
 
 type ProfileSettingsFormProps = {
   load: ProfileSettingsLoad;
+  sessionsLoad: SessionsSettingsLoad;
 };
 
-export function ProfileSettingsForm({ load }: ProfileSettingsFormProps) {
+export function ProfileSettingsForm({ load, sessionsLoad }: ProfileSettingsFormProps) {
   const router = useRouter();
   const { kind, user } = load;
   const isMock = kind === "mock";
@@ -250,6 +253,9 @@ export function ProfileSettingsForm({ load }: ProfileSettingsFormProps) {
         </h2>
         <div className="mt-3">
           <ChangePasswordForm disabled={isMock} />
+        </div>
+        <div className="mt-8 border-t border-[var(--zalo-border-soft)] pt-8">
+          <SessionsSection load={sessionsLoad} />
         </div>
       </section>
     </div>

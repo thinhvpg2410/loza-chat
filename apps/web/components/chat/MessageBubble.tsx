@@ -19,6 +19,14 @@ type MessageBubbleProps = {
   onOpenImage: (url: string) => void;
 };
 
+function ownReceiptLabel(message: Message): string | null {
+  if (!message.isOwn || message.kind === "system") return null;
+  if (message.peerDelivered === undefined && message.peerSeen === undefined) return null;
+  if (message.peerSeen) return "Đã xem";
+  if (message.peerDelivered) return "Đã nhận";
+  return "Đã gửi";
+}
+
 function Avatar({ label }: { label: string }) {
   const initial = label.trim().charAt(0).toUpperCase();
   return (
@@ -76,6 +84,17 @@ export function MessageBubble({
   const replyQuote = message.replyTo ? <MessageReplyQuote replyTo={message.replyTo} /> : null;
 
   const timeClass = isOwn ? "text-right text-white/75" : "text-[var(--zalo-text-muted)]";
+  const receipt = ownReceiptLabel(message);
+  const receiptBlock =
+    receipt && isOwn ? (
+      <p
+        className={`mt-0.5 text-[10px] leading-none ${
+          isOwn ? "text-right text-white/70" : "text-[var(--zalo-text-muted)]"
+        }`}
+      >
+        {receipt}
+      </p>
+    ) : null;
 
   const body = () => {
     switch (message.kind) {
@@ -97,6 +116,7 @@ export function MessageBubble({
               {message.body}
             </p>
             <p className={`mt-1 text-[10px] leading-none ${timeClass}`}>{message.sentAt}</p>
+            {receiptBlock}
           </div>
         );
       case "image":
@@ -119,6 +139,7 @@ export function MessageBubble({
             >
               {message.sentAt}
             </p>
+            {receiptBlock}
           </div>
         );
       case "file":
@@ -138,12 +159,13 @@ export function MessageBubble({
               />
             </div>
             <p className={`text-[10px] ${timeClass}`}>{message.sentAt}</p>
+            {receiptBlock}
           </div>
         );
       case "sticker":
         return (
           <div className="flex flex-col">
-            <StickerMessage emoji={message.emoji} />
+            <StickerMessage emoji={message.emoji} imageUrl={message.stickerImageUrl} />
             <p
               className={`mt-1 text-[10px] ${
                 isOwn ? "text-right text-[var(--zalo-text-muted)]" : "text-[var(--zalo-text-muted)]"
@@ -151,6 +173,7 @@ export function MessageBubble({
             >
               {message.sentAt}
             </p>
+            {receiptBlock}
           </div>
         );
       default:

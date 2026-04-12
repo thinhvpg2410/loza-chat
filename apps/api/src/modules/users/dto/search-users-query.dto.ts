@@ -1,20 +1,30 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiHideProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
-  IsOptional,
+  Allow,
+  IsEmail,
   IsString,
   Matches,
   MaxLength,
   MinLength,
+  Validate,
   ValidateIf,
 } from 'class-validator';
+import { SearchUsersExactlyOneConstraint } from './search-users-exactly-one.constraint';
 
 const E164_PHONE = /^\+[1-9]\d{6,14}$/;
 
 export class SearchUsersQueryDto {
+  @ApiHideProperty()
+  @Allow()
+  @Transform(() => null)
+  @Validate(SearchUsersExactlyOneConstraint)
+  _exactlyOneSearchIdentifier!: null;
   @ApiPropertyOptional({ example: '+84901234567' })
-  @ValidateIf((o: SearchUsersQueryDto) => o.username === undefined)
-  @IsOptional()
+  @ValidateIf(
+    (o: SearchUsersQueryDto) =>
+      typeof o.phoneNumber === 'string' && o.phoneNumber.trim() !== '',
+  )
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim() : value,
   )
@@ -24,9 +34,23 @@ export class SearchUsersQueryDto {
   })
   phoneNumber?: string;
 
+  @ApiPropertyOptional({ example: 'jane@example.com' })
+  @ValidateIf(
+    (o: SearchUsersQueryDto) =>
+      typeof o.email === 'string' && o.email.trim() !== '',
+  )
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
+  @IsString()
+  @IsEmail()
+  email?: string;
+
   @ApiPropertyOptional({ example: 'jane_doe' })
-  @ValidateIf((o: SearchUsersQueryDto) => o.phoneNumber === undefined)
-  @IsOptional()
+  @ValidateIf(
+    (o: SearchUsersQueryDto) =>
+      typeof o.username === 'string' && o.username.trim() !== '',
+  )
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim().toLowerCase() : value,
   )

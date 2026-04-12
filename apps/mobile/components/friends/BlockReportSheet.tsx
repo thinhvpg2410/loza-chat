@@ -9,11 +9,27 @@ type BlockReportSheetProps = {
   visible: boolean;
   userName: string;
   onClose: () => void;
-  onBlock: () => void;
   onReport: () => void;
+  /** Shown when viewer has not blocked this user */
+  onBlock?: () => void;
+  /** When true, show "Bỏ chặn" instead of "Chặn" */
+  blockedByMe?: boolean;
+  onUnblock?: () => void;
+  showUnfriend?: boolean;
+  onUnfriend?: () => void;
 };
 
-export function BlockReportSheet({ visible, userName, onClose, onBlock, onReport }: BlockReportSheetProps) {
+export function BlockReportSheet({
+  visible,
+  userName,
+  onClose,
+  onBlock,
+  onReport,
+  blockedByMe,
+  onUnblock,
+  showUnfriend,
+  onUnfriend,
+}: BlockReportSheetProps) {
   const insets = useSafeAreaInsets();
 
   return (
@@ -24,20 +40,53 @@ export function BlockReportSheet({ visible, userName, onClose, onBlock, onReport
           <AppText variant="micro" color="textMuted" style={styles.title}>
             {userName}
           </AppText>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Chặn"
-            onPress={() => {
-              onBlock();
-              onClose();
-            }}
-            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-          >
-            <Ionicons name="ban-outline" size={20} color={colors.danger} />
-            <AppText variant="subhead" style={styles.dangerLabel}>
-              Chặn
-            </AppText>
-          </Pressable>
+          {showUnfriend ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Huỷ kết bạn"
+              onPress={() => {
+                onUnfriend?.();
+                onClose();
+              }}
+              style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+            >
+              <Ionicons name="person-remove-outline" size={20} color={colors.danger} />
+              <AppText variant="subhead" style={styles.dangerLabel}>
+                Huỷ kết bạn
+              </AppText>
+            </Pressable>
+          ) : null}
+          {blockedByMe ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Bỏ chặn"
+              onPress={() => {
+                onUnblock?.();
+                onClose();
+              }}
+              style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+            >
+              <Ionicons name="checkmark-circle-outline" size={20} color={colors.primary} />
+              <AppText variant="subhead" style={styles.label}>
+                Bỏ chặn
+              </AppText>
+            </Pressable>
+          ) : onBlock ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Chặn"
+              onPress={() => {
+                onBlock();
+                onClose();
+              }}
+              style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+            >
+              <Ionicons name="ban-outline" size={20} color={colors.danger} />
+              <AppText variant="subhead" style={styles.dangerLabel}>
+                Chặn
+              </AppText>
+            </Pressable>
+          ) : null}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Báo cáo"

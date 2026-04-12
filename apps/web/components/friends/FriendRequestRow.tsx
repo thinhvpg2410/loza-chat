@@ -3,6 +3,7 @@ import { Avatar } from "@/components/common/Avatar";
 
 type FriendRequestRowProps = {
   request: FriendRequest;
+  busy?: boolean;
   onAccept?: (id: string) => void;
   onReject?: (id: string) => void;
   onCancel?: (id: string) => void;
@@ -11,7 +12,13 @@ type FriendRequestRowProps = {
 const btnBase =
   "inline-flex h-7 shrink-0 items-center justify-center rounded-md px-2.5 text-[11px] font-semibold leading-none transition";
 
-export function FriendRequestRow({ request, onAccept, onReject, onCancel }: FriendRequestRowProps) {
+export function FriendRequestRow({
+  request,
+  busy = false,
+  onAccept,
+  onReject,
+  onCancel,
+}: FriendRequestRowProps) {
   const incoming = request.direction === "incoming";
 
   return (
@@ -34,14 +41,16 @@ export function FriendRequestRow({ request, onAccept, onReject, onCancel }: Frie
               <>
                 <button
                   type="button"
-                  className={`${btnBase} border border-[var(--zalo-border)] bg-white text-[var(--zalo-text)] hover:bg-[var(--zalo-surface)]`}
+                  disabled={busy}
+                  className={`${btnBase} border border-[var(--zalo-border)] bg-white text-[var(--zalo-text)] hover:bg-[var(--zalo-surface)] disabled:opacity-45`}
                   onClick={() => onReject?.(request.id)}
                 >
                   Từ chối
                 </button>
                 <button
                   type="button"
-                  className={`${btnBase} bg-[var(--zalo-blue)] text-white hover:bg-[#0056d6]`}
+                  disabled={busy}
+                  className={`${btnBase} bg-[var(--zalo-blue)] text-white hover:bg-[#0056d6] disabled:opacity-45`}
                   onClick={() => onAccept?.(request.id)}
                 >
                   Đồng ý
@@ -50,7 +59,8 @@ export function FriendRequestRow({ request, onAccept, onReject, onCancel }: Frie
             ) : (
               <button
                 type="button"
-                className={`${btnBase} border border-[var(--zalo-border)] bg-white text-[var(--zalo-text)] hover:bg-[var(--zalo-surface)]`}
+                disabled={busy}
+                className={`${btnBase} border border-[var(--zalo-border)] bg-white text-[var(--zalo-text)] hover:bg-[var(--zalo-surface)] disabled:opacity-45`}
                 onClick={() => onCancel?.(request.id)}
               >
                 Thu hồi

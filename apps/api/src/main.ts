@@ -56,14 +56,39 @@ async function bootstrap() {
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Loza Chat API')
-    .setDescription('HTTP API documentation')
+    .setDescription(
+      [
+        'REST API for Loza Chat (NestJS). Real-time features use Socket.IO on the same host; see gateway payloads in source under `realtime/`.',
+        '',
+        '**Authentication**',
+        '- Most routes require `Authorization: Bearer <access_token>`.',
+        '- Obtain tokens from `POST /auth/login`, `POST /auth/register/create-account`, `POST /auth/login/verify-device-otp`, `POST /auth/refresh`, or the one-time payload from `GET /auth/qr/status/:sessionToken` after mobile approval.',
+        '- Refresh with `POST /auth/refresh` (body: `refreshToken`). Log out with `POST /auth/logout` or `POST /auth/logout-all` (Bearer). Manage devices with `GET /sessions` and `DELETE /sessions/:id` (Bearer).',
+        '- OTP request endpoints apply rate limits, max resends per active code, and a cooldown between resends (`OTP_RESEND_COOLDOWN_SECONDS`).',
+        '',
+        '**Errors**',
+        '- Failed requests return JSON: `{ "error": { "code": <http_status>, "message": "<string>" } }` (validation errors use the first message in `message`).',
+        '',
+        '**Uploads**',
+        '- `POST /uploads/init` returns a presigned URL; the client PUTs bytes to storage, then calls `POST /uploads/:id/complete`. With `STORAGE_MOCK`, use `PUT /uploads/mock-upload/:sessionId` and avatar URLs may point at `GET /uploads/mock-public`.',
+        '',
+        '**Realtime (Socket.IO, same origin as API)**',
+        '- Authenticate the socket with the same JWT access token as REST (see `SocketAuthService` / gateway handshake).',
+        '- Join each open chat with `conversation:join` before relying on room-targeted events.',
+        '- Client → server: `message:send` (text), `typing:start`, `typing:stop`, `message:delivered`, `message:seen`.',
+        '- Server → client: `message:new`, `typing:update`, `message:delivered`, `message:seen` (plus group/presence events as implemented).',
+        '- Text sends use `MessagesService` only; `message:new` is emitted once per new stored message (idempotent resend does not re-broadcast).',
+        '- Unread counts and read/delivered pointers: REST `GET /conversations`, `GET /conversations/:id/state`, `POST /conversations/:id/read|delivered` stay in sync with socket receipt events.',
+      ].join('\n'),
+    )
     .setVersion('1.0')
     .addBearerAuth(
       {
         type: 'http',
         scheme: 'bearer',
         bearerFormat: 'JWT',
-        description: 'Paste access_token from login / register/create-account / refresh',
+        description:
+          'JWT access token from login, registration, device OTP, refresh, or QR approval',
       },
       'access-token',
     )

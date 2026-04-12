@@ -22,6 +22,8 @@ export type AppConfiguration = {
     maxRequestsPerPhoneWindow: number;
     rateWindowMinutes: number;
     maxResendsPerActiveCode: number;
+    /** Minimum seconds between OTP resends for the same active code */
+    resendCooldownSeconds: number;
   };
   storage: {
     mock: boolean;
@@ -78,6 +80,10 @@ export default (): AppConfiguration => ({
     ),
     maxResendsPerActiveCode: parseInt(
       process.env.OTP_MAX_RESENDS_PER_ACTIVE_CODE ?? '3',
+      10,
+    ),
+    resendCooldownSeconds: parseInt(
+      process.env.OTP_RESEND_COOLDOWN_SECONDS ?? '60',
       10,
     ),
   },

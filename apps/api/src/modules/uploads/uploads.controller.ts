@@ -16,12 +16,18 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiBody,
   ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
+  ApiProduces,
+  ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
+import { ApiErrorEnvelopeDto } from '../../common/swagger/http-error.dto';
+import { OkTrueOpenApiDto } from '../../common/swagger/primitive-responses.dto';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { UploadCompleteResponseDto } from './dto/upload-complete-response.dto';
@@ -51,6 +57,8 @@ export class UploadsController {
       'Start direct-to-storage upload (presigned PUT). Bytes never pass through API.',
   })
   @ApiCreatedResponse({ type: UploadInitResponseDto })
+  @ApiResponse({ status: 400, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
   async init(
     @GetUser('id') userId: string,
     @Body() dto: UploadInitDto,
@@ -65,6 +73,14 @@ export class UploadsController {
     summary:
       'STORAGE_MOCK only: upload bytes to the API (replace fake S3 presigned host).',
   })
+  @ApiParam({ name: 'sessionId', format: 'uuid' })
+  @ApiBody({
+    description: 'Raw file bytes (request body)',
+    schema: { type: 'string', format: 'binary' },
+  })
+  @ApiOkResponse({ type: OkTrueOpenApiDto })
+  @ApiResponse({ status: 400, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
   async mockUploadPut(
     @Req() req: RawBodyRequest<Request>,
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
@@ -92,6 +108,12 @@ export class UploadsController {
     summary:
       'STORAGE_MOCK only: fetch uploaded bytes (no auth). For avatar URLs in dev.',
   })
+  @ApiProduces('application/octet-stream')
+  @ApiOkResponse({
+    description: 'Binary object body; Content-Type reflects stored MIME type',
+    schema: { type: 'string', format: 'binary' },
+  })
+  @ApiResponse({ status: 404, description: 'Missing key or object not found' })
   async mockPublicGet(
     @Query('key') key: string,
     @Res({ passthrough: false }) res: Response,
@@ -116,7 +138,11 @@ export class UploadsController {
     summary:
       'Finalize after client uploaded to storage; verifies object and creates Attachment',
   })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'Upload session id' })
   @ApiOkResponse({ type: UploadCompleteResponseDto })
+  @ApiResponse({ status: 400, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 404, type: ApiErrorEnvelopeDto })
   async complete(
     @GetUser('id') userId: string,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,

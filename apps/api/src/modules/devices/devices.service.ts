@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma, UserDevice } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -58,5 +58,40 @@ export class DevicesService {
       where: { userId, isActive: true },
       orderBy: { lastSeenAt: 'desc' },
     });
+  }
+
+  async listSessionsForUser(
+    userId: string,
+    currentClientDeviceId?: string,
+  ): Promise<Array<UserDevice & { isCurrent: boolean }>> {
+    const rows = await this.listForUser(userId);
+    const trimmed = currentClientDeviceId?.trim();
+    return rows.map((d) => ({
+      ...d,
+      isCurrent:
+        trimmed !== undefined &&
+        trimmed.length > 0 &&
+        d.deviceId === trimmed,
+    }));
+  }
+
+  async revokeSession(userId: string, sessionId: string): Promise<void> {
+    const device = await this.prisma.userDevice.findFirst({
+      where: { id: sessionId, userId },
+    });
+    if (!device) {
+      throw new NotFoundException('Session not found');
+    }
+    const now = new Date();
+    await this.prisma.$transaction([
+      this.prisma.refreshToken.updateMany({
+        where: { userDeviceId: sessionId, revokedAt: null },
+        data: { revokedAt: now },
+      }),
+      this.prisma.userDevice.update({
+        where: { id: sessionId },
+        data: { isActive: false },
+      }),
+    ]);
   }
 }

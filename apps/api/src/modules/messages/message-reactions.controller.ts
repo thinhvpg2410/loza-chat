@@ -8,10 +8,23 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { ApiErrorEnvelopeDto } from '../../common/swagger/http-error.dto';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AddReactionDto } from './dto/add-reaction.dto';
+import {
+  AddReactionResultOpenApiDto,
+  ReactionsSummaryWrapperOpenApiDto,
+} from './dto/message-view.openapi.dto';
 import { MessagesService } from './messages.service';
 
 @ApiTags('messages')
@@ -25,6 +38,10 @@ export class MessageReactionsController {
   @ApiOperation({
     summary: 'List reactions for a message (counts and your reactions)',
   })
+  @ApiParam({ name: 'messageId', format: 'uuid' })
+  @ApiOkResponse({ type: ReactionsSummaryWrapperOpenApiDto })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 404, type: ApiErrorEnvelopeDto })
   async list(
     @GetUser('id') userId: string,
     @Param('messageId', new ParseUUIDPipe({ version: '4' })) messageId: string,
@@ -37,6 +54,11 @@ export class MessageReactionsController {
     summary:
       'Add a reaction (idempotent: duplicate returns existing summary without error)',
   })
+  @ApiParam({ name: 'messageId', format: 'uuid' })
+  @ApiCreatedResponse({ type: AddReactionResultOpenApiDto })
+  @ApiResponse({ status: 400, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 404, type: ApiErrorEnvelopeDto })
   async add(
     @GetUser('id') userId: string,
     @Param('messageId', new ParseUUIDPipe({ version: '4' })) messageId: string,
@@ -47,6 +69,15 @@ export class MessageReactionsController {
 
   @Delete(':messageId/reactions/:reaction')
   @ApiOperation({ summary: 'Remove your reaction for this message' })
+  @ApiParam({ name: 'messageId', format: 'uuid' })
+  @ApiParam({
+    name: 'reaction',
+    description: 'Emoji or short code; URL-encoded when needed',
+  })
+  @ApiOkResponse({ type: ReactionsSummaryWrapperOpenApiDto })
+  @ApiResponse({ status: 400, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 404, type: ApiErrorEnvelopeDto })
   async remove(
     @GetUser('id') userId: string,
     @Param('messageId', new ParseUUIDPipe({ version: '4' })) messageId: string,

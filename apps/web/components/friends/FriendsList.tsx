@@ -8,20 +8,29 @@ type FriendsListProps = {
   friends: Friend[];
   selectedId: string | null;
   onSelectFriend: (id: string) => void;
+  /** User id while opening a direct chat (disables that row’s message action). */
+  openingDirectChatUserId?: string | null;
   onMessage?: (id: string) => void;
   searchEmpty?: boolean;
   filterEmpty?: boolean;
   listEmpty?: boolean;
+  source?: "mock" | "api";
+  onUnfriend?: (id: string) => void;
+  onBlock?: (id: string) => void;
 };
 
 export function FriendsList({
   friends,
   selectedId,
   onSelectFriend,
+  openingDirectChatUserId = null,
   onMessage,
   searchEmpty,
   filterEmpty,
   listEmpty,
+  source = "mock",
+  onUnfriend,
+  onBlock,
 }: FriendsListProps) {
   if (listEmpty) {
     return (
@@ -58,7 +67,11 @@ export function FriendsList({
           friend={f}
           isSelected={selectedId === f.id}
           onSelect={onSelectFriend}
+          openingDirectChat={openingDirectChatUserId === f.id}
           onMessage={onMessage}
+          source={source}
+          onUnfriend={onUnfriend}
+          onBlock={onBlock}
         />
       ))}
     </div>

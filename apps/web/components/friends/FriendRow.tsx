@@ -6,14 +6,38 @@ type FriendRowProps = {
   friend: Friend;
   isSelected: boolean;
   onSelect: (id: string) => void;
+  /** When true, the “Nhắn tin” row is disabled (direct chat is opening). */
+  openingDirectChat?: boolean;
   onMessage?: (id: string) => void;
+  source?: "mock" | "api";
+  onUnfriend?: (id: string) => void;
+  onBlock?: (id: string) => void;
 };
 
-export function FriendRow({ friend, isSelected, onSelect, onMessage }: FriendRowProps) {
+export function FriendRow({
+  friend,
+  isSelected,
+  onSelect,
+  openingDirectChat = false,
+  onMessage,
+  source = "mock",
+  onUnfriend,
+  onBlock,
+}: FriendRowProps) {
   const menuItems: ActionMenuItem[] = [
-    { id: "msg", label: "Nhắn tin", onSelect: () => onMessage?.(friend.id) },
+    {
+      id: "msg",
+      label: openingDirectChat ? "Đang mở…" : "Nhắn tin",
+      disabled: openingDirectChat,
+      onSelect: () => onMessage?.(friend.id),
+    },
     { id: "profile", label: "Xem hồ sơ", onSelect: () => onSelect(friend.id) },
-    { id: "block", label: "Chặn", danger: true, onSelect: () => {} },
+    ...(source === "api" && onUnfriend
+      ? ([{ id: "unfriend", label: "Hủy kết bạn", danger: true, onSelect: () => onUnfriend(friend.id) }] as ActionMenuItem[])
+      : []),
+    ...(source === "api" && onBlock
+      ? ([{ id: "block", label: "Chặn", danger: true, onSelect: () => onBlock(friend.id) }] as ActionMenuItem[])
+      : []),
   ];
 
   return (

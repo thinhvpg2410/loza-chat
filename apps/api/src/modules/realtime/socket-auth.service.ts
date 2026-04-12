@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import type { User } from '@prisma/client';
 import type { Socket } from 'socket.io';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuthErrorMessage } from '../auth/auth-errors';
 import type { AccessTokenPayload } from '../auth/interfaces/jwt-payload.interface';
 
 export interface SocketAuthContext {
@@ -24,7 +25,7 @@ export class SocketAuthService {
   ): Promise<SocketAuthContext> {
     const token = this.extractBearerToken(handshake);
     if (!token) {
-      throw new UnauthorizedException('Missing access token');
+      throw new UnauthorizedException(AuthErrorMessage.INVALID_OR_EXPIRED_SESSION);
     }
 
     let payload: AccessTokenPayload;
@@ -33,14 +34,14 @@ export class SocketAuthService {
         secret: this.config.getOrThrow<string>('jwt.accessSecret'),
       });
     } catch {
-      throw new UnauthorizedException('Invalid access token');
+      throw new UnauthorizedException(AuthErrorMessage.INVALID_OR_EXPIRED_SESSION);
     }
 
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
     });
     if (!user || !user.isActive) {
-      throw new UnauthorizedException('User not available');
+      throw new UnauthorizedException(AuthErrorMessage.INVALID_OR_EXPIRED_SESSION);
     }
 
     return {
