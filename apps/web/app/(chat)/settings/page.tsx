@@ -1,4 +1,5 @@
 import { loadProfileForSettings } from "@/lib/profile/load-profile";
+import { loadSessionsForSettings } from "@/lib/profile/load-sessions";
 import { ProfileSettingsForm } from "@/features/profile/profile-settings-form";
 
 export default async function SettingsPage() {
@@ -16,11 +17,13 @@ export default async function SettingsPage() {
     );
   }
 
+  const sessionsLoad = await loadSessionsForSettings();
+
   return (
     <main className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--zalo-chat-bg)] p-6">
       <h1 className="text-lg font-semibold text-[var(--zalo-text)]">Cài đặt</h1>
       <div className="mt-6">
-        <ProfileSettingsForm load={load} />
+        <ProfileSettingsForm load={load} sessionsLoad={sessionsLoad} />
       </div>
     </main>
   );
