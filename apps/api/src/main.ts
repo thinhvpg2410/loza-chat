@@ -56,14 +56,30 @@ async function bootstrap() {
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Loza Chat API')
-    .setDescription('HTTP API documentation')
+    .setDescription(
+      [
+        'REST API for Loza Chat (NestJS). Real-time features use Socket.IO on the same host; see gateway payloads in source under `realtime/`.',
+        '',
+        '**Authentication**',
+        '- Most routes require `Authorization: Bearer <access_token>`.',
+        '- Obtain tokens from `POST /auth/login`, `POST /auth/register/create-account`, `POST /auth/login/verify-device-otp`, `POST /auth/refresh`, or the one-time payload from `GET /auth/qr/status/:sessionToken` after mobile approval.',
+        '- Refresh with `POST /auth/refresh` (body: `refreshToken`). Log out with `POST /auth/logout` or `POST /auth/logout-all` (Bearer).',
+        '',
+        '**Errors**',
+        '- Failed requests return JSON: `{ "error": { "code": <http_status>, "message": "<string>" } }` (validation errors use the first message in `message`).',
+        '',
+        '**Uploads**',
+        '- `POST /uploads/init` returns a presigned URL; the client PUTs bytes to storage, then calls `POST /uploads/:id/complete`. With `STORAGE_MOCK`, use `PUT /uploads/mock-upload/:sessionId` and avatar URLs may point at `GET /uploads/mock-public`.',
+      ].join('\n'),
+    )
     .setVersion('1.0')
     .addBearerAuth(
       {
         type: 'http',
         scheme: 'bearer',
         bearerFormat: 'JWT',
-        description: 'Paste access_token from login / register/create-account / refresh',
+        description:
+          'JWT access token from login, registration, device OTP, refresh, or QR approval',
       },
       'access-token',
     )

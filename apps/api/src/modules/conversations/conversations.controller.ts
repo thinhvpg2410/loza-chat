@@ -10,9 +10,25 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import {
+  ConversationDetailWrapperOpenApiDto,
+  ConversationListOpenApiDto,
+  ConversationProgressAdvanceOpenApiDto,
+  ConversationStateWrapperOpenApiDto,
+} from '../../common/swagger/conversation-openapi.dto';
+import { ApiErrorEnvelopeDto } from '../../common/swagger/http-error.dto';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { MessageHistoryOpenApiDto } from '../messages/dto/message-view.openapi.dto';
 import { MessageHistoryQueryDto } from '../messages/dto/message-history-query.dto';
 import { MessagesService } from '../messages/messages.service';
 import { ConversationProgressService } from './conversation-progress.service';
@@ -36,6 +52,11 @@ export class ConversationsController {
   @ApiOperation({
     summary: 'Create or return an existing direct conversation with a friend',
   })
+  @ApiCreatedResponse({ type: ConversationDetailWrapperOpenApiDto })
+  @ApiResponse({ status: 400, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 403, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 404, type: ApiErrorEnvelopeDto })
   async createDirect(
     @GetUser('id') userId: string,
     @Body() dto: CreateDirectConversationDto,
@@ -51,6 +72,8 @@ export class ConversationsController {
     summary:
       'List conversations for the current user (most recently active first)',
   })
+  @ApiOkResponse({ type: ConversationListOpenApiDto })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
   async list(@GetUser('id') userId: string) {
     return this.conversationsService.listMyConversations(userId);
   }
@@ -60,6 +83,11 @@ export class ConversationsController {
     summary:
       'Read/delivered pointers, unread count, and sync metadata for the current member',
   })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'Conversation id' })
+  @ApiOkResponse({ type: ConversationStateWrapperOpenApiDto })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 403, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 404, type: ApiErrorEnvelopeDto })
   async state(
     @GetUser('id') userId: string,
     @Param('id', new ParseUUIDPipe({ version: '4' })) conversationId: string,
@@ -76,10 +104,16 @@ export class ConversationsController {
     summary:
       'Advance read pointer (and delivered if behind). Optional messageId defaults to latest message.',
   })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'Conversation id' })
+  @ApiCreatedResponse({ type: ConversationProgressAdvanceOpenApiDto })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 403, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 404, type: ApiErrorEnvelopeDto })
   async markRead(
     @GetUser('id') userId: string,
     @Param('id', new ParseUUIDPipe({ version: '4' })) conversationId: string,
-    @Body() dto: MarkConversationProgressDto = new MarkConversationProgressDto(),
+    @Body()
+    dto: MarkConversationProgressDto = new MarkConversationProgressDto(),
   ) {
     return this.conversationProgress.advanceRead(
       userId,
@@ -93,10 +127,16 @@ export class ConversationsController {
     summary:
       'Advance delivered pointer. Optional messageId defaults to latest message.',
   })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'Conversation id' })
+  @ApiCreatedResponse({ type: ConversationProgressAdvanceOpenApiDto })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 403, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 404, type: ApiErrorEnvelopeDto })
   async markDelivered(
     @GetUser('id') userId: string,
     @Param('id', new ParseUUIDPipe({ version: '4' })) conversationId: string,
-    @Body() dto: MarkConversationProgressDto = new MarkConversationProgressDto(),
+    @Body()
+    dto: MarkConversationProgressDto = new MarkConversationProgressDto(),
   ) {
     return this.conversationProgress.advanceDelivered(
       userId,
@@ -110,6 +150,11 @@ export class ConversationsController {
     summary:
       'Message history (newest first). Pass `nextCursor` to load older messages.',
   })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'Conversation id' })
+  @ApiOkResponse({ type: MessageHistoryOpenApiDto })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 403, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 404, type: ApiErrorEnvelopeDto })
   async messages(
     @GetUser('id') userId: string,
     @Param('id', new ParseUUIDPipe({ version: '4' })) conversationId: string,
@@ -124,6 +169,11 @@ export class ConversationsController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Conversation details (members only)' })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'Conversation id' })
+  @ApiOkResponse({ type: ConversationDetailWrapperOpenApiDto })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 403, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 404, type: ApiErrorEnvelopeDto })
   async getOne(
     @GetUser('id') userId: string,
     @Param('id', new ParseUUIDPipe({ version: '4' })) conversationId: string,

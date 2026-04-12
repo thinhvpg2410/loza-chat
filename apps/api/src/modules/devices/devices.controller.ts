@@ -1,5 +1,13 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { DevicesListOpenApiDto } from '../../common/swagger/device-openapi.dto';
+import { ApiErrorEnvelopeDto } from '../../common/swagger/http-error.dto';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { DevicesService } from './devices.service';
@@ -13,6 +21,8 @@ export class DevicesController {
 
   @Get()
   @ApiOperation({ summary: 'List active devices / sessions for current user' })
+  @ApiOkResponse({ type: DevicesListOpenApiDto })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
   async list(@GetUser('id') userId: string) {
     const devices = await this.devicesService.listForUser(userId);
     return { devices };

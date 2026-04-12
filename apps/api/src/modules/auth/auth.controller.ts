@@ -7,8 +7,33 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiExtraModels,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
+  getSchemaPath,
+} from '@nestjs/swagger';
 import type { Request } from 'express';
+import {
+  AuthSessionOpenApiDto,
+  LoginDeviceChallengeOpenApiDto,
+  LoginSuccessOpenApiDto,
+  QrCreateOpenApiDto,
+  QrStatusApprovedDeliveredOpenApiDto,
+  QrStatusApprovedWithSessionOpenApiDto,
+  QrStatusPendingOpenApiDto,
+  QrStatusTerminalOpenApiDto,
+  RefreshTokensOpenApiDto,
+  SimpleMessageOpenApiDto,
+  TokenOnlyOpenApiDto,
+} from '../../common/swagger/auth-openapi.dto';
+import { ApiErrorEnvelopeDto } from '../../common/swagger/http-error.dto';
+import { OkTrueOpenApiDto } from '../../common/swagger/primitive-responses.dto';
 import { GetUser } from './decorators/get-user.decorator';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthService } from './auth.service';
@@ -22,13 +47,49 @@ import { VerifyLoginDeviceOtpDto } from './dto/verify-login-device-otp.dto';
 import { LogoutBodyDto } from './dto/logout-body.dto';
 import { RefreshBodyDto } from './dto/refresh-body.dto';
 
+const loginResultSchema = {
+  oneOf: [
+    { $ref: getSchemaPath(LoginSuccessOpenApiDto) },
+    { $ref: getSchemaPath(LoginDeviceChallengeOpenApiDto) },
+  ],
+};
+
+const qrStatusSchema = {
+  oneOf: [
+    { $ref: getSchemaPath(QrStatusPendingOpenApiDto) },
+    { $ref: getSchemaPath(QrStatusTerminalOpenApiDto) },
+    { $ref: getSchemaPath(QrStatusApprovedDeliveredOpenApiDto) },
+    { $ref: getSchemaPath(QrStatusApprovedWithSessionOpenApiDto) },
+  ],
+};
+
 @ApiTags('auth')
+@ApiExtraModels(
+  SimpleMessageOpenApiDto,
+  TokenOnlyOpenApiDto,
+  AuthSessionOpenApiDto,
+  LoginSuccessOpenApiDto,
+  LoginDeviceChallengeOpenApiDto,
+  RefreshTokensOpenApiDto,
+  QrCreateOpenApiDto,
+  QrStatusPendingOpenApiDto,
+  QrStatusTerminalOpenApiDto,
+  QrStatusApprovedDeliveredOpenApiDto,
+  QrStatusApprovedWithSessionOpenApiDto,
+  OkTrueOpenApiDto,
+)
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register/request-otp')
-  @ApiOperation({ summary: 'Request OTP for registration (SMS/email dev-only)' })
+  @ApiOperation({
+    summary: 'Request OTP for registration (SMS/email dev-only)',
+    description:
+      'Sends a one-time code. In development, delivery may be logged instead of SMS/email.',
+  })
+  @ApiCreatedResponse({ type: SimpleMessageOpenApiDto })
+  @ApiResponse({ status: 409, type: ApiErrorEnvelopeDto })
   registerRequestOtp(
     @Body() dto: ContactOtpDto,
     @Req() req: Request,
@@ -42,15 +103,25 @@ export class AuthController {
   }
 
   @Post('register/verify-otp')
-  @ApiOperation({ summary: 'Verify registration OTP; returns short-lived token for create-account' })
-  registerVerifyOtp(@Body() dto: VerifyContactOtpDto): Promise<{ token: string }> {
+  @ApiOperation({
+    summary:
+      'Verify registration OTP; returns short-lived token for create-account',
+  })
+  @ApiCreatedResponse({ type: TokenOnlyOpenApiDto })
+  @ApiResponse({ status: 409, type: ApiErrorEnvelopeDto })
+  registerVerifyOtp(
+    @Body() dto: VerifyContactOtpDto,
+  ): Promise<{ token: string }> {
     return this.authService.registerVerifyOtp(dto);
   }
 
   @Post('register/create-account')
   @ApiOperation({
-    summary: 'Create password and account after registration OTP; opens session',
+    summary:
+      'Create password and account after registration OTP; opens session',
   })
+  @ApiCreatedResponse({ type: AuthSessionOpenApiDto })
+  @ApiResponse({ status: 400, type: ApiErrorEnvelopeDto })
   createAccount(@Body() dto: CreateAccountDto) {
     return this.authService.createAccount(dto);
   }
@@ -60,12 +131,13 @@ export class AuthController {
     summary:
       'Login with email or phone + password; trusted device returns tokens, new device returns verification challenge',
   })
+  @ApiCreatedResponse({
+    description: 'Either a full session or a device verification challenge',
+    schema: loginResultSchema,
+  })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
   login(@Body() dto: LoginDto, @Req() req: Request) {
-    return this.authService.login(
-      dto,
-      this.clientIp(req),
-      this.clientUa(req),
-    );
+    return this.authService.login(dto, this.clientIp(req), this.clientUa(req));
   }
 
   @Post('login/verify-device-otp')
@@ -73,6 +145,11 @@ export class AuthController {
     summary:
       'Complete login on an untrusted device after OTP sent to account phone (preferred) or email',
   })
+  @ApiCreatedResponse({
+    description: 'Session after successful OTP verification',
+    type: LoginSuccessOpenApiDto,
+  })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
   verifyLoginDeviceOtp(@Body() dto: VerifyLoginDeviceOtpDto) {
     return this.authService.verifyLoginDeviceOtp(dto);
   }
@@ -82,6 +159,7 @@ export class AuthController {
     summary:
       'Create a short-lived QR login session (web). Put sessionToken in QR for mobile to scan.',
   })
+  @ApiCreatedResponse({ type: QrCreateOpenApiDto })
   qrCreate(@Body() dto: QrCreateDto) {
     return this.authService.qrCreate(dto);
   }
@@ -90,7 +168,19 @@ export class AuthController {
   @ApiOperation({
     summary:
       'Poll QR login status; when approved, first poll returns access/refresh (one-time)',
+    description:
+      'Use the same `sessionToken` as in the QR payload (64 hex chars). After `approved` with tokens, later polls return `tokensAlreadyDelivered: true`.',
   })
+  @ApiParam({
+    name: 'sessionToken',
+    description: 'Opaque token from POST /auth/qr/create',
+    example: 'a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456',
+  })
+  @ApiOkResponse({
+    description: 'Union of lifecycle states and optional session payload',
+    schema: qrStatusSchema,
+  })
+  @ApiResponse({ status: 410, type: ApiErrorEnvelopeDto })
   qrStatus(@Param('sessionToken') sessionToken: string) {
     return this.authService.qrGetStatus(sessionToken);
   }
@@ -98,7 +188,13 @@ export class AuthController {
   @Post('qr/scan')
   @ApiBearerAuth('access-token')
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Authenticated mobile: record scan of web QR session' })
+  @ApiOperation({
+    summary: 'Authenticated mobile: record scan of web QR session',
+  })
+  @ApiCreatedResponse({ type: OkTrueOpenApiDto })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 404, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 410, type: ApiErrorEnvelopeDto })
   qrScan(@GetUser('id') userId: string, @Body() dto: QrSessionTokenDto) {
     return this.authService.qrScan(userId, dto.sessionToken);
   }
@@ -110,6 +206,10 @@ export class AuthController {
     summary:
       'Authenticated mobile: approve web login (issues same session as password login)',
   })
+  @ApiCreatedResponse({ type: OkTrueOpenApiDto })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 404, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 410, type: ApiErrorEnvelopeDto })
   qrApprove(@GetUser('id') userId: string, @Body() dto: QrSessionTokenDto) {
     return this.authService.qrApprove(userId, dto.sessionToken);
   }
@@ -117,13 +217,20 @@ export class AuthController {
   @Post('qr/reject')
   @ApiBearerAuth('access-token')
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Authenticated mobile: reject web QR login after scan' })
+  @ApiOperation({
+    summary: 'Authenticated mobile: reject web QR login after scan',
+  })
+  @ApiCreatedResponse({ type: OkTrueOpenApiDto })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 404, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 410, type: ApiErrorEnvelopeDto })
   qrReject(@GetUser('id') userId: string, @Body() dto: QrSessionTokenDto) {
     return this.authService.qrReject(userId, dto.sessionToken);
   }
 
   @Post('forgot-password/request-otp')
   @ApiOperation({ summary: 'Request OTP for password reset' })
+  @ApiCreatedResponse({ type: SimpleMessageOpenApiDto })
   forgotPasswordRequestOtp(
     @Body() dto: ContactOtpDto,
     @Req() req: Request,
@@ -138,6 +245,7 @@ export class AuthController {
 
   @Post('forgot-password/verify-otp')
   @ApiOperation({ summary: 'Verify forgot-password OTP; returns reset token' })
+  @ApiCreatedResponse({ type: TokenOnlyOpenApiDto })
   forgotPasswordVerifyOtp(
     @Body() dto: VerifyContactOtpDto,
   ): Promise<{ token: string }> {
@@ -146,18 +254,24 @@ export class AuthController {
 
   @Post('forgot-password/reset')
   @ApiOperation({ summary: 'Set new password after forgot-password OTP' })
+  @ApiCreatedResponse({ type: SimpleMessageOpenApiDto })
+  @ApiResponse({ status: 400, type: ApiErrorEnvelopeDto })
   forgotPasswordReset(@Body() dto: ForgotPasswordResetDto) {
     return this.authService.forgotPasswordReset(dto);
   }
 
   @Post('refresh')
   @ApiOperation({ summary: 'Rotate refresh token and get new access token' })
+  @ApiCreatedResponse({ type: RefreshTokensOpenApiDto })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
   refresh(@Body() dto: RefreshBodyDto) {
     return this.authService.refresh(dto.refreshToken);
   }
 
   @Post('logout')
   @ApiOperation({ summary: 'Revoke current refresh token' })
+  @ApiCreatedResponse({ type: SimpleMessageOpenApiDto })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
   logout(@Body() dto: LogoutBodyDto) {
     return this.authService.logout(dto.refreshToken);
   }
@@ -166,6 +280,8 @@ export class AuthController {
   @ApiBearerAuth('access-token')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Revoke all refresh tokens for current user' })
+  @ApiCreatedResponse({ type: SimpleMessageOpenApiDto })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
   logoutAll(@GetUser('id') userId: string) {
     return this.authService.logoutAll(userId);
   }

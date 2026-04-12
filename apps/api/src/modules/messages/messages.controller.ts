@@ -1,7 +1,15 @@
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { ApiErrorEnvelopeDto } from '../../common/swagger/http-error.dto';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { SendMessageResultOpenApiDto } from './dto/message-view.openapi.dto';
 import { SendMessageWithAttachmentsDto } from './dto/send-message-with-attachments.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 import { SendStickerMessageDto } from './dto/send-sticker-message.dto';
@@ -19,6 +27,11 @@ export class MessagesController {
     summary:
       'Send a message with pre-uploaded attachments (idempotent via clientMessageId)',
   })
+  @ApiCreatedResponse({ type: SendMessageResultOpenApiDto })
+  @ApiResponse({ status: 400, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 403, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 404, type: ApiErrorEnvelopeDto })
   async sendWithAttachments(
     @GetUser('id') userId: string,
     @Body() dto: SendMessageWithAttachmentsDto,
@@ -31,6 +44,11 @@ export class MessagesController {
     summary:
       'Send a sticker message (idempotent via clientMessageId per sender/conversation)',
   })
+  @ApiCreatedResponse({ type: SendMessageResultOpenApiDto })
+  @ApiResponse({ status: 400, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 403, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 404, type: ApiErrorEnvelopeDto })
   async sendSticker(
     @GetUser('id') userId: string,
     @Body() dto: SendStickerMessageDto,
@@ -43,6 +61,11 @@ export class MessagesController {
     summary:
       'Send a text message (idempotent via clientMessageId per sender/conversation)',
   })
+  @ApiCreatedResponse({ type: SendMessageResultOpenApiDto })
+  @ApiResponse({ status: 400, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 403, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 404, type: ApiErrorEnvelopeDto })
   async send(@GetUser('id') userId: string, @Body() dto: SendMessageDto) {
     return this.messagesService.sendTextMessage(userId, dto);
   }
