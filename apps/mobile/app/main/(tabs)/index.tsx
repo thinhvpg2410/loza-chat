@@ -4,6 +4,8 @@ import { useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { Alert, Pressable, RefreshControl, SectionList, View } from "react-native";
 
+import { AppText } from "@ui/AppText";
+
 import type { MockConversation } from "@/constants/mockData";
 import { ChatListItem, ChatListSkeleton, ChatSearchBar } from "@components/chat";
 import { AppSectionHeader, AppTabScreen, EmptyState, ShellHeader } from "@components/shell";
@@ -20,6 +22,7 @@ export default function ChatsTabScreen() {
   const conversations = useChatStore((s) => s.conversations);
   const loading = useChatStore((s) => s.loading);
   const hasLoadedOnce = useChatStore((s) => s.hasLoadedOnce);
+  const fetchError = useChatStore((s) => s.fetchError);
   const fetchConversations = useChatStore((s) => s.fetchConversations);
 
   const [query, setQuery] = useState("");
@@ -51,8 +54,13 @@ export default function ChatsTabScreen() {
 
   const showInitialSkeleton = loading && !hasLoadedOnce;
   const listEmpty =
-    !loading && hasLoadedOnce && filteredSorted.length === 0 && conversations.length === 0;
-  const searchEmpty = !loading && hasLoadedOnce && query.trim().length > 0 && filteredSorted.length === 0;
+    !loading &&
+    hasLoadedOnce &&
+    !fetchError &&
+    filteredSorted.length === 0 &&
+    conversations.length === 0;
+  const searchEmpty =
+    !loading && hasLoadedOnce && query.trim().length > 0 && filteredSorted.length === 0;
 
   const openChat = useCallback(
     (item: MockConversation) => {
@@ -62,7 +70,7 @@ export default function ChatsTabScreen() {
           id: item.id,
           title: encodeURIComponent(item.name),
           peerAvatar: encodeURIComponent(item.avatarUrl),
-          peerId: `user-${item.id}`,
+          peerId: item.directPeerId ?? "",
         },
       });
     },
@@ -107,7 +115,32 @@ export default function ChatsTabScreen() {
         onSubmitFullSearch={() => router.push("/main/search")}
       />
 
-      {showInitialSkeleton ? (
+      {fetchError && !loading ? (
+        <View style={{ flex: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.xl, gap: spacing.md }}>
+          <EmptyState
+            icon="cloud-offline-outline"
+            title="Không tải được danh sách"
+            description={fetchError}
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Thử lại"
+            onPress={() => void fetchConversations()}
+            style={({ pressed }) => ({
+              alignSelf: "center",
+              paddingVertical: spacing.sm,
+              paddingHorizontal: spacing.lg,
+              borderRadius: 8,
+              backgroundColor: colors.primary,
+              opacity: pressed ? 0.88 : 1,
+            })}
+          >
+            <AppText variant="subhead" style={{ color: colors.textInverse, fontWeight: "600" }}>
+              Thử lại
+            </AppText>
+          </Pressable>
+        </View>
+      ) : showInitialSkeleton ? (
         <ChatListSkeleton />
       ) : (
         <SectionList

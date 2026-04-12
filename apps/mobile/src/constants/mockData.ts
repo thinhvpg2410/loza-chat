@@ -17,6 +17,8 @@ export type MockConversation = {
   kind?: ConversationKind;
   /** Group only — shown on list row / header */
   memberCount?: number;
+  /** Direct chat: other participant user id (real API) */
+  directPeerId?: string;
 };
 
 export type MockFriend = {

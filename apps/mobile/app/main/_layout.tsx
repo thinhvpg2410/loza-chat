@@ -2,12 +2,15 @@ import { Redirect, Stack } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, AppState, type AppStateStatus, View } from "react-native";
 
+import { USE_API_MOCK } from "@/constants/env";
+import { connectChatSocket, isChatSocketConfigured } from "@/services/socket/socket";
 import { useAuthStore } from "@/store/authStore";
 import { colors } from "@theme";
 
 export default function MainLayout() {
   const [ready, setReady] = useState(false);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const accessToken = useAuthStore((s) => s.accessToken);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,6 +35,13 @@ export default function MainLayout() {
     const sub = AppState.addEventListener("change", onChange);
     return () => sub.remove();
   }, []);
+
+  useEffect(() => {
+    if (!ready || !isAuthenticated || USE_API_MOCK || !isChatSocketConfigured() || !accessToken) {
+      return () => {};
+    }
+    return connectChatSocket(accessToken);
+  }, [ready, isAuthenticated, accessToken]);
 
   if (!ready) {
     return (
