@@ -16,9 +16,11 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { ConversationType } from '@prisma/client';
 import {
   ConversationDetailWrapperOpenApiDto,
   ConversationListOpenApiDto,
@@ -33,6 +35,7 @@ import { MessageHistoryQueryDto } from '../messages/dto/message-history-query.dt
 import { MessagesService } from '../messages/messages.service';
 import { ConversationProgressService } from './conversation-progress.service';
 import { ConversationsService } from './conversations.service';
+import { ConversationListQueryDto } from './dto/conversation-list-query.dto';
 import { CreateDirectConversationDto } from './dto/create-direct-conversation.dto';
 import { MarkConversationProgressDto } from './dto/mark-conversation-progress.dto';
 
@@ -75,12 +78,21 @@ export class ConversationsController {
     summary:
       'List conversations for the current user (most recently active first)',
     description:
-      'Includes direct threads opened via `POST /conversations/direct` and group chats.',
+      'Each row includes `lastMessage` preview and `unreadCount`. Direct 1:1 threads use `POST /conversations/direct` first; filter with `type=direct` for inbox-style lists.',
+  })
+  @ApiQuery({
+    name: 'type',
+    required: false,
+    enum: ConversationType,
+    description: 'Optional filter: `direct` or `group`.',
   })
   @ApiOkResponse({ type: ConversationListOpenApiDto })
   @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
-  async list(@GetUser('id') userId: string) {
-    return this.conversationsService.listMyConversations(userId);
+  async list(
+    @GetUser('id') userId: string,
+    @Query() query: ConversationListQueryDto,
+  ) {
+    return this.conversationsService.listMyConversations(userId, query.type);
   }
 
   @Get(':id/state')

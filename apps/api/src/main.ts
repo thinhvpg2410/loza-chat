@@ -71,6 +71,14 @@ async function bootstrap() {
         '',
         '**Uploads**',
         '- `POST /uploads/init` returns a presigned URL; the client PUTs bytes to storage, then calls `POST /uploads/:id/complete`. With `STORAGE_MOCK`, use `PUT /uploads/mock-upload/:sessionId` and avatar URLs may point at `GET /uploads/mock-public`.',
+        '',
+        '**Realtime (Socket.IO, same origin as API)**',
+        '- Authenticate the socket with the same JWT access token as REST (see `SocketAuthService` / gateway handshake).',
+        '- Join each open chat with `conversation:join` before relying on room-targeted events.',
+        '- Client → server: `message:send` (text), `typing:start`, `typing:stop`, `message:delivered`, `message:seen`.',
+        '- Server → client: `message:new`, `typing:update`, `message:delivered`, `message:seen` (plus group/presence events as implemented).',
+        '- Text sends use `MessagesService` only; `message:new` is emitted once per new stored message (idempotent resend does not re-broadcast).',
+        '- Unread counts and read/delivered pointers: REST `GET /conversations`, `GET /conversations/:id/state`, `POST /conversations/:id/read|delivered` stay in sync with socket receipt events.',
       ].join('\n'),
     )
     .setVersion('1.0')

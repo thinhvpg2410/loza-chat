@@ -60,6 +60,8 @@ export class MessagesController {
   @ApiOperation({
     summary:
       'Send a text message (idempotent via clientMessageId per sender/conversation)',
+    description:
+      'Same persistence and membership rules as Socket.IO `message:send` (text only). New rows broadcast as `message:new` to the conversation room for connected clients.',
   })
   @ApiCreatedResponse({ type: SendMessageResultOpenApiDto })
   @ApiResponse({ status: 400, type: ApiErrorEnvelopeDto })

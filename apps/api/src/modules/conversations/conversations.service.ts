@@ -149,9 +149,13 @@ export class ConversationsService {
 
   async listMyConversations(
     userId: string,
+    type?: ConversationType,
   ): Promise<{ conversations: ConversationListItemView[] }> {
     const memberships = await this.prisma.conversationMember.findMany({
-      where: { userId },
+      where: {
+        userId,
+        ...(type !== undefined ? { conversation: { type } } : {}),
+      },
       orderBy: { conversation: { updatedAt: 'desc' } },
       include: {
         conversation: {
