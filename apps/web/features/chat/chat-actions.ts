@@ -1,0 +1,171 @@
+"use server";
+
+import { cookies } from "next/headers";
+import { apiFetchJson, getApiBaseUrl } from "@/lib/api/server";
+import type { ApiConversationListItem, ApiMessageWithReceipt } from "@/lib/chat/api-dtos";
+import { mapConversationListItem } from "@/lib/chat/map-api-conversation";
+import { mapApiMessagesToChatMessages, mapSingleApiMessage } from "@/lib/chat/map-api-message";
+import { LOZA_ACCESS_COOKIE, LOZA_SESSION_COOKIE } from "@/lib/auth/constants";
+import type { Conversation, Message } from "@/lib/types/chat";
+
+async function assertApiChatEnabled(): Promise<
+  { ok: true; base: string } | { ok: false; error: string }
+> {
+  const base = getApiBaseUrl();
+  const jar = await cookies();
+  if (!base || jar.get(LOZA_SESSION_COOKIE)?.value === "mock" || !jar.get(LOZA_ACCESS_COOKIE)?.value) {
+    return { ok: false, error: "Chỉ khả dụng khi đăng nhập qua API." };
+  }
+  return { ok: true, base };
+}
+
+export type FetchMessagesResult =
+  | { ok: true; messages: Message[]; nextCursor: string | null }
+  | { ok: false; error: string };
+
+export async function fetchConversationMessagesAction(
+  conversationId: string,
+  cursor?: string,
+): Promise<FetchMessagesResult> {
+  const gate = await assertApiChatEnabled();
+  if (!gate.ok) return { ok: false, error: gate.error };
+
+  const q = new URLSearchParams();
+  q.set("limit", "50");
+  if (cursor) q.set("cursor", cursor);
+
+  try {
+    const data = await apiFetchJson<{
+      messages: ApiMessageWithReceipt[];
+      nextCursor: string | null;
+    }>(`/conversations/${conversationId}/messages?${q.toString()}`);
+
+    return {
+      ok: true,
+      messages: mapApiMessagesToChatMessages(data.messages, gate.base),
+      nextCursor: data.nextCursor,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Không tải được tin nhắn.",
+    };
+  }
+}
+
+export type ListConversationsResult =
+  | { ok: true; conversations: Conversation[] }
+  | { ok: false; error: string };
+
+export async function fetchConversationsListAction(): Promise<ListConversationsResult> {
+  const gate = await assertApiChatEnabled();
+  if (!gate.ok) return { ok: false, error: gate.error };
+
+  try {
+    const { conversations } = await apiFetchJson<{ conversations: ApiConversationListItem[] }>(
+      "/conversations",
+    );
+    return { ok: true, conversations: conversations.map(mapConversationListItem) };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Không tải được danh sách hội thoại.",
+    };
+  }
+}
+
+export type SendTextResult =
+  | { ok: true; message: Message }
+  | { ok: false; error: string };
+
+export async function sendChatTextMessageAction(input: {
+  conversationId: string;
+  content: string;
+  clientMessageId: string;
+  replyToMessageId?: string;
+}): Promise<SendTextResult> {
+  const gate = await assertApiChatEnabled();
+  if (!gate.ok) return { ok: false, error: gate.error };
+
+  try {
+    const body: Record<string, string> = {
+      conversationId: input.conversationId,
+      content: input.content,
+      clientMessageId: input.clientMessageId,
+    };
+    if (input.replyToMessageId) body.replyToMessageId = input.replyToMessageId;
+
+    const res = await apiFetchJson<{ message: ApiMessageWithReceipt }>("/messages", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+
+    const row: ApiMessageWithReceipt = {
+      ...res.message,
+      sentByViewer: true,
+    };
+    return { ok: true, message: mapSingleApiMessage(row, gate.base) };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Không gửi được tin nhắn.",
+    };
+  }
+}
+
+export type SendStickerResult =
+  | { ok: true; message: Message }
+  | { ok: false; error: string };
+
+export async function sendChatStickerMessageAction(input: {
+  conversationId: string;
+  stickerId: string;
+  clientMessageId: string;
+  replyToMessageId?: string;
+}): Promise<SendStickerResult> {
+  const gate = await assertApiChatEnabled();
+  if (!gate.ok) return { ok: false, error: gate.error };
+
+  try {
+    const body: Record<string, string> = {
+      conversationId: input.conversationId,
+      stickerId: input.stickerId,
+      clientMessageId: input.clientMessageId,
+    };
+    if (input.replyToMessageId) body.replyToMessageId = input.replyToMessageId;
+
+    const res = await apiFetchJson<{ message: ApiMessageWithReceipt }>("/messages/sticker", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+
+    const row: ApiMessageWithReceipt = {
+      ...res.message,
+      sentByViewer: true,
+    };
+    return { ok: true, message: mapSingleApiMessage(row, gate.base) };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Không gửi được sticker.",
+    };
+  }
+}
+
+export async function markConversationReadAction(
+  conversationId: string,
+  messageId?: string,
+): Promise<void> {
+  const gate = await assertApiChatEnabled();
+  if (!gate.ok) return;
+
+  try {
+    const body = messageId ? JSON.stringify({ messageId }) : JSON.stringify({});
+    await apiFetchJson(`/conversations/${conversationId}/read`, {
+      method: "POST",
+      body,
+    });
+  } catch {
+    /* best-effort */
+  }
+}

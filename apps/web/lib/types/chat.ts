@@ -57,6 +57,8 @@ export type StickerMessage = MessageCommon & {
   kind: "sticker";
   stickerId: string;
   emoji: string;
+  /** When set (e.g. API sticker asset), shown instead of emoji-only tile. */
+  stickerImageUrl?: string;
 };
 
 export type SystemMessage = MessageCommon & {

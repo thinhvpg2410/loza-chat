@@ -18,6 +18,9 @@ type MessageInputProps = {
   onAttachment?: (action: AttachmentAction) => void;
   onPickSticker?: (stickerId: string, emoji: string) => void;
   onInsertEmoji?: (emoji: string) => void;
+  /** When false, hides file/image attach entry points (e.g. API mode until upload is wired). */
+  attachmentsEnabled?: boolean;
+  stickersEnabled?: boolean;
 };
 
 export function MessageInput({
@@ -31,6 +34,8 @@ export function MessageInput({
   onAttachment,
   onPickSticker,
   onInsertEmoji,
+  attachmentsEnabled = true,
+  stickersEnabled = true,
 }: MessageInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [attachOpen, setAttachOpen] = useState(false);
@@ -59,38 +64,42 @@ export function MessageInput({
       <div className="px-2 py-2">
         <div className="relative w-full min-w-0">
           <div className="flex items-end gap-0.5 rounded-xl border border-[var(--zalo-border)] bg-white px-1 py-1 focus-within:border-[var(--zalo-blue)] focus-within:ring-1 focus-within:ring-[var(--zalo-blue)]/25">
-            <div>
-              <button
-                type="button"
-                onClick={() => setAttachOpen((v) => !v)}
-                disabled={disabled}
-                className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[var(--zalo-blue)] transition hover:bg-[var(--zalo-surface)] disabled:opacity-40"
-                title="Đính kèm"
-              >
-                <IconPlus className="h-[22px] w-[22px]" />
-                <span className="sr-only">Đính kèm</span>
-              </button>
-            </div>
+            {attachmentsEnabled ? (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setAttachOpen((v) => !v)}
+                  disabled={disabled}
+                  className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[var(--zalo-blue)] transition hover:bg-[var(--zalo-surface)] disabled:opacity-40"
+                  title="Đính kèm"
+                >
+                  <IconPlus className="h-[22px] w-[22px]" />
+                  <span className="sr-only">Đính kèm</span>
+                </button>
+              </div>
+            ) : null}
 
-            <div>
-              <button
-                type="button"
-                onClick={() => {
-                  setPickerOpen((v) => {
-                    if (v) return false;
-                    setPickerDefaultTab("emoji");
-                    setPickerSession((n) => n + 1);
-                    return true;
-                  });
-                }}
-                disabled={disabled}
-                className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[var(--zalo-text-muted)] transition hover:bg-black/[0.05] hover:text-[var(--zalo-blue)] disabled:opacity-40"
-                title="Sticker và emoji"
-              >
-                <IconSmile className="h-[22px] w-[22px]" />
-                <span className="sr-only">Sticker và emoji</span>
-              </button>
-            </div>
+            {stickersEnabled ? (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPickerOpen((v) => {
+                      if (v) return false;
+                      setPickerDefaultTab("emoji");
+                      setPickerSession((n) => n + 1);
+                      return true;
+                    });
+                  }}
+                  disabled={disabled}
+                  className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[var(--zalo-text-muted)] transition hover:bg-black/[0.05] hover:text-[var(--zalo-blue)] disabled:opacity-40"
+                  title="Sticker và emoji"
+                >
+                  <IconSmile className="h-[22px] w-[22px]" />
+                  <span className="sr-only">Sticker và emoji</span>
+                </button>
+              </div>
+            ) : null}
 
             <textarea
               ref={textareaRef}
@@ -119,19 +128,21 @@ export function MessageInput({
             </button>
           </div>
 
-          <AttachmentPanel
-            open={attachOpen}
-            onClose={() => setAttachOpen(false)}
-            onPick={(action) => {
-              setAttachOpen(false);
-              onAttachment?.(action);
-              if (action === "sticker") {
-                setPickerDefaultTab("sticker");
-                setPickerSession((n) => n + 1);
-                setPickerOpen(true);
-              }
-            }}
-          />
+          {attachmentsEnabled ? (
+            <AttachmentPanel
+              open={attachOpen}
+              onClose={() => setAttachOpen(false)}
+              onPick={(action) => {
+                setAttachOpen(false);
+                onAttachment?.(action);
+                if (action === "sticker") {
+                  setPickerDefaultTab("sticker");
+                  setPickerSession((n) => n + 1);
+                  setPickerOpen(true);
+                }
+              }}
+            />
+          ) : null}
           <EmojiStickerPanel
             key={pickerSession}
             open={pickerOpen}

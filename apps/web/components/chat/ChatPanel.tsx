@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ApiChatPanel } from "@/components/chat/ApiChatPanel";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import type { AttachmentAction } from "@/components/chat/AttachmentPanel";
 import { ImagePreviewModal } from "@/components/chat/ImagePreviewModal";
@@ -20,8 +21,10 @@ import type {
   TextMessage,
 } from "@/lib/types/chat";
 
-type ChatPanelProps = {
+export type ChatPanelProps = {
   conversation: Conversation | null;
+  chatSource?: "mock" | "api";
+  onConversationsRefresh?: (conversations: Conversation[]) => void;
 };
 
 const MOCK_ATTACH_IMAGE =
@@ -133,7 +136,7 @@ function ChatComposer({ conversation, onSend, replyTo, onCancelReply }: Composer
   );
 }
 
-export function ChatPanel({ conversation }: ChatPanelProps) {
+function MockChatPanel({ conversation }: { conversation: Conversation | null }) {
   const [extraByConversation, setExtraByConversation] = useState<Record<string, Message[]>>({});
   const [reactionOverrides, setReactionOverrides] = useState<Record<string, MessageReaction[]>>({});
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -237,4 +240,21 @@ export function ChatPanel({ conversation }: ChatPanelProps) {
       <ImagePreviewModal imageUrl={previewUrl} onClose={() => setPreviewUrl(null)} />
     </section>
   );
+}
+
+export function ChatPanel({
+  conversation,
+  chatSource = "mock",
+  onConversationsRefresh,
+}: ChatPanelProps) {
+  if (chatSource === "api") {
+    return (
+      <ApiChatPanel
+        key={conversation?.id ?? "__none__"}
+        conversation={conversation}
+        onConversationsRefresh={onConversationsRefresh}
+      />
+    );
+  }
+  return <MockChatPanel conversation={conversation} />;
 }

@@ -143,7 +143,7 @@ export function MessageBubble({
       case "sticker":
         return (
           <div className="flex flex-col">
-            <StickerMessage emoji={message.emoji} />
+            <StickerMessage emoji={message.emoji} imageUrl={message.stickerImageUrl} />
             <p
               className={`mt-1 text-[10px] ${
                 isOwn ? "text-right text-[var(--zalo-text-muted)]" : "text-[var(--zalo-text-muted)]"
