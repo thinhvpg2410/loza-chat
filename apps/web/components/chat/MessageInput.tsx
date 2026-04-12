@@ -21,6 +21,7 @@ type MessageInputProps = {
   /** When false, hides file/image attach entry points (e.g. API mode until upload is wired). */
   attachmentsEnabled?: boolean;
   stickersEnabled?: boolean;
+  onComposerBlur?: () => void;
 };
 
 export function MessageInput({
@@ -36,6 +37,7 @@ export function MessageInput({
   onInsertEmoji,
   attachmentsEnabled = true,
   stickersEnabled = true,
+  onComposerBlur,
 }: MessageInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [attachOpen, setAttachOpen] = useState(false);
@@ -109,6 +111,7 @@ export function MessageInput({
                 onChange(e.target.value);
                 resize();
               }}
+              onBlur={() => onComposerBlur?.()}
               onKeyDown={handleKeyDown}
               rows={1}
               placeholder={placeholder}

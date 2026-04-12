@@ -16,7 +16,7 @@ function formatSentAt(iso: string): string {
   return d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
 }
 
-function mapReactions(r: ApiMessageWithReceipt["reactions"]): MessageReaction[] {
+export function mapReactions(r: ApiMessageWithReceipt["reactions"]): MessageReaction[] {
   return r.counts.map(({ reaction, count }) => ({
     emoji: reaction,
     count,
@@ -31,6 +31,14 @@ function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message
   const baseOwn = row.sentByViewer;
   const reactions = mapReactions(row.reactions);
 
+  const receipt =
+    baseOwn && (row.deliveredToPeer !== undefined || row.seenByPeer !== undefined)
+      ? {
+          peerDelivered: Boolean(row.deliveredToPeer),
+          peerSeen: Boolean(row.seenByPeer),
+        }
+      : {};
+
   switch (row.type) {
     case "text": {
       const m: TextMessage = {
@@ -41,6 +49,7 @@ function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message
         sentAt,
         createdAt,
         isOwn: baseOwn,
+        ...receipt,
         reactions,
       };
       return m;
@@ -58,6 +67,7 @@ function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message
         sentAt,
         createdAt,
         isOwn: baseOwn,
+        ...receipt,
         reactions,
       };
       return m;
@@ -88,6 +98,7 @@ function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message
         sentAt,
         createdAt,
         isOwn: baseOwn,
+        ...receipt,
         reactions,
       };
       return m;
@@ -111,6 +122,7 @@ function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message
         sentAt,
         createdAt,
         isOwn: baseOwn,
+        ...receipt,
         reactions,
       };
       return m;
@@ -124,6 +136,7 @@ function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message
         sentAt,
         createdAt,
         isOwn: baseOwn,
+        ...receipt,
         reactions,
       };
       return m;

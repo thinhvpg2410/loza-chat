@@ -1,6 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useChatRealtime } from "@/components/chat/chat-realtime-context";
+import { ChatHeader } from "@/components/chat/ChatHeader";
+import { ImagePreviewModal } from "@/components/chat/ImagePreviewModal";
+import { MessageInput } from "@/components/chat/MessageInput";
+import { MessageList } from "@/components/chat/MessageList";
 import {
   fetchConversationMessagesAction,
   fetchConversationsListAction,
@@ -8,10 +13,14 @@ import {
   sendChatStickerMessageAction,
   sendChatTextMessageAction,
 } from "@/features/chat/chat-actions";
-import { ChatHeader } from "@/components/chat/ChatHeader";
-import { ImagePreviewModal } from "@/components/chat/ImagePreviewModal";
-import { MessageInput } from "@/components/chat/MessageInput";
-import { MessageList } from "@/components/chat/MessageList";
+import {
+  applyPeerReceiptPointersToMessages,
+  initialPeerReceiptMaxFromMessages,
+  mergeReceiptPointerFromSocketPayload,
+} from "@/lib/chat/apply-peer-receipts";
+import type { ApiMessageWithReceipt } from "@/lib/chat/api-dtos";
+import { mapReactions, mapSingleApiMessage } from "@/lib/chat/map-api-message";
+import { maxMessageTimelineRefIso, type MessageTimelineRef } from "@/lib/chat/message-timeline";
 import { messageSnippet } from "@/lib/message-snippet";
 import { toggleViewerReaction } from "@/lib/reaction-utils";
 import type { Conversation, Message, MessageReaction, ReplyPreviewRef } from "@/lib/types/chat";
@@ -29,6 +38,14 @@ function buildClientMessageId(): string {
 }
 
 export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPanelProps) {
+  const realtime = useChatRealtime();
+  const realtimeRef = useRef(realtime);
+  useEffect(() => {
+    queueMicrotask(() => {
+      realtimeRef.current = realtime;
+    });
+  }, [realtime]);
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -42,9 +59,54 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
   );
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [peerTyping, setPeerTyping] = useState(false);
 
   const messageScrollRef = useRef<HTMLDivElement>(null);
   const scrollAfterOwnSendRef = useRef(false);
+  const messagesRef = useRef<Message[]>([]);
+  const peerDeliveredMaxRef = useRef<MessageTimelineRef | null>(null);
+  const peerReadMaxRef = useRef<MessageTimelineRef | null>(null);
+  const typingStartedRef = useRef(false);
+  const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  const applyReceipts = useCallback((list: Message[]) => {
+    return applyPeerReceiptPointersToMessages(
+      list,
+      peerDeliveredMaxRef.current,
+      peerReadMaxRef.current,
+    );
+  }, []);
+
+  const flushTypingStop = useCallback(() => {
+    if (typingStopTimerRef.current) {
+      clearTimeout(typingStopTimerRef.current);
+      typingStopTimerRef.current = null;
+    }
+    if (typingStartedRef.current && realtime && conversation) {
+      typingStartedRef.current = false;
+      realtime.stopTyping(conversation.id);
+    }
+  }, [realtime, conversation]);
+
+  const notifyTypingActivity = useCallback(() => {
+    if (!realtime || !conversation || realtime.status !== "ready") return;
+    if (!typingStartedRef.current) {
+      typingStartedRef.current = true;
+      realtime.startTyping(conversation.id);
+    }
+    if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
+    typingStopTimerRef.current = setTimeout(() => {
+      typingStopTimerRef.current = null;
+      if (typingStartedRef.current && realtime && conversation) {
+        typingStartedRef.current = false;
+        realtime.stopTyping(conversation.id);
+      }
+    }, 2200);
+  }, [realtime, conversation]);
 
   useEffect(() => {
     if (!conversation) return;
@@ -52,10 +114,19 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
     let cancelled = false;
     queueMicrotask(() => {
       if (cancelled) return;
+      if (typingStopTimerRef.current) {
+        clearTimeout(typingStopTimerRef.current);
+        typingStopTimerRef.current = null;
+      }
+      typingStartedRef.current = false;
+
       setLoading(true);
       setLoadError(null);
       setMessages([]);
       setNextCursor(null);
+      setPeerTyping(false);
+      peerDeliveredMaxRef.current = null;
+      peerReadMaxRef.current = null;
 
       void fetchConversationMessagesAction(conversation.id).then((r) => {
         if (cancelled) return;
@@ -64,17 +135,99 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
           setLoadError(r.error);
           return;
         }
-        setMessages(r.messages);
+        const initial = initialPeerReceiptMaxFromMessages(r.messages);
+        peerDeliveredMaxRef.current = initial.peerDeliveredMax;
+        peerReadMaxRef.current = initial.peerReadMax;
+        const stamped = applyPeerReceiptPointersToMessages(
+          r.messages,
+          peerDeliveredMaxRef.current,
+          peerReadMaxRef.current,
+        );
+        setMessages(stamped);
         setNextCursor(r.nextCursor);
-        const last = r.messages[r.messages.length - 1];
-        if (last) void markConversationReadAction(conversation.id, last.id);
+        const last = stamped[stamped.length - 1];
+        if (last) {
+          void markConversationReadAction(conversation.id, last.id);
+          realtimeRef.current?.emitSeen(conversation.id, last.id);
+          if (!last.isOwn) {
+            realtimeRef.current?.emitDelivered(conversation.id, last.id);
+          }
+        }
       });
     });
 
     return () => {
       cancelled = true;
+      if (typingStartedRef.current) {
+        typingStartedRef.current = false;
+        realtimeRef.current?.stopTyping(conversation.id);
+      }
     };
   }, [conversation]);
+
+  useEffect(() => {
+    if (!conversation || !realtime || realtime.status !== "ready") return;
+    const convId = conversation.id;
+    const apiBase = realtime.apiBaseUrl;
+
+    return realtime.registerRoom(convId, {
+      onMessageNew: (row: ApiMessageWithReceipt) => {
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === row.id)) return prev;
+          const mapped = mapSingleApiMessage(row, apiBase);
+          const next = applyReceipts([...prev, mapped]);
+          return next;
+        });
+        if (!row.sentByViewer) {
+          void markConversationReadAction(convId, row.id);
+          realtime.emitDelivered(convId, row.id);
+          realtime.emitSeen(convId, row.id);
+        }
+        if (row.sentByViewer) {
+          scrollAfterOwnSendRef.current = true;
+        }
+      },
+      onTypingUpdate: ({ userId, isTyping }) => {
+        if (userId === realtime.viewerUserId) return;
+        setPeerTyping(isTyping);
+      },
+      onReceipt: (kind, p) => {
+        if (p.userId === realtime.viewerUserId) return;
+        if (p.conversationId !== convId) return;
+        const snapshot = messagesRef.current;
+        if (kind === "delivered") {
+          peerDeliveredMaxRef.current = mergeReceiptPointerFromSocketPayload(
+            peerDeliveredMaxRef.current,
+            p,
+            snapshot,
+          );
+        } else {
+          peerReadMaxRef.current = mergeReceiptPointerFromSocketPayload(
+            peerReadMaxRef.current,
+            p,
+            snapshot,
+          );
+        }
+        setMessages((prev) =>
+          applyPeerReceiptPointersToMessages(
+            prev,
+            peerDeliveredMaxRef.current,
+            peerReadMaxRef.current,
+          ),
+        );
+      },
+      onReactionUpdated: (payload) => {
+        if (payload.conversationId !== convId) return;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === payload.messageId
+              ? { ...m, reactions: mapReactions(payload.summary) }
+              : m,
+          ),
+        );
+      },
+    });
+  }, [conversation, realtime, applyReceipts]);
 
   const loadOlder = useCallback(async () => {
     if (!conversation || !nextCursor || loadOlderLoading) return;
@@ -82,7 +235,16 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
     const r = await fetchConversationMessagesAction(conversation.id, nextCursor);
     setLoadOlderLoading(false);
     if (!r.ok) return;
-    setMessages((prev) => [...r.messages, ...prev]);
+    const merged = [...r.messages, ...messagesRef.current];
+    const initial = initialPeerReceiptMaxFromMessages(merged);
+    peerDeliveredMaxRef.current = maxMessageTimelineRefIso(
+      peerDeliveredMaxRef.current,
+      initial.peerDeliveredMax,
+    );
+    peerReadMaxRef.current = maxMessageTimelineRefIso(peerReadMaxRef.current, initial.peerReadMax);
+    setMessages(
+      applyPeerReceiptPointersToMessages(merged, peerDeliveredMaxRef.current, peerReadMaxRef.current),
+    );
     setNextCursor(r.nextCursor);
   }, [conversation, nextCursor, loadOlderLoading]);
 
@@ -116,6 +278,7 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
     const body = draft.trim();
     if (!body || sending) return;
 
+    flushTypingStop();
     setSendError(null);
     setSending(true);
     const replyToId =
@@ -141,16 +304,18 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
     setReplyTarget(null);
     setMessages((prev) => {
       if (prev.some((m) => m.id === r.message.id)) return prev;
-      return [...prev, r.message];
+      return applyReceipts([...prev, r.message]);
     });
     void markConversationReadAction(conversation.id, r.message.id);
+    realtimeRef.current?.emitSeen(conversation.id, r.message.id);
     void refreshSidebar();
-  }, [conversation, draft, replyTarget, sending, refreshSidebar]);
+  }, [conversation, draft, replyTarget, sending, refreshSidebar, applyReceipts, flushTypingStop]);
 
   const sendSticker = useCallback(
     async (stickerId: string, _emoji: string) => {
       void _emoji;
       if (!conversation || sending) return;
+      flushTypingStop();
       setSendError(null);
       setSending(true);
       const replyToId =
@@ -175,12 +340,13 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
       setReplyTarget(null);
       setMessages((prev) => {
         if (prev.some((m) => m.id === r.message.id)) return prev;
-        return [...prev, r.message];
+        return applyReceipts([...prev, r.message]);
       });
       void markConversationReadAction(conversation.id, r.message.id);
+      realtimeRef.current?.emitSeen(conversation.id, r.message.id);
       void refreshSidebar();
     },
-    [conversation, replyTarget, sending, refreshSidebar],
+    [conversation, replyTarget, sending, refreshSidebar, applyReceipts, flushTypingStop],
   );
 
   useLayoutEffect(() => {
@@ -199,12 +365,14 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
         }
       : null;
 
+  const typingStatus = peerTyping ? "Đang soạn tin nhắn…" : null;
+
   return (
     <section
       className="flex min-w-0 flex-1 flex-col bg-[var(--zalo-chat-bg)]"
       aria-label="Khung trò chuyện"
     >
-      <ChatHeader conversation={conversation} />
+      <ChatHeader conversation={conversation} statusOverride={typingStatus} />
       <div
         ref={messageScrollRef}
         className="min-h-0 flex-1 overflow-y-auto bg-[var(--zalo-chat-bg)]"
@@ -263,7 +431,10 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
           ) : null}
           <MessageInput
             value={draft}
-            onChange={setDraft}
+            onChange={(v) => {
+              setDraft(v);
+              notifyTypingActivity();
+            }}
             onSend={() => void sendText()}
             disabled={loading || sending}
             replyTo={replyRef}
@@ -271,7 +442,11 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
             attachmentsEnabled={false}
             stickersEnabled
             onPickSticker={(stickerId, emoji) => void sendSticker(stickerId, emoji)}
-            onInsertEmoji={(emoji) => setDraft((d) => d + emoji)}
+            onInsertEmoji={(emoji) => {
+              setDraft((d) => d + emoji);
+              notifyTypingActivity();
+            }}
+            onComposerBlur={() => flushTypingStop()}
           />
         </>
       ) : (

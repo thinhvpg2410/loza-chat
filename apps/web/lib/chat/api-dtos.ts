@@ -57,6 +57,10 @@ export type ApiMessageWithReceipt = {
   createdAt: string;
   updatedAt: string;
   sentByViewer: boolean;
+  /** Direct chat: peer’s delivered pointer is at or after this message (own sends only). */
+  deliveredToPeer?: boolean;
+  /** Direct chat: peer’s read pointer is at or after this message (own sends only). */
+  seenByPeer?: boolean;
   attachments: ApiAttachment[];
   sticker: ApiSticker | null;
   reactions: ApiReactionSummary;

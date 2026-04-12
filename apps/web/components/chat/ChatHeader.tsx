@@ -3,6 +3,8 @@ import { IconChevronDown, IconMore, IconPhone, IconSidebar, IconVideo } from "@/
 
 type ChatHeaderProps = {
   conversation: Conversation | null;
+  /** When set (e.g. typing), replaces the default presence line under the title. */
+  statusOverride?: string | null;
 };
 
 function HeaderAvatar({ title }: { title: string }) {
@@ -14,7 +16,7 @@ function HeaderAvatar({ title }: { title: string }) {
   );
 }
 
-export function ChatHeader({ conversation }: ChatHeaderProps) {
+export function ChatHeader({ conversation, statusOverride = null }: ChatHeaderProps) {
   if (!conversation) {
     return (
       <header className="flex h-[52px] shrink-0 items-center border-b border-[var(--zalo-border)] bg-white px-3">
@@ -26,6 +28,15 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
   const statusLine = conversation.isOnline
     ? "Đang hoạt động"
     : conversation.lastSeenLabel?.trim() || "Không trực tuyến";
+
+  const subline = statusOverride?.trim()
+    ? { text: statusOverride.trim(), className: "truncate text-[11px] text-[var(--zalo-blue)]" }
+    : {
+        text: statusLine,
+        className: conversation.isOnline
+          ? "truncate text-[11px] text-emerald-600"
+          : "truncate text-[11px] text-[var(--zalo-text-muted)]",
+      };
 
   return (
     <header className="flex h-[52px] shrink-0 items-center gap-2 border-b border-[var(--zalo-border)] bg-white px-2">
@@ -46,15 +57,7 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
           <span className="truncate">{conversation.title}</span>
           <IconChevronDown className="h-3.5 w-3.5 shrink-0 text-[var(--zalo-text-muted)]" />
         </button>
-        <p
-          className={
-            conversation.isOnline
-              ? "truncate text-[11px] text-emerald-600"
-              : "truncate text-[11px] text-[var(--zalo-text-muted)]"
-          }
-        >
-          {statusLine}
-        </p>
+        <p className={subline.className}>{subline.text}</p>
       </div>
       <div className="flex shrink-0 items-center gap-0">
         <button

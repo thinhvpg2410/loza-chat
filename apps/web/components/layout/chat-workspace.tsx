@@ -1,9 +1,12 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatPanel } from "@/components/chat/ChatPanel";
+import { ChatRealtimeProvider } from "@/components/chat/chat-realtime-context";
 import { ConversationList } from "@/components/chat/ConversationList";
+import type { ApiMessageWithReceipt } from "@/lib/chat/api-dtos";
+import { listPreviewFromApiMessage } from "@/lib/chat/list-preview-from-api";
 import { getConversationById, mockConversations } from "@/lib/mock-chat";
 import type { Conversation } from "@/lib/types/chat";
 
@@ -59,6 +62,15 @@ export function ChatWorkspace({
 
   const [searchQuery, setSearchQuery] = useState("");
 
+  useEffect(() => {
+    if (chatSource !== "api" || !selectedId) return;
+    queueMicrotask(() => {
+      setConversations((prev) =>
+        prev.map((c) => (c.id === selectedId ? { ...c, unreadCount: 0 } : c)),
+      );
+    });
+  }, [chatSource, selectedId]);
+
   const activeConversation = useMemo(() => {
     if (!selectedId) return null;
     if (chatSource === "api") {
@@ -78,7 +90,52 @@ export function ChatWorkspace({
     setConversations(next);
   }, []);
 
-  return (
+  const selectedIdRef = useRef(selectedId);
+  useEffect(() => {
+    queueMicrotask(() => {
+      selectedIdRef.current = selectedId;
+    });
+  }, [selectedId]);
+
+  const onRemoteMessageForList = useCallback(
+    (conversationId: string, row: ApiMessageWithReceipt, meta: { bumpUnread: boolean }) => {
+      const preview = listPreviewFromApiMessage(row).slice(0, 240);
+      const at = row.createdAt;
+      const active = selectedIdRef.current;
+      setConversations((prev) => {
+        let found = false;
+        const mapped = prev.map((c) => {
+          if (c.id !== conversationId) return c;
+          found = true;
+          const bump = meta.bumpUnread && conversationId !== active;
+          const unread =
+            conversationId === active ? 0 : bump ? (c.unreadCount ?? 0) + 1 : (c.unreadCount ?? 0);
+          return {
+            ...c,
+            lastMessagePreview: preview,
+            lastMessageAt: at,
+            unreadCount: unread,
+          };
+        });
+        const list = found
+          ? mapped
+          : [
+              ...mapped,
+              {
+                id: conversationId,
+                title: "Trò chuyện",
+                lastMessagePreview: preview,
+                lastMessageAt: at,
+                unreadCount: meta.bumpUnread && conversationId !== active ? 1 : 0,
+              },
+            ];
+        return [...list].sort((a, b) => Date.parse(b.lastMessageAt) - Date.parse(a.lastMessageAt));
+      });
+    },
+    [],
+  );
+
+  const shell = (
     <div className="flex min-h-0 flex-1 overflow-hidden">
       <div className="flex min-h-0 min-w-0 shrink-0 flex-col">
         {listError ? (
@@ -104,4 +161,20 @@ export function ChatWorkspace({
       />
     </div>
   );
+
+  const conversationIds = useMemo(() => conversations.map((c) => c.id), [conversations]);
+
+  if (chatSource === "api") {
+    return (
+      <ChatRealtimeProvider
+        conversationIds={conversationIds}
+        activeConversationId={selectedId}
+        onRemoteMessageForList={onRemoteMessageForList}
+      >
+        {shell}
+      </ChatRealtimeProvider>
+    );
+  }
+
+  return shell;
 }

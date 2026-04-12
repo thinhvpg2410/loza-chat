@@ -1,11 +1,41 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { apiFetchJson } from "@/lib/api/server";
+import { LOZA_ACCESS_COOKIE } from "@/lib/auth/constants";
+import { decodeJwtSub } from "@/lib/auth/decode-jwt-sub";
 import { getWebApiSession } from "@/lib/auth/web-api-session";
 import type { ApiConversationListItem, ApiMessageWithReceipt } from "@/lib/chat/api-dtos";
 import { mapConversationListItem } from "@/lib/chat/map-api-conversation";
 import { mapApiMessagesToChatMessages, mapSingleApiMessage } from "@/lib/chat/map-api-message";
 import type { Conversation, Message } from "@/lib/types/chat";
+
+export type ChatRealtimeSessionResult =
+  | { ok: true; apiBaseUrl: string; accessToken: string; viewerUserId: string }
+  | { ok: false; error: string };
+
+/** Supplies Socket.IO auth + viewer id (server reads httpOnly cookie). */
+export async function getChatRealtimeSessionAction(): Promise<ChatRealtimeSessionResult> {
+  const session = await getWebApiSession();
+  if (!session.active) {
+    return { ok: false, error: "Phiên API không khả dụng." };
+  }
+  const jar = await cookies();
+  const token = jar.get(LOZA_ACCESS_COOKIE)?.value;
+  if (!token) {
+    return { ok: false, error: "Không có access token." };
+  }
+  const viewerUserId = decodeJwtSub(token);
+  if (!viewerUserId) {
+    return { ok: false, error: "Không đọc được phiên đăng nhập." };
+  }
+  return {
+    ok: true,
+    apiBaseUrl: session.baseUrl,
+    accessToken: token,
+    viewerUserId,
+  };
+}
 
 async function assertApiChatEnabled(): Promise<
   { ok: true; base: string } | { ok: false; error: string }

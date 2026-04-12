@@ -30,6 +30,10 @@ type MessageCommon = {
   sentAt: string;
   createdAt: string;
   isOwn: boolean;
+  /** Direct chat: peer received this outgoing message (from API or realtime receipts). */
+  peerDelivered?: boolean;
+  /** Direct chat: peer read this outgoing message. */
+  peerSeen?: boolean;
   reactions?: MessageReaction[];
   replyTo?: ReplyPreviewRef;
 };
