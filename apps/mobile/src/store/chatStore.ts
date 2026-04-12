@@ -11,7 +11,8 @@ type ChatState = {
   loading: boolean;
   hasLoadedOnce: boolean;
   fetchError: string | null;
-  fetchConversations: () => Promise<void>;
+  /** `silent` avoids toggling `loading` (used for socket-driven list updates). */
+  fetchConversations: (opts?: { silent?: boolean }) => Promise<void>;
   /** Coalesced refresh for realtime events (e.g. new message in another thread). */
   scheduleConversationsListRefresh: () => void;
   getTotalUnread: () => number;
@@ -35,8 +36,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   hasLoadedOnce: false,
   fetchError: null,
 
-  fetchConversations: async () => {
-    set({ loading: true, fetchError: null });
+  fetchConversations: async (opts) => {
+    const silent = opts?.silent === true;
+    if (!silent) {
+      set({ loading: true, fetchError: null });
+    }
     try {
       if (USE_API_MOCK) {
         await delay(900);
@@ -50,13 +54,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
 
       const rows = await fetchMyConversations();
-      set({
-        conversations: rows.map(mapApiConversationToListItem),
-        loading: false,
-        hasLoadedOnce: true,
-        fetchError: null,
-      });
+      if (silent) {
+        set({
+          conversations: rows.map(mapApiConversationToListItem),
+          hasLoadedOnce: true,
+          fetchError: null,
+        });
+      } else {
+        set({
+          conversations: rows.map(mapApiConversationToListItem),
+          loading: false,
+          hasLoadedOnce: true,
+          fetchError: null,
+        });
+      }
     } catch (e) {
+      if (silent) {
+        return;
+      }
       set({
         loading: false,
         hasLoadedOnce: true,
@@ -70,7 +85,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (conversationsListRefreshTimer) clearTimeout(conversationsListRefreshTimer);
     conversationsListRefreshTimer = setTimeout(() => {
       conversationsListRefreshTimer = null;
-      void get().fetchConversations();
+      void get().fetchConversations({ silent: true });
     }, 400);
   },
 

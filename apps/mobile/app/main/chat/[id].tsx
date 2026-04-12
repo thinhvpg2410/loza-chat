@@ -286,12 +286,14 @@ export default function ChatRoomScreen() {
           );
         },
         onMessageDelivered: (p) => {
+          if (isGroup) return;
           if (p.conversationId !== id) return;
           if (p.userId === viewerId) return;
           if (directPeerId && p.userId !== directPeerId) return;
           setMessages((prev) => applyOutgoingReceiptFromPeerPointer(prev, p.messageId, "delivered"));
         },
         onMessageSeen: (p) => {
+          if (isGroup) return;
           if (p.conversationId !== id) return;
           if (p.userId === viewerId) return;
           if (directPeerId && p.userId !== directPeerId) return;
@@ -307,7 +309,7 @@ export default function ChatRoomScreen() {
           typingStopTimer.current = null;
         }
       };
-    }, [directPeerId, displayName, fetchConversations, id, viewerId]),
+    }, [directPeerId, displayName, fetchConversations, id, isGroup, viewerId]),
   );
 
   useEffect(() => {

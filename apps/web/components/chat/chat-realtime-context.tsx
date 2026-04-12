@@ -27,6 +27,8 @@ export type RoomRealtimeHandlers = {
 type ChatRealtimeContextValue = {
   status: "idle" | "connecting" | "ready" | "error";
   connectionError: string | null;
+  /** True after first successful Socket.IO connect for this session (false on disconnect). */
+  socketConnected: boolean;
   viewerUserId: string;
   apiBaseUrl: string;
   registerRoom: (conversationId: string, handlers: RoomRealtimeHandlers) => () => void;
@@ -57,6 +59,7 @@ export function ChatRealtimeProvider({
 }: ChatRealtimeProviderProps) {
   const [status, setStatus] = useState<"idle" | "connecting" | "ready" | "error">("idle");
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [socketConnected, setSocketConnected] = useState(false);
   const [session, setSession] = useState<{
     apiBaseUrl: string;
     accessToken: string;
@@ -128,15 +131,31 @@ export function ChatRealtimeProvider({
 
     const onConnect = () => {
       joinedTracker.clear();
+      setSocketConnected(true);
       setStatus("ready");
       setConnectionError(null);
       joinAllPending(socket);
+    };
+
+    const onDisconnect = () => {
+      setSocketConnected(false);
+    };
+
+    const onConnectError = (err: Error) => {
+      setConnectionError(err.message || "Lỗi kết nối realtime");
+    };
+
+    const onReconnectFailed = () => {
+      setConnectionError("Không kết nối được realtime sau nhiều lần thử.");
+      setStatus("error");
+      setSocketConnected(false);
     };
 
     const onMessageNew = (payload: { message?: unknown }) => {
       const raw = payload?.message;
       if (!raw || typeof raw !== "object") return;
       const row = socketMessageViewToApiRow(raw, session.viewerUserId);
+      if (!row) return;
       const convId = row.conversationId;
       const activeId = activeIdRef.current;
       const bumpUnread = convId !== activeId && !row.sentByViewer;
@@ -186,6 +205,9 @@ export function ChatRealtimeProvider({
     };
 
     socket.on("connect", onConnect);
+    socket.on("disconnect", onDisconnect);
+    socket.on("connect_error", onConnectError);
+    socket.io.on("reconnect_failed", onReconnectFailed);
     socket.on("message:new", onMessageNew);
     socket.on("typing:update", onTyping);
     socket.on("message:delivered", onDelivered);
@@ -198,7 +220,11 @@ export function ChatRealtimeProvider({
     }
 
     return () => {
+      setSocketConnected(false);
       socket.off("connect", onConnect);
+      socket.off("disconnect", onDisconnect);
+      socket.off("connect_error", onConnectError);
+      socket.io.off("reconnect_failed", onReconnectFailed);
       socket.off("message:new", onMessageNew);
       socket.off("typing:update", onTyping);
       socket.off("message:delivered", onDelivered);
@@ -248,6 +274,7 @@ export function ChatRealtimeProvider({
         return {
           status: "error",
           connectionError,
+          socketConnected: false,
           viewerUserId: "",
           apiBaseUrl: "",
           registerRoom: () => () => {},
@@ -262,6 +289,7 @@ export function ChatRealtimeProvider({
     return {
       status,
       connectionError,
+      socketConnected,
       viewerUserId: session.viewerUserId,
       apiBaseUrl: session.apiBaseUrl,
       registerRoom,
@@ -274,6 +302,7 @@ export function ChatRealtimeProvider({
     session,
     status,
     connectionError,
+    socketConnected,
     registerRoom,
     startTyping,
     stopTyping,

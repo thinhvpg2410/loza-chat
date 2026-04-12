@@ -1,7 +1,10 @@
 import type { ApiAttachment, ApiMessageWithReceipt, ApiReactionSummary, ApiSticker } from "@/lib/chat/api-dtos";
 
 /** Normalizes `message:new` payload (`MessageView` JSON) into the same shape as REST history rows. */
-export function socketMessageViewToApiRow(raw: unknown, viewerUserId: string): ApiMessageWithReceipt {
+export function socketMessageViewToApiRow(
+  raw: unknown,
+  viewerUserId: string,
+): ApiMessageWithReceipt | null {
   const m = raw as Record<string, unknown>;
   const id = String(m.id ?? "");
   const conversationId = String(m.conversationId ?? "");
@@ -9,6 +12,9 @@ export function socketMessageViewToApiRow(raw: unknown, viewerUserId: string): A
   const senderId = String(
     m.senderId ?? (senderObj && typeof senderObj.id === "string" ? senderObj.id : ""),
   );
+  if (!id || !conversationId || !senderId) {
+    return null;
+  }
   const type = String(m.type ?? "text");
   const content = m.content == null ? null : String(m.content);
   const replyToMessageId =

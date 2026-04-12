@@ -93,7 +93,7 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
   }, [realtime, conversation]);
 
   const notifyTypingActivity = useCallback(() => {
-    if (!realtime || !conversation || realtime.status !== "ready") return;
+    if (!realtime?.socketConnected || !conversation) return;
     if (!typingStartedRef.current) {
       typingStartedRef.current = true;
       realtime.startTyping(conversation.id);
@@ -166,7 +166,7 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
   }, [conversation]);
 
   useEffect(() => {
-    if (!conversation || !realtime || realtime.status !== "ready") return;
+    if (!conversation || !realtime?.viewerUserId) return;
     const convId = conversation.id;
     const apiBase = realtime.apiBaseUrl;
 
