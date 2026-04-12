@@ -18,7 +18,7 @@ const MOCK_MIN_NEW_LEN = 8;
 /** Mirrors API `IsStrongPassword` for client-side hints (real API). */
 function strongPasswordError(pw: string): string | undefined {
   if (!pw) return undefined;
-  if (pw.length < 10 || pw.length > 128) return "10–128 ký tự";
+  if (pw.length < 8 || pw.length > 128) return "8–128 ký tự";
   if (!/[a-z]/.test(pw)) return "Cần chữ thường (a–z)";
   if (!/[A-Z]/.test(pw)) return "Cần chữ hoa (A–Z)";
   if (!/[0-9]/.test(pw)) return "Cần có số";
@@ -141,7 +141,7 @@ export default function ChangePasswordScreen() {
 
       <AppInput
         label="Mật khẩu mới"
-        placeholder={USE_API_MOCK ? `Tối thiểu ${MOCK_MIN_NEW_LEN} ký tự` : "10+ ký tự, hoa, thường, số, ký tự đặc biệt"}
+        placeholder={USE_API_MOCK ? `Tối thiểu ${MOCK_MIN_NEW_LEN} ký tự` : "8+ ký tự, hoa, thường, số, ký tự đặc biệt"}
         value={newPassword}
         onChangeText={(t) => {
           setNewPassword(t);
