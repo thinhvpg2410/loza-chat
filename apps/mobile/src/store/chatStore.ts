@@ -12,11 +12,22 @@ type ChatState = {
   hasLoadedOnce: boolean;
   fetchError: string | null;
   fetchConversations: () => Promise<void>;
+  /** Coalesced refresh for realtime events (e.g. new message in another thread). */
+  scheduleConversationsListRefresh: () => void;
   getTotalUnread: () => number;
   reset: () => void;
 };
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+let conversationsListRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearConversationsListRefreshTimer() {
+  if (conversationsListRefreshTimer) {
+    clearTimeout(conversationsListRefreshTimer);
+    conversationsListRefreshTimer = null;
+  }
+}
 
 export const useChatStore = create<ChatState>((set, get) => ({
   conversations: [],
@@ -54,13 +65,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
+  scheduleConversationsListRefresh: () => {
+    if (USE_API_MOCK) return;
+    if (conversationsListRefreshTimer) clearTimeout(conversationsListRefreshTimer);
+    conversationsListRefreshTimer = setTimeout(() => {
+      conversationsListRefreshTimer = null;
+      void get().fetchConversations();
+    }, 400);
+  },
+
   getTotalUnread: () => get().conversations.reduce((sum, c) => sum + (c.unreadCount ?? 0), 0),
 
-  reset: () =>
+  reset: () => {
+    clearConversationsListRefreshTimer();
     set({
       conversations: [],
       loading: false,
       hasLoadedOnce: false,
       fetchError: null,
-    }),
+    });
+  },
 }));

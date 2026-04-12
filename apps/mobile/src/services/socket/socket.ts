@@ -1,6 +1,7 @@
 import { io, type Socket } from "socket.io-client";
 
-import type { ApiMessageView } from "@/services/conversations/conversationsApi";
+import type { ApiConversationMemberProgress, ApiMessageView } from "@/services/conversations/conversationsApi";
+import { useChatStore } from "@/store/chatStore";
 
 export type TypingUpdatePayload = {
   conversationId: string;
@@ -14,15 +15,26 @@ export type ReactionUpdatedPayload = {
   summary: { counts: { reaction: string; count: number }[]; mine: string[] };
 };
 
+export type ReceiptBroadcastPayload = {
+  conversationId: string;
+  userId: string;
+  messageId: string;
+  at: string;
+};
+
 export type ChatRealtimeHandlers = {
   onMessageNew?: (message: ApiMessageView) => void;
   onTypingUpdate?: (payload: TypingUpdatePayload) => void;
   onReactionUpdated?: (payload: ReactionUpdatedPayload) => void;
+  onMessageDelivered?: (payload: ReceiptBroadcastPayload) => void;
+  onMessageSeen?: (payload: ReceiptBroadcastPayload) => void;
 };
 
 const EV_MESSAGE_NEW = "message:new";
 const EV_TYPING_UPDATE = "typing:update";
 const EV_REACTION_UPDATED = "message:reaction_updated";
+const EV_MESSAGE_DELIVERED = "message:delivered";
+const EV_MESSAGE_SEEN = "message:seen";
 
 let socket: Socket | null = null;
 let handlers: ChatRealtimeHandlers = {};
@@ -55,6 +67,7 @@ export function connectChatSocket(accessToken?: string): () => void {
     const msg = (body as { message?: ApiMessageView }).message;
     if (msg && typeof msg === "object" && "id" in msg) {
       handlers.onMessageNew?.(msg);
+      useChatStore.getState().scheduleConversationsListRefresh();
     }
   });
 
@@ -74,13 +87,52 @@ export function connectChatSocket(accessToken?: string): () => void {
     }
   });
 
+  socket.on(EV_MESSAGE_DELIVERED, (body: unknown) => {
+    if (!body || typeof body !== "object") return;
+    const p = body as ReceiptBroadcastPayload;
+    if (p.conversationId && p.userId && p.messageId) {
+      handlers.onMessageDelivered?.(p);
+    }
+  });
+
+  socket.on(EV_MESSAGE_SEEN, (body: unknown) => {
+    if (!body || typeof body !== "object") return;
+    const p = body as ReceiptBroadcastPayload;
+    if (p.conversationId && p.userId && p.messageId) {
+      handlers.onMessageSeen?.(p);
+    }
+  });
+
   return () => {
     socket?.off(EV_MESSAGE_NEW);
     socket?.off(EV_TYPING_UPDATE);
     socket?.off(EV_REACTION_UPDATED);
+    socket?.off(EV_MESSAGE_DELIVERED);
+    socket?.off(EV_MESSAGE_SEEN);
     socket?.disconnect();
     socket = null;
   };
+}
+
+export function emitMessageDelivered(conversationId: string, messageId: string) {
+  socket?.emit(EV_MESSAGE_DELIVERED, { conversationId, messageId });
+}
+
+export function emitMessageSeen(conversationId: string, messageId: string) {
+  socket?.emit(EV_MESSAGE_SEEN, { conversationId, messageId });
+}
+
+/** After REST read/delivered advance, mirror pointers on the socket so the peer updates in realtime. */
+export function emitConversationReceiptsFromMyProgress(
+  conversationId: string,
+  me: ApiConversationMemberProgress,
+) {
+  if (me.lastDeliveredMessageId) {
+    emitMessageDelivered(conversationId, me.lastDeliveredMessageId);
+  }
+  if (me.lastReadMessageId) {
+    emitMessageSeen(conversationId, me.lastReadMessageId);
+  }
 }
 
 export function emitConversationJoin(conversationId: string) {

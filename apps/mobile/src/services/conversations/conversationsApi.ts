@@ -30,8 +30,34 @@ export async function createOrGetDirectConversationApi(
   return data;
 }
 
-export async function markConversationReadApi(conversationId: string, messageId?: string): Promise<void> {
-  await apiClient.post(`/conversations/${conversationId}/read`, messageId ? { messageId } : {});
+export type ApiConversationMemberProgress = {
+  userId: string;
+  lastReadMessageId: string | null;
+  lastDeliveredMessageId: string | null;
+};
+
+export type ApiConversationMarkReadResponse = {
+  state: {
+    conversationId: string;
+    type: string;
+    updatedAt: string;
+    lastMessageId: string | null;
+    me: ApiConversationMemberProgress;
+    peer: ApiConversationMemberProgress | null;
+    unreadCount: number;
+  };
+  at: string;
+};
+
+export async function markConversationReadApi(
+  conversationId: string,
+  messageId?: string,
+): Promise<ApiConversationMarkReadResponse> {
+  const { data } = await apiClient.post<ApiConversationMarkReadResponse>(
+    `/conversations/${conversationId}/read`,
+    messageId ? { messageId } : {},
+  );
+  return data;
 }
 
 export type ApiAttachment = {

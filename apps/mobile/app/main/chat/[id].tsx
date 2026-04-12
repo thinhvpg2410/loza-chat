@@ -32,6 +32,7 @@ import {
 import { USE_API_MOCK } from "@/constants/env";
 import { MOCK_CONVERSATIONS } from "@/constants/mockData";
 import {
+  applyOutgoingReceiptFromPeerPointer,
   getMockThreadMessages,
   mapApiMessagesToChatRoomList,
   mergeReactionsFromSummary,
@@ -51,6 +52,7 @@ import { addMessageReactionApi, sendMessageWithAttachmentsApi, sendTextMessageAp
 import {
   clearChatRealtimeHandlers,
   emitConversationJoin,
+  emitConversationReceiptsFromMyProgress,
   emitTypingStart,
   emitTypingStop,
   isChatSocketConfigured,
@@ -225,7 +227,8 @@ export default function ChatRoomScreen() {
       const { messages: rows } = await fetchConversationMessagesPage(id, { limit: 50 });
       setMessages(mapApiMessagesToChatRoomList(rows, viewerId, displayName));
       try {
-        await markConversationReadApi(id);
+        const readRes = await markConversationReadApi(id);
+        emitConversationReceiptsFromMyProgress(id, readRes.state.me);
         void fetchConversations();
       } catch {
         /* non-fatal */
@@ -259,7 +262,14 @@ export default function ChatRoomScreen() {
             mergeMessagesById(prev, mapApiMessagesToChatRoomList([row], viewerId, displayName)),
           );
           if (msg.senderId !== viewerId) {
-            void markConversationReadApi(id).then(() => fetchConversations());
+            void markConversationReadApi(id, msg.id)
+              .then((readRes) => {
+                emitConversationReceiptsFromMyProgress(id, readRes.state.me);
+                void fetchConversations();
+              })
+              .catch(() => {
+                void fetchConversations();
+              });
           }
         },
         onTypingUpdate: (p) => {
@@ -275,6 +285,18 @@ export default function ChatRoomScreen() {
             ),
           );
         },
+        onMessageDelivered: (p) => {
+          if (p.conversationId !== id) return;
+          if (p.userId === viewerId) return;
+          if (directPeerId && p.userId !== directPeerId) return;
+          setMessages((prev) => applyOutgoingReceiptFromPeerPointer(prev, p.messageId, "delivered"));
+        },
+        onMessageSeen: (p) => {
+          if (p.conversationId !== id) return;
+          if (p.userId === viewerId) return;
+          if (directPeerId && p.userId !== directPeerId) return;
+          setMessages((prev) => applyOutgoingReceiptFromPeerPointer(prev, p.messageId, "seen"));
+        },
       });
 
       return () => {
@@ -285,7 +307,7 @@ export default function ChatRoomScreen() {
           typingStopTimer.current = null;
         }
       };
-    }, [displayName, fetchConversations, id, viewerId]),
+    }, [directPeerId, displayName, fetchConversations, id, viewerId]),
   );
 
   useEffect(() => {
