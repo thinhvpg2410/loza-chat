@@ -76,8 +76,8 @@ export default function ProfileTabScreen() {
               if (row.key === "profile") {
                 router.push("/main/profile-edit");
               }
-              if (row.key === "security") {
-                router.push("/main/change-password");
+              if (row.key === "security" || row.key === "settings") {
+                router.push("/main/security");
               }
             }}
             style={({ pressed }) => ({
