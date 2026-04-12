@@ -30,7 +30,15 @@ export function FriendRow({ user, onPress }: FriendRowProps) {
       ]}
     >
       <View style={styles.avatarWrap}>
-        <Image source={{ uri: user.avatarUrl }} style={styles.avatar} contentFit="cover" transition={120} />
+        {user.avatarUrl ? (
+          <Image source={{ uri: user.avatarUrl }} style={styles.avatar} contentFit="cover" transition={120} />
+        ) : (
+          <View style={[styles.avatar, styles.avatarPh]}>
+            <AppText variant="micro" color="textSecondary" style={{ fontWeight: "700" }}>
+              {user.name.slice(0, 2).toUpperCase()}
+            </AppText>
+          </View>
+        )}
         {user.isOnline ? <View style={styles.onlineDot} /> : null}
       </View>
       <View style={styles.body}>
@@ -65,6 +73,11 @@ const styles = StyleSheet.create({
     height: AVATAR,
     borderRadius: radius.full,
     backgroundColor: colors.surfaceSecondary,
+  },
+  avatarPh: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.primaryMuted,
   },
   onlineDot: {
     position: "absolute",

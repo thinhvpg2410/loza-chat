@@ -161,6 +161,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     const { useChatStore } = await import("@/store/chatStore");
     useChatStore.getState().reset();
+    const { useFriendsStore } = await import("@/store/friendsStore");
+    useFriendsStore.getState().reset();
 
     set({
       accessToken: null,

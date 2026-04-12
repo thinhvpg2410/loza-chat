@@ -35,7 +35,15 @@ export function FriendRequestRow({
         ]}
       >
         <View style={styles.avatarWrap}>
-          <Image source={{ uri: user.avatarUrl }} style={styles.avatar} contentFit="cover" transition={120} />
+          {user.avatarUrl ? (
+            <Image source={{ uri: user.avatarUrl }} style={styles.avatar} contentFit="cover" transition={120} />
+          ) : (
+            <View style={[styles.avatar, styles.avatarPh]}>
+              <AppText variant="micro" color="textSecondary" style={{ fontWeight: "700" }}>
+                {user.name.slice(0, 2).toUpperCase()}
+              </AppText>
+            </View>
+          )}
         </View>
         <View style={styles.body}>
           <AppText variant="headline" numberOfLines={1} style={styles.name}>
@@ -114,6 +122,11 @@ const styles = StyleSheet.create({
     height: AVATAR,
     borderRadius: radius.full,
     backgroundColor: colors.surfaceSecondary,
+  },
+  avatarPh: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.primaryMuted,
   },
   body: {
     flex: 1,

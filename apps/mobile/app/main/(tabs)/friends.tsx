@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, RefreshControl, SectionList, View } from "react-native";
 
 import { ChatSearchBar } from "@components/chat";
@@ -9,8 +10,10 @@ import { FriendRow } from "@components/friends";
 import { AppTabScreen, AppSectionHeader, EmptyState, ShellHeader } from "@components/shell";
 import { AppText } from "@ui/AppText";
 import type { MockFriend } from "@/constants/mockData";
+import { USE_API_MOCK } from "@/constants/env";
 import { MOCK_FRIENDS, MOCK_INCOMING_FRIEND_REQUESTS } from "@/constants/mockData";
 import { buildFriendSections } from "@features/friends";
+import { useFriendsStore } from "@/store/friendsStore";
 import { colors, spacing } from "@theme";
 
 type Section = { title: string; data: MockFriend[] };
@@ -21,22 +24,48 @@ export default function FriendsTabScreen() {
   const [query, setQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
 
-  const requestBadge = MOCK_INCOMING_FRIEND_REQUESTS.length;
+  const apiFriends = useFriendsStore((s) => s.friends);
+  const apiIncoming = useFriendsStore((s) => s.incoming);
+  const apiError = useFriendsStore((s) => s.error);
+  const apiLoading = useFriendsStore((s) => s.loading);
+  const apiLoaded = useFriendsStore((s) => s.hasLoadedOnce);
+  const refreshFriends = useFriendsStore((s) => s.refresh);
+
+  useEffect(() => {
+    if (!USE_API_MOCK) {
+      void refreshFriends();
+    }
+  }, [refreshFriends]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!USE_API_MOCK) {
+        void refreshFriends();
+      }
+    }, [refreshFriends]),
+  );
+
+  const listFriends = USE_API_MOCK ? MOCK_FRIENDS : apiFriends;
+  const requestBadge = USE_API_MOCK ? MOCK_INCOMING_FRIEND_REQUESTS.length : apiIncoming.length;
 
   const sections: Section[] = useMemo(() => {
     const q = query.trim();
-    if (!q.length) return buildFriendSections(MOCK_FRIENDS, "");
-    const grouped = buildFriendSections(MOCK_FRIENDS, q);
+    if (!q.length) return buildFriendSections(listFriends, "");
+    const grouped = buildFriendSections(listFriends, q);
     const flat = grouped.flatMap((s) => s.data);
     if (!flat.length) return [];
     return [{ title: "Kết quả", data: flat }];
-  }, [query]);
+  }, [query, listFriends]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await new Promise((r) => setTimeout(r, 600));
+    if (USE_API_MOCK) {
+      await new Promise((r) => setTimeout(r, 600));
+    } else {
+      await refreshFriends();
+    }
     setRefreshing(false);
-  }, []);
+  }, [refreshFriends]);
 
   const openProfile = useCallback(
     (u: MockFriend) => {
@@ -45,7 +74,7 @@ export default function FriendsTabScreen() {
         params: {
           id: u.id,
           name: encodeURIComponent(u.name),
-          avatarUrl: encodeURIComponent(u.avatarUrl),
+          avatarUrl: encodeURIComponent(u.avatarUrl ?? ""),
         },
       });
     },
@@ -96,6 +125,7 @@ export default function FriendsTabScreen() {
   );
 
   const searchEmpty = query.trim().length > 0 && sections.length === 0;
+  const showListError = !USE_API_MOCK && apiError && !apiLoading && apiLoaded;
 
   return (
     <AppTabScreen>
@@ -158,33 +188,54 @@ export default function FriendsTabScreen() {
         </Pressable>
       </View>
 
-      <SectionList
-        sections={sections}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <FriendRow user={item} onPress={() => openProfile(item)} />}
-        renderSectionHeader={({ section: { title } }) => <AppSectionHeader title={title} compact />}
-        stickySectionHeadersEnabled={false}
-        contentContainerStyle={
-          sections.length === 0
-            ? { flexGrow: 1, paddingBottom: fabBottom + 24 }
-            : { paddingBottom: fabBottom + 24 }
-        }
-        ListEmptyComponent={
-          searchEmpty ? (
-            <EmptyState icon="search-outline" title="Không tìm thấy" description="Thử từ khóa khác." />
-          ) : MOCK_FRIENDS.length === 0 ? (
-            <EmptyState icon="people-outline" title="Chưa có bạn bè" description="Thêm bạn để bắt đầu kết nối." />
-          ) : null
-        }
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => void onRefresh()}
-            tintColor={colors.primary}
-            colors={[colors.primary]}
-          />
-        }
-      />
+      {showListError ? (
+        <View style={{ paddingHorizontal: spacing.md, paddingTop: spacing.sm, gap: spacing.sm }}>
+          <EmptyState icon="cloud-offline-outline" title="Không tải được danh sách" description={apiError} />
+          <Pressable
+            onPress={() => void refreshFriends()}
+            style={({ pressed }) => ({
+              alignSelf: "center",
+              paddingVertical: spacing.sm,
+              paddingHorizontal: spacing.lg,
+              borderRadius: 8,
+              backgroundColor: colors.primary,
+              opacity: pressed ? 0.88 : 1,
+            })}
+          >
+            <AppText variant="subhead" style={{ color: colors.textInverse, fontWeight: "600" }}>
+              Thử lại
+            </AppText>
+          </Pressable>
+        </View>
+      ) : (
+        <SectionList
+          sections={sections}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => <FriendRow user={item} onPress={() => openProfile(item)} />}
+          renderSectionHeader={({ section: { title } }) => <AppSectionHeader title={title} compact />}
+          stickySectionHeadersEnabled={false}
+          contentContainerStyle={
+            sections.length === 0
+              ? { flexGrow: 1, paddingBottom: fabBottom + 24 }
+              : { paddingBottom: fabBottom + 24 }
+          }
+          ListEmptyComponent={
+            searchEmpty ? (
+              <EmptyState icon="search-outline" title="Không tìm thấy" description="Thử từ khóa khác." />
+            ) : listFriends.length === 0 && !apiLoading && (USE_API_MOCK || apiLoaded) ? (
+              <EmptyState icon="people-outline" title="Chưa có bạn bè" description="Thêm bạn để bắt đầu kết nối." />
+            ) : null
+          }
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => void onRefresh()}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+            />
+          }
+        />
+      )}
     </AppTabScreen>
   );
 }

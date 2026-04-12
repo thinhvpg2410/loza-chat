@@ -7,6 +7,29 @@ export async function fetchMyConversations(): Promise<ApiConversationListItem[]>
   return data.conversations ?? [];
 }
 
+export type ApiConversationDetail = {
+  id: string;
+  type: string;
+  title: string | null;
+  avatarUrl: string | null;
+  memberCount: number;
+  otherParticipant: {
+    id: string;
+    displayName: string;
+    avatarUrl: string | null;
+    username: string | null;
+  } | null;
+};
+
+export async function createOrGetDirectConversationApi(
+  targetUserId: string,
+): Promise<{ conversation: ApiConversationDetail }> {
+  const { data } = await apiClient.post<{ conversation: ApiConversationDetail }>("/conversations/direct", {
+    targetUserId,
+  });
+  return data;
+}
+
 export async function markConversationReadApi(conversationId: string, messageId?: string): Promise<void> {
   await apiClient.post(`/conversations/${conversationId}/read`, messageId ? { messageId } : {});
 }
