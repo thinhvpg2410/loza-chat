@@ -259,6 +259,7 @@ model Conversation {
   attachments   Attachment[]
 
   @@index([updatedAt(sort: Desc)])
+  /// Direct threads: at most one row per (directUserOneId, directUserTwoId); enforced by partial unique index `conversations_direct_pair_uidx` in migrations.
   @@map("conversations")
 }
 

@@ -14,6 +14,7 @@ import { messageContentPreview } from '../../common/utils/message-content-previe
 import { toPublicUserProfile } from '../../common/types/public-user-profile';
 import { sortUserPair } from '../../common/utils/sort-user-pair';
 import { PrismaService } from '../../prisma/prisma.service';
+import { BlocksService } from '../blocks/blocks.service';
 import { FriendsService } from '../friends/friends.service';
 import { ConversationMembershipService } from './conversation-membership.service';
 import { ConversationUnreadService } from './conversation-unread.service';
@@ -27,14 +28,20 @@ export class ConversationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly friends: FriendsService,
+    private readonly blocks: BlocksService,
     private readonly membership: ConversationMembershipService,
     private readonly unread: ConversationUnreadService,
   ) {}
 
-  async createOrGetDirect(
+  /**
+   * Project rule: direct chat is only between friends, with no block either way,
+   * and never with self. Call after e.g. `GET /users/:id/public-profile` shows
+   * `relationshipStatus === 'friend'`.
+   */
+  private async assertMayOpenDirectConversation(
     currentUserId: string,
     targetUserId: string,
-  ): Promise<{ conversation: ConversationDetailView }> {
+  ): Promise<void> {
     if (currentUserId === targetUserId) {
       throw new BadRequestException(
         'Cannot start a conversation with yourself',
@@ -48,15 +55,7 @@ export class ConversationsService {
       throw new NotFoundException('User not found');
     }
 
-    const block = await this.prisma.block.findFirst({
-      where: {
-        OR: [
-          { blockerId: currentUserId, blockedId: targetUserId },
-          { blockerId: targetUserId, blockedId: currentUserId },
-        ],
-      },
-    });
-    if (block) {
+    if (await this.blocks.isEitherBlocked(currentUserId, targetUserId)) {
       throw new ForbiddenException('Cannot message this user');
     }
 
@@ -67,6 +66,13 @@ export class ConversationsService {
     if (relationship !== 'friend') {
       throw new ForbiddenException('You can only message friends');
     }
+  }
+
+  async createOrGetDirect(
+    currentUserId: string,
+    targetUserId: string,
+  ): Promise<{ conversation: ConversationDetailView }> {
+    await this.assertMayOpenDirectConversation(currentUserId, targetUserId);
 
     const [one, two] = sortUserPair(currentUserId, targetUserId);
 

@@ -50,7 +50,10 @@ export class ConversationsController {
 
   @Post('direct')
   @ApiOperation({
-    summary: 'Create or return an existing direct conversation with a friend',
+    summary:
+      'Create or return the direct conversation with a friend (idempotent)',
+    description:
+      'Requires an accepted friendship and no block in either direction. Use after search/profile confirms you may chat (e.g. `relationshipStatus: friend`). Returns the same conversation id for a given pair.',
   })
   @ApiCreatedResponse({ type: ConversationDetailWrapperOpenApiDto })
   @ApiResponse({ status: 400, type: ApiErrorEnvelopeDto })
@@ -71,6 +74,8 @@ export class ConversationsController {
   @ApiOperation({
     summary:
       'List conversations for the current user (most recently active first)',
+    description:
+      'Includes direct threads opened via `POST /conversations/direct` and group chats.',
   })
   @ApiOkResponse({ type: ConversationListOpenApiDto })
   @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
@@ -168,7 +173,11 @@ export class ConversationsController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Conversation details (members only)' })
+  @ApiOperation({
+    summary: 'Conversation details (members only)',
+    description:
+      'Use to open an existing chat when you already have the conversation id (e.g. from the list or after create/get direct).',
+  })
   @ApiParam({ name: 'id', format: 'uuid', description: 'Conversation id' })
   @ApiOkResponse({ type: ConversationDetailWrapperOpenApiDto })
   @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
