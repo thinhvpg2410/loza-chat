@@ -33,6 +33,7 @@ type MessageInputBarProps = {
   replyingTo?: ReplyReference | null;
   onCancelReply?: () => void;
   onOpenAttachment?: () => void;
+  onOpenEmoji?: () => void;
 };
 
 export function MessageInputBar({
@@ -44,6 +45,7 @@ export function MessageInputBar({
   replyingTo,
   onCancelReply,
   onOpenAttachment,
+  onOpenEmoji,
 }: MessageInputBarProps) {
   const [inputHeight, setInputHeight] = useState(MIN_INPUT);
   const trimmed = value.trim();
@@ -77,7 +79,7 @@ export function MessageInputBar({
           accessibilityRole="button"
           accessibilityLabel="Emoji"
           hitSlop={8}
-          onPress={() => {}}
+          onPress={() => onOpenEmoji?.()}
           style={({ pressed }) => [styles.iconBtn, pressed && styles.iconPressed]}
         >
           <Ionicons name="happy-outline" size={ICON_GLYPH} color={colors.textMuted} />

@@ -21,5 +21,6 @@ export { ImageViewerModal } from "./ImageViewerModal";
 export { ReactionPickerSheet } from "./ReactionPickerSheet";
 export { MessageActionsSheet, type MessageActionId } from "./MessageActionsSheet";
 export { AttachmentSheet, type AttachmentKind } from "./AttachmentSheet";
+export { EmojiPickerSheet } from "./EmojiPickerSheet";
 export { StickerPickerSheet } from "./StickerPickerSheet";
 export type { MockSticker } from "./mockStickers";

@@ -19,6 +19,7 @@ import {
   AttachmentSheet,
   type AttachmentKind,
   ChatRoomHeader,
+  EmojiPickerSheet,
   ImageViewerModal,
   MessageActionsSheet,
   type MessageActionId,
@@ -202,6 +203,7 @@ export default function ChatRoomScreen() {
   const [actionTarget, setActionTarget] = useState<ChatRoomMessage | null>(null);
 
   const [attachmentOpen, setAttachmentOpen] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
   const [stickerOpen, setStickerOpen] = useState(false);
 
   const typingStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -566,6 +568,10 @@ export default function ChatRoomScreen() {
     [appendOutgoing, id],
   );
 
+  const onEmojiPick = useCallback((emoji: string) => {
+    setDraft((prev) => `${prev}${emoji}`);
+  }, []);
+
   const send = useCallback(async () => {
     const body = draft.trim();
     if (!body.length || sendBusy) return;
@@ -687,6 +693,7 @@ export default function ChatRoomScreen() {
           replyingTo={replyingTo}
           onCancelReply={() => setReplyingTo(null)}
           onOpenAttachment={() => setAttachmentOpen(true)}
+          onOpenEmoji={() => setEmojiOpen(true)}
         />
       </KeyboardAvoidingView>
 
@@ -709,6 +716,8 @@ export default function ChatRoomScreen() {
         onClose={() => setAttachmentOpen(false)}
         onPick={onAttachmentPick}
       />
+
+      <EmojiPickerSheet visible={emojiOpen} onClose={() => setEmojiOpen(false)} onPick={onEmojiPick} />
 
       <StickerPickerSheet visible={stickerOpen} onClose={() => setStickerOpen(false)} onPick={onStickerPick} />
     </SafeAreaView>
