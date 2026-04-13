@@ -56,6 +56,23 @@ function buildClientMessageId(): string {
   return `c-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+/** Distance from bottom of scroll container; used to keep chat "stuck" to latest. */
+function isScrollNearBottom(element: HTMLDivElement, thresholdPx = 160): boolean {
+  return element.scrollHeight - element.scrollTop - element.clientHeight <= thresholdPx;
+}
+
+function shouldFollowIncomingMessage(
+  el: HTMLDivElement | null,
+  sentByViewer: boolean,
+  followTailRef: { current: boolean },
+): boolean {
+  if (sentByViewer) return true;
+  if (followTailRef.current) return true;
+  return !el || isScrollNearBottom(el);
+}
+
+type ScrollToEndAfterPaint = "none" | "smooth" | "auto";
+
 export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPanelProps) {
   const realtime = useChatRealtime();
   const realtimeRef = useRef(realtime);
@@ -89,7 +106,9 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
   const [forwardBusyConversationId, setForwardBusyConversationId] = useState<string | null>(null);
 
   const messageScrollRef = useRef<HTMLDivElement>(null);
-  const scrollAfterOwnSendRef = useRef(false);
+  /** User is viewing the latest messages (or we have not received a scroll event yet). */
+  const nearBottomRef = useRef(true);
+  const scrollToEndAfterPaintRef = useRef<ScrollToEndAfterPaint>("none");
   const messagesRef = useRef<Message[]>([]);
   const peerDeliveredMaxRef = useRef<MessageTimelineRef | null>(null);
   const peerReadMaxRef = useRef<MessageTimelineRef | null>(null);
@@ -169,6 +188,9 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
       }
       typingStartedRef.current = false;
 
+      nearBottomRef.current = true;
+      scrollToEndAfterPaintRef.current = "none";
+
       setLoading(true);
       setLoadError(null);
       setMessages([]);
@@ -198,6 +220,9 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
         );
         setMessages(stamped);
         setNextCursor(r.nextCursor);
+        if (stamped.length > 0) {
+          scrollToEndAfterPaintRef.current = "auto";
+        }
         const last = stamped[stamped.length - 1];
         if (last) {
           void markConversationReadAction(conversation.id, last.id);
@@ -229,6 +254,10 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
 
     return realtime.registerRoom(convId, {
       onMessageNew: (row: ApiMessageWithReceipt) => {
+        const el = messageScrollRef.current;
+        if (shouldFollowIncomingMessage(el, row.sentByViewer, nearBottomRef)) {
+          scrollToEndAfterPaintRef.current = "smooth";
+        }
         setMessages((prev) => {
           if (prev.some((m) => m.id === row.id)) return prev;
           const mapped = mapSingleApiMessage(row, apiBase);
@@ -239,9 +268,6 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
           void markConversationReadAction(convId, row.id);
           realtime.emitDelivered(convId, row.id);
           realtime.emitSeen(convId, row.id);
-        }
-        if (row.sentByViewer) {
-          scrollAfterOwnSendRef.current = true;
         }
       },
       onMessageUpdated: (row: ApiMessageWithReceipt) => {
@@ -304,6 +330,10 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
     let cancelled = false;
     void fetchConversationMessagesAction(conversation.id).then((r) => {
       if (cancelled || !r.ok) return;
+      const el = messageScrollRef.current;
+      if (el && (nearBottomRef.current || isScrollNearBottom(el))) {
+        scrollToEndAfterPaintRef.current = "auto";
+      }
       setMessages((prev) => {
         const byId = new Map(prev.map((m) => [m.id, m]));
         for (const next of r.messages) {
@@ -401,7 +431,7 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
       return;
     }
 
-    scrollAfterOwnSendRef.current = true;
+    scrollToEndAfterPaintRef.current = "smooth";
     setDraft("");
     setReplyTarget(null);
     setMessages((prev) => {
@@ -447,7 +477,7 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
         return;
       }
 
-      scrollAfterOwnSendRef.current = true;
+      scrollToEndAfterPaintRef.current = "smooth";
       setReplyTarget(null);
       setMessages((prev) => {
         if (prev.some((m) => m.id === r.message.id)) return prev;
@@ -535,7 +565,7 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
           return;
         }
 
-        scrollAfterOwnSendRef.current = true;
+        scrollToEndAfterPaintRef.current = "smooth";
         setReplyTarget(null);
         setMessages((prev) => {
           if (prev.some((m) => m.id === sent.message.id)) return prev;
@@ -644,12 +674,60 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
     void refreshSidebar();
   }, [confirmAction, refreshSidebar, updateMessageInThread]);
 
+  const onMessageScroll = useCallback(() => {
+    const el = messageScrollRef.current;
+    if (!el) return;
+    nearBottomRef.current = isScrollNearBottom(el);
+  }, []);
+
   useLayoutEffect(() => {
     const el = messageScrollRef.current;
-    if (!el || !scrollAfterOwnSendRef.current) return;
-    scrollAfterOwnSendRef.current = false;
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [messages]);
+    if (!el || loading) return;
+
+    const mode = scrollToEndAfterPaintRef.current;
+    if (mode !== "none") {
+      scrollToEndAfterPaintRef.current = "none";
+      const behavior: ScrollBehavior = mode === "smooth" ? "smooth" : "auto";
+      el.scrollTo({ top: el.scrollHeight, behavior });
+      if (mode === "auto") {
+        nearBottomRef.current = true;
+      }
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const box = messageScrollRef.current;
+          if (!box) return;
+          box.scrollTo({ top: box.scrollHeight, behavior: "auto" });
+        });
+      });
+      return;
+    }
+
+    if (nearBottomRef.current || isScrollNearBottom(el)) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
+    }
+  }, [messages, loading]);
+
+  useEffect(() => {
+    if (!conversation) return;
+    const root = messageScrollRef.current;
+    if (!root) return;
+
+    const pinIfFollowing = () => {
+      if (loading) return;
+      const el = messageScrollRef.current;
+      if (!el) return;
+      if (!nearBottomRef.current && !isScrollNearBottom(el)) return;
+      el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
+    };
+
+    const ro = new ResizeObserver(() => {
+      pinIfFollowing();
+    });
+    ro.observe(root);
+    const inner = root.firstElementChild;
+    if (inner) ro.observe(inner);
+    return () => ro.disconnect();
+  }, [conversation?.id, loading]);
 
   const replyRef: ReplyPreviewRef | null =
     conversation && replyTarget && replyTarget.convId === conversation.id
@@ -670,6 +748,7 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
       <ChatHeader conversation={conversation} statusOverride={typingStatus} />
       <div
         ref={messageScrollRef}
+        onScroll={onMessageScroll}
         className="min-h-0 flex-1 overflow-y-auto bg-[var(--zalo-chat-bg)]"
       >
         {conversation ? (
