@@ -7,9 +7,12 @@ import { ImagePreviewModal } from "@/components/chat/ImagePreviewModal";
 import { MessageInput } from "@/components/chat/MessageInput";
 import { MessageList } from "@/components/chat/MessageList";
 import {
+  completeChatUploadAction,
   fetchConversationMessagesAction,
   fetchConversationsListAction,
+  initChatUploadAction,
   markConversationReadAction,
+  sendChatMessageWithAttachmentsAction,
   sendChatStickerMessageAction,
   sendChatTextMessageAction,
 } from "@/features/chat/chat-actions";
@@ -60,6 +63,8 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [peerTyping, setPeerTyping] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadingLabel, setUploadingLabel] = useState<string | null>(null);
 
   const messageScrollRef = useRef<HTMLDivElement>(null);
   const scrollAfterOwnSendRef = useRef(false);
@@ -68,6 +73,8 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
   const peerReadMaxRef = useRef<MessageTimelineRef | null>(null);
   const typingStartedRef = useRef(false);
   const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const imagePickerRef = useRef<HTMLInputElement>(null);
+  const filePickerRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -276,7 +283,7 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
   const sendText = useCallback(async () => {
     if (!conversation) return;
     const body = draft.trim();
-    if (!body || sending) return;
+    if (!body || sending || uploading) return;
 
     flushTypingStop();
     setSendError(null);
@@ -309,12 +316,21 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
     void markConversationReadAction(conversation.id, r.message.id);
     realtimeRef.current?.emitSeen(conversation.id, r.message.id);
     void refreshSidebar();
-  }, [conversation, draft, replyTarget, sending, refreshSidebar, applyReceipts, flushTypingStop]);
+  }, [
+    conversation,
+    draft,
+    replyTarget,
+    sending,
+    uploading,
+    refreshSidebar,
+    applyReceipts,
+    flushTypingStop,
+  ]);
 
   const sendSticker = useCallback(
     async (stickerId: string, _emoji: string) => {
       void _emoji;
-      if (!conversation || sending) return;
+      if (!conversation || sending || uploading) return;
       flushTypingStop();
       setSendError(null);
       setSending(true);
@@ -346,7 +362,121 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
       realtimeRef.current?.emitSeen(conversation.id, r.message.id);
       void refreshSidebar();
     },
-    [conversation, replyTarget, sending, refreshSidebar, applyReceipts, flushTypingStop],
+    [conversation, replyTarget, sending, uploading, refreshSidebar, applyReceipts, flushTypingStop],
+  );
+
+  const uploadAndSendAttachment = useCallback(
+    async (file: File, mode: "image" | "file") => {
+      if (!conversation) return;
+      if (sending || uploading) return;
+
+      setSendError(null);
+      setUploading(true);
+      setUploadingLabel(mode === "image" ? "Đang tải ảnh…" : "Đang tải tệp…");
+
+      try {
+        const normalizedMime =
+          file.type && file.type.trim().length > 0
+            ? file.type.trim().toLowerCase()
+            : mode === "image"
+              ? "image/jpeg"
+              : "application/octet-stream";
+        const uploadType: "image" | "file" | "voice" | "video" | "other" =
+          mode === "image"
+            ? "image"
+            : normalizedMime.startsWith("video/")
+              ? "video"
+              : normalizedMime.startsWith("audio/")
+                ? "voice"
+                : "file";
+
+        const init = await initChatUploadAction({
+          fileName: file.name || (mode === "image" ? "image.jpg" : "file.bin"),
+          mimeType: normalizedMime,
+          fileSize: file.size,
+          uploadType,
+        });
+        if (!init.ok) {
+          setSendError(init.error);
+          return;
+        }
+
+        const headers: Record<string, string> = { ...init.uploadHeaders };
+        if (init.putBearerToken) {
+          headers.Authorization = `Bearer ${init.putBearerToken}`;
+        }
+
+        const putRes = await fetch(init.uploadUrl, {
+          method: init.uploadMethod,
+          headers,
+          body: file,
+        });
+        if (!putRes.ok) {
+          setSendError(`Upload thất bại (${putRes.status}).`);
+          return;
+        }
+
+        setUploadingLabel("Đang xử lý đính kèm…");
+        const done = await completeChatUploadAction(init.uploadSessionId);
+        if (!done.ok) {
+          setSendError(done.error);
+          return;
+        }
+
+        const replyToId =
+          replyTarget && replyTarget.convId === conversation.id
+            ? replyTarget.message.id
+            : undefined;
+
+        const sent = await sendChatMessageWithAttachmentsAction({
+          conversationId: conversation.id,
+          clientMessageId: buildClientMessageId(),
+          type: uploadType,
+          attachmentIds: [done.attachmentId],
+          replyToMessageId: replyToId,
+        });
+        if (!sent.ok) {
+          setSendError(sent.error);
+          return;
+        }
+
+        scrollAfterOwnSendRef.current = true;
+        setReplyTarget(null);
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === sent.message.id)) return prev;
+          return applyReceipts([...prev, sent.message]);
+        });
+        void markConversationReadAction(conversation.id, sent.message.id);
+        realtimeRef.current?.emitSeen(conversation.id, sent.message.id);
+        void refreshSidebar();
+      } catch (e) {
+        setSendError(e instanceof Error ? e.message : "Không gửi được đính kèm.");
+      } finally {
+        setUploading(false);
+        setUploadingLabel(null);
+      }
+    },
+    [conversation, sending, uploading, replyTarget, applyReceipts, refreshSidebar],
+  );
+
+  const handleImagePicked = useCallback(
+    (file: File | null) => {
+      if (!file) return;
+      if (!file.type.toLowerCase().startsWith("image/")) {
+        setSendError("Vui lòng chọn tệp ảnh hợp lệ.");
+        return;
+      }
+      void uploadAndSendAttachment(file, "image");
+    },
+    [uploadAndSendAttachment],
+  );
+
+  const handleFilePicked = useCallback(
+    (file: File | null) => {
+      if (!file) return;
+      void uploadAndSendAttachment(file, "file");
+    },
+    [uploadAndSendAttachment],
   );
 
   useLayoutEffect(() => {
@@ -424,6 +554,11 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
       </div>
       {conversation ? (
         <>
+          {uploadingLabel ? (
+            <div className="border-t border-[var(--zalo-border)] bg-[var(--zalo-surface)] px-3 py-1.5">
+              <p className="text-center text-[12px] text-[var(--zalo-text-muted)]">{uploadingLabel}</p>
+            </div>
+          ) : null}
           {sendError ? (
             <div className="border-t border-red-200 bg-red-50 px-3 py-1.5" role="alert">
               <p className="text-center text-[12px] text-red-700">{sendError}</p>
@@ -436,17 +571,47 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
               notifyTypingActivity();
             }}
             onSend={() => void sendText()}
-            disabled={loading || sending}
+            disabled={loading || sending || uploading}
             replyTo={replyRef}
             onCancelReply={() => setReplyTarget(null)}
-            attachmentsEnabled={false}
+            attachmentsEnabled
             stickersEnabled
+            onAttachment={(action) => {
+              if (action === "image") {
+                imagePickerRef.current?.click();
+                return;
+              }
+              if (action === "file") {
+                filePickerRef.current?.click();
+              }
+            }}
             onPickSticker={(stickerId, emoji) => void sendSticker(stickerId, emoji)}
             onInsertEmoji={(emoji) => {
               setDraft((d) => d + emoji);
               notifyTypingActivity();
             }}
             onComposerBlur={() => flushTypingStop()}
+          />
+          <input
+            ref={imagePickerRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0] ?? null;
+              e.currentTarget.value = "";
+              handleImagePicked(file);
+            }}
+          />
+          <input
+            ref={filePickerRef}
+            type="file"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0] ?? null;
+              e.currentTarget.value = "";
+              handleFilePicked(file);
+            }}
           />
         </>
       ) : (

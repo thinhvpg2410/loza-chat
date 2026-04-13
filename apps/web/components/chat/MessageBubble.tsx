@@ -155,7 +155,13 @@ export function MessageBubble({
                 fileName={message.fileName}
                 fileSizeBytes={message.fileSizeBytes}
                 isOwn={isOwn}
-                onDownload={() => {}}
+                onDownload={
+                  message.fileUrl
+                    ? () => {
+                        window.open(message.fileUrl, "_blank", "noopener,noreferrer");
+                      }
+                    : undefined
+                }
               />
             </div>
             <p className={`text-[10px] ${timeClass}`}>{message.sentAt}</p>

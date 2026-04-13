@@ -119,6 +119,7 @@ function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message
         fileName,
         fileSizeBytes: Number.isFinite(size) ? size : 0,
         mimeType: att?.mimeType,
+        fileUrl: att ? mockStoragePublicUrl(apiBaseUrl, att.storageKey) : undefined,
         sentAt,
         createdAt,
         isOwn: baseOwn,
