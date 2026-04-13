@@ -5,6 +5,7 @@ import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { ForwardMessageDialog } from "@/components/chat/ForwardMessageDialog";
 import { useChatRealtime } from "@/components/chat/chat-realtime-context";
 import { ChatHeader } from "@/components/chat/ChatHeader";
+import { DocumentPreviewModal } from "@/components/chat/DocumentPreviewModal";
 import { ImagePreviewModal } from "@/components/chat/ImagePreviewModal";
 import { MessageInput } from "@/components/chat/MessageInput";
 import { MessageList } from "@/components/chat/MessageList";
@@ -92,6 +93,11 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
   const reactionOverridesRef = useRef<Record<string, MessageReaction[]>>({});
   const reactionBusyRef = useRef<Set<string>>(new Set());
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [documentPreview, setDocumentPreview] = useState<{
+    embedUrl: string;
+    title: string;
+    downloadUrl: string;
+  } | null>(null);
   const [replyTarget, setReplyTarget] = useState<{ convId: string; message: Message } | null>(
     null,
   );
@@ -862,6 +868,9 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
                   }}
                   onForward={(m) => void openForwardForMessage(m)}
                   onOpenImage={setPreviewUrl}
+                  onOpenDocument={(embedUrl, title, downloadUrl) =>
+                    setDocumentPreview({ embedUrl, title, downloadUrl })
+                  }
                 />
               </>
             )}
@@ -973,6 +982,12 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
         onConfirm={() => void runRecallOrDelete()}
       />
       <ImagePreviewModal imageUrl={previewUrl} onClose={() => setPreviewUrl(null)} />
+      <DocumentPreviewModal
+        embedUrl={documentPreview?.embedUrl ?? null}
+        title={documentPreview?.title ?? ""}
+        downloadUrl={documentPreview?.downloadUrl ?? null}
+        onClose={() => setDocumentPreview(null)}
+      />
     </section>
   );
 }

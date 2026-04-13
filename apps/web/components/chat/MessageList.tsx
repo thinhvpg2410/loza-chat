@@ -13,6 +13,7 @@ type MessageListProps = {
   onDelete?: (message: Message) => void;
   onForward?: (message: Message) => void;
   onOpenImage: (url: string) => void;
+  onOpenDocument?: (embedUrl: string, title: string, downloadUrl: string) => void;
 };
 
 function DateSeparator({ label }: { label: string }) {
@@ -35,6 +36,7 @@ export function MessageList({
   onDelete,
   onForward,
   onOpenImage,
+  onOpenDocument,
 }: MessageListProps) {
   const sorted = [...messages].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
@@ -63,6 +65,7 @@ export function MessageList({
         onDelete={onDelete && m.isOwn && m.kind !== "system" ? () => onDelete(m) : undefined}
         onForward={onForward && m.kind !== "system" ? () => onForward(m) : undefined}
         onOpenImage={onOpenImage}
+        onOpenDocument={onOpenDocument}
       />,
     );
   });

@@ -139,6 +139,7 @@ export function mapApiMessageToChatRoom(
           name: att.originalFileName,
           sizeBytes: Number.isFinite(size) ? size : 0,
           mime: att.mimeType,
+          url: attachmentPublicReadUrl(att),
         }
       : { name: "Tệp", sizeBytes: 0 },
     body: m.content ?? undefined,

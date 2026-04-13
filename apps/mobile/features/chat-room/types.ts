@@ -37,6 +37,8 @@ export type ChatRoomMessage = {
     name: string;
     sizeBytes: number;
     mime?: string;
+    /** Public URL for download / in-app preview (PDF, Office). */
+    url?: string;
   };
   /** Remote sticker asset — or use stickerEmoji for simple mock */
   stickerUrl?: string;

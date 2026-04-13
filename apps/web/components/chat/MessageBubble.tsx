@@ -9,6 +9,7 @@ import { MessageActions } from "@/components/chat/MessageActions";
 import { ReactionBar } from "@/components/chat/ReactionBar";
 import { MessageReplyQuote } from "@/components/chat/ReplyPreview";
 import { StickerMessage } from "@/components/chat/StickerMessage";
+import { buildDocumentPreviewEmbedUrl, isDocumentPreviewable } from "@/lib/document-preview-url";
 import { groupSpacingClass } from "@/lib/message-grouping";
 import type { Message, MessageGroupPosition, MessageReaction } from "@/lib/types/chat";
 
@@ -22,6 +23,8 @@ type MessageBubbleProps = {
   onDelete?: () => void;
   onForward?: () => void;
   onOpenImage: (url: string) => void;
+  /** In-app preview (iframe) for PDF / Office when URL is available. */
+  onOpenDocument?: (embedUrl: string, title: string, downloadUrl: string) => void;
 };
 
 function ownReceiptLabel(message: Message): string | null {
@@ -42,6 +45,7 @@ export function MessageBubble({
   onDelete,
   onForward,
   onOpenImage,
+  onOpenDocument,
 }: MessageBubbleProps) {
   const [hover, setHover] = useState(false);
 
@@ -148,7 +152,12 @@ export function MessageBubble({
             {receiptBlock}
           </div>
         );
-      case "file":
+      case "file": {
+        const fileUrl = message.fileUrl;
+        const canPreview =
+          Boolean(fileUrl) &&
+          isDocumentPreviewable(message.fileName, message.mimeType) &&
+          Boolean(onOpenDocument);
         return (
           <div className="flex max-w-[min(100%,320px)] flex-col gap-1">
             {replyQuote}
@@ -161,10 +170,20 @@ export function MessageBubble({
                 fileName={message.fileName}
                 fileSizeBytes={message.fileSizeBytes}
                 isOwn={isOwn}
-                onDownload={
-                  message.fileUrl
+                onPreview={
+                  canPreview && fileUrl && onOpenDocument
+                    ? () =>
+                        onOpenDocument(
+                          buildDocumentPreviewEmbedUrl(fileUrl, message.fileName, message.mimeType),
+                          message.fileName,
+                          fileUrl,
+                        )
+                    : undefined
+                }
+                onOpenExternal={
+                  fileUrl
                     ? () => {
-                        window.open(message.fileUrl, "_blank", "noopener,noreferrer");
+                        window.open(fileUrl, "_blank", "noopener,noreferrer");
                       }
                     : undefined
                 }
@@ -174,6 +193,7 @@ export function MessageBubble({
             {receiptBlock}
           </div>
         );
+      }
       case "sticker":
         return (
           <div className="flex flex-col">

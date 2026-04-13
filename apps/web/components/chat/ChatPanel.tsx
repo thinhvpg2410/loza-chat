@@ -4,6 +4,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ApiChatPanel } from "@/components/chat/ApiChatPanel";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import type { AttachmentAction } from "@/components/chat/AttachmentPanel";
+import { DocumentPreviewModal } from "@/components/chat/DocumentPreviewModal";
 import { ImagePreviewModal } from "@/components/chat/ImagePreviewModal";
 import { MessageInput } from "@/components/chat/MessageInput";
 import { MessageList } from "@/components/chat/MessageList";
@@ -100,6 +101,7 @@ function ChatComposer({ conversation, onSend, replyTo, onCancelReply }: Composer
         fileName: "tai-lieu-mock.pdf",
         fileSizeBytes: 524288,
         mimeType: "application/pdf",
+        fileUrl: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
       };
       onSend(file);
     }
@@ -140,6 +142,11 @@ function MockChatPanel({ conversation }: { conversation: Conversation | null }) 
   const [extraByConversation, setExtraByConversation] = useState<Record<string, Message[]>>({});
   const [reactionOverrides, setReactionOverrides] = useState<Record<string, MessageReaction[]>>({});
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [documentPreview, setDocumentPreview] = useState<{
+    embedUrl: string;
+    title: string;
+    downloadUrl: string;
+  } | null>(null);
   const [replyTarget, setReplyTarget] = useState<{ convId: string; message: Message } | null>(
     null,
   );
@@ -216,6 +223,9 @@ function MockChatPanel({ conversation }: { conversation: Conversation | null }) 
                 if (conversation) setReplyTarget({ convId: conversation.id, message: m });
               }}
               onOpenImage={setPreviewUrl}
+              onOpenDocument={(embedUrl, title, downloadUrl) =>
+                setDocumentPreview({ embedUrl, title, downloadUrl })
+              }
             />
           </>
         ) : (
@@ -238,6 +248,12 @@ function MockChatPanel({ conversation }: { conversation: Conversation | null }) 
         <MessageInput value="" onChange={() => {}} onSend={() => {}} disabled />
       )}
       <ImagePreviewModal imageUrl={previewUrl} onClose={() => setPreviewUrl(null)} />
+      <DocumentPreviewModal
+        embedUrl={documentPreview?.embedUrl ?? null}
+        title={documentPreview?.title ?? ""}
+        downloadUrl={documentPreview?.downloadUrl ?? null}
+        onClose={() => setDocumentPreview(null)}
+      />
     </section>
   );
 }

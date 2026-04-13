@@ -2,6 +2,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import * as Clipboard from "expo-clipboard";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
+import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -20,6 +21,7 @@ import {
   ChatRoomHeader,
   EmojiPickerSheet,
   ForwardConversationSheet,
+  FilePreviewModal,
   ImageViewerModal,
   MessageActionsSheet,
   type MessageActionId,
@@ -70,6 +72,7 @@ import {
   setChatRealtimeHandlers,
 } from "@/services/socket/socket";
 import { uploadLocalFileToAttachment } from "@/services/uploads/directUpload";
+import { buildDocumentPreviewEmbedUrl, isDocumentPreviewable } from "@/lib/document-preview-url";
 import { useAuthStore } from "@/store/authStore";
 import { useChatStore } from "@/store/chatStore";
 import { AppText } from "@ui/AppText";
@@ -209,6 +212,12 @@ export default function ChatRoomScreen() {
 
   const [viewerUri, setViewerUri] = useState<string | null>(null);
   const [viewerOpen, setViewerOpen] = useState(false);
+
+  const [filePreview, setFilePreview] = useState<{
+    title: string;
+    embedUrl: string;
+    downloadUrl: string;
+  } | null>(null);
 
   const [reactionTargetId, setReactionTargetId] = useState<string | null>(null);
   const [actionTarget, setActionTarget] = useState<ChatRoomMessage | null>(null);
@@ -381,6 +390,23 @@ export default function ChatRoomScreen() {
   const onMessagePress = useCallback((m: ChatRoomMessage) => {
     if (m.kind === "image") return;
     if (m.isRemoved) return;
+
+    if (m.kind === "file" && m.file?.url) {
+      const { url, name, mime } = { url: m.file.url, name: m.file.name, mime: m.file.mime };
+      if (isDocumentPreviewable(name, mime)) {
+        setFilePreview({
+          title: name,
+          embedUrl: buildDocumentPreviewEmbedUrl(url, name, mime),
+          downloadUrl: url,
+        });
+        return;
+      }
+      void WebBrowser.openBrowserAsync(url, {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
+      });
+      return;
+    }
+
     setReactionTargetId(m.id);
   }, []);
 
@@ -855,6 +881,14 @@ export default function ChatRoomScreen() {
       </KeyboardAvoidingView>
 
       <ImageViewerModal visible={viewerOpen} imageUri={viewerUri} onClose={closeImageViewer} />
+
+      <FilePreviewModal
+        visible={filePreview !== null}
+        title={filePreview?.title ?? ""}
+        embedUrl={filePreview?.embedUrl ?? null}
+        downloadUrl={filePreview?.downloadUrl ?? null}
+        onClose={() => setFilePreview(null)}
+      />
 
       <ReactionPickerSheet
         visible={reactionTargetId !== null}
