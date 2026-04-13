@@ -16,6 +16,8 @@ export interface MessageView {
   type: MessageType;
   content: string | null;
   metadataJson: Prisma.JsonValue | null;
+  deletedAt: Date | null;
+  deletionMode: 'recalled' | 'deleted' | null;
   replyToMessageId: string | null;
   createdAt: Date;
   updatedAt: Date;

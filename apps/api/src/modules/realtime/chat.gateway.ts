@@ -47,6 +47,7 @@ import { WsPayloadValidationError, parseWsPayload } from './ws-payload.util';
  *
  * **Server → client (conversation room unless noted)**
  * - `message:new` — `{ message }` after a **new** persisted row (idempotent retries do not re-emit).
+ * - `message:updated` — `{ message }` after recall/delete actions mutate a message.
  * - `typing:update` — `{ conversationId, userId, isTyping }`.
  * - `message:delivered` / `message:seen` — receipt payloads from {@link MessageReceiptsService}.
  * - `error` — validation or HTTP-shaped failures for the triggering event.
@@ -123,6 +124,9 @@ export class ChatGateway
       switch (ev.type) {
         case 'message.created':
           this.server.to(room).emit('message:new', { message: ev.message });
+          break;
+        case 'message.updated':
+          this.server.to(room).emit('message:updated', { message: ev.message });
           break;
         case 'message.reaction_updated':
           this.server.to(room).emit('message:reaction_updated', {

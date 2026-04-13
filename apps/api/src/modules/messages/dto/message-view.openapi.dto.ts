@@ -50,6 +50,22 @@ export class MessageViewOpenApiDto {
   })
   metadataJson!: unknown;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    format: 'date-time',
+    description:
+      'Soft-delete marker. Non-null means this message was recalled/deleted for everyone in the conversation.',
+  })
+  deletedAt!: Date | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    enum: ['recalled', 'deleted'],
+    description: 'Deletion intent for UI rendering when deletedAt is set.',
+  })
+  deletionMode!: 'recalled' | 'deleted' | null;
+
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   replyToMessageId!: string | null;
 
@@ -101,6 +117,11 @@ export class SendMessageResultOpenApiDto {
       'False when the same clientMessageId was replayed (idempotent)',
   })
   created!: boolean;
+}
+
+export class MessageActionResultOpenApiDto {
+  @ApiProperty({ type: MessageViewOpenApiDto })
+  message!: MessageViewOpenApiDto;
 }
 
 export class MessageHistoryOpenApiDto {
