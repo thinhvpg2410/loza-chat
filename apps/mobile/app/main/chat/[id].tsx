@@ -19,9 +19,12 @@ import {
   AttachmentSheet,
   type AttachmentKind,
   ChatRoomHeader,
+  EmojiPickerSheet,
+  ForwardConversationSheet,
   ImageViewerModal,
   MessageActionsSheet,
   type MessageActionId,
+  type MessageActionItem,
   MessageInputBar,
   MessageList,
   type MockSticker,
@@ -48,7 +51,14 @@ import {
   type ApiMessageView,
   type ApiMessageWithReceipt,
 } from "@/services/conversations/conversationsApi";
-import { addMessageReactionApi, sendMessageWithAttachmentsApi, sendTextMessageApi } from "@/services/messages/messagesApi";
+import {
+  addMessageReactionApi,
+  deleteMessageApi,
+  forwardMessageApi,
+  recallMessageApi,
+  sendMessageWithAttachmentsApi,
+  sendTextMessageApi,
+} from "@/services/messages/messagesApi";
 import {
   clearChatRealtimeHandlers,
   emitConversationJoin,
@@ -138,6 +148,7 @@ export default function ChatRoomScreen() {
   const insets = useSafeAreaInsets();
   const viewerId = useAuthStore((s) => s.user?.id ?? "");
   const fetchConversations = useChatStore((s) => s.fetchConversations);
+  const conversations = useChatStore((s) => s.conversations);
 
   const params = useLocalSearchParams<{
     id?: string;
@@ -200,8 +211,11 @@ export default function ChatRoomScreen() {
 
   const [reactionTargetId, setReactionTargetId] = useState<string | null>(null);
   const [actionTarget, setActionTarget] = useState<ChatRoomMessage | null>(null);
+  const [forwardOpen, setForwardOpen] = useState(false);
+  const [forwardBusy, setForwardBusy] = useState(false);
 
   const [attachmentOpen, setAttachmentOpen] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
   const [stickerOpen, setStickerOpen] = useState(false);
 
   const typingStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -255,6 +269,9 @@ export default function ChatRoomScreen() {
       emitConversationJoin(id);
 
       setChatRealtimeHandlers({
+        onSocketConnected: () => {
+          emitConversationJoin(id);
+        },
         onMessageNew: (msg) => {
           if (msg.conversationId !== id) return;
           const row = asReceiptView(msg, viewerId);
@@ -271,6 +288,14 @@ export default function ChatRoomScreen() {
                 void fetchConversations();
               });
           }
+        },
+        onMessageUpdated: (msg) => {
+          if (msg.conversationId !== id) return;
+          const row = asReceiptView(msg, viewerId);
+          setMessages((prev) =>
+            mergeMessagesById(prev, mapApiMessagesToChatRoomList([row], viewerId, displayName)),
+          );
+          void fetchConversations();
         },
         onTypingUpdate: (p) => {
           if (p.conversationId !== id) return;
@@ -314,7 +339,10 @@ export default function ChatRoomScreen() {
 
   useEffect(() => {
     if (USE_API_MOCK || !isChatSocketConfigured() || !id) return;
-    if (!draft.trim().length) return;
+    if (!draft.trim().length) {
+      emitTypingStop(id);
+      return;
+    }
     emitTypingStart(id);
     if (typingStopTimer.current) clearTimeout(typingStopTimer.current);
     typingStopTimer.current = setTimeout(() => {
@@ -341,12 +369,39 @@ export default function ChatRoomScreen() {
 
   const onMessagePress = useCallback((m: ChatRoomMessage) => {
     if (m.kind === "image") return;
+    if (m.isRemoved) return;
     setReactionTargetId(m.id);
   }, []);
 
   const onMessageLongPress = useCallback((m: ChatRoomMessage) => {
     setActionTarget(m);
   }, []);
+
+  const actionItems = useMemo<MessageActionItem[]>(() => {
+    if (!actionTarget) return [];
+    const own = actionTarget.senderRole === "me";
+    const removed = Boolean(actionTarget.isRemoved);
+    const items: MessageActionItem[] = [];
+    if (!removed) {
+      items.push({ id: "reply", label: "Trả lời", icon: "arrow-undo-outline" });
+      items.push({ id: "copy", label: "Sao chép", icon: "copy-outline" });
+      items.push({ id: "react", label: "Cảm xúc", icon: "happy-outline" });
+      items.push({ id: "forward", label: "Chuyển tiếp", icon: "arrow-redo-outline" });
+    }
+    if (own && !removed) {
+      items.push({ id: "recall", label: "Thu hồi", icon: "return-up-back-outline", danger: true });
+      items.push({ id: "delete", label: "Xóa", icon: "trash-outline", danger: true });
+    }
+    return items;
+  }, [actionTarget]);
+
+  const forwardTargets = useMemo(
+    () =>
+      conversations
+        .filter((c) => c.kind === "direct")
+        .map((c) => ({ id: c.id, name: c.name, avatarUrl: c.avatarUrl })),
+    [conversations],
+  );
 
   const applyReaction = useCallback(
     async (messageId: string, emoji: string) => {
@@ -402,17 +457,104 @@ export default function ChatRoomScreen() {
         if (text.length) await Clipboard.setStringAsync(text);
       } else if (actionId === "react") {
         setReactionTargetId(msg.id);
+      } else if (actionId === "recall") {
+        if (USE_API_MOCK) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === msg.id
+                ? {
+                    ...m,
+                    kind: "text",
+                    body: "Tin nhắn đã được thu hồi",
+                    file: undefined,
+                    imageUrl: undefined,
+                    stickerUrl: undefined,
+                    stickerEmoji: undefined,
+                    isRemoved: true,
+                    removalMode: "recalled",
+                    replyTo: undefined,
+                    reactions: [],
+                  }
+                : m,
+            ),
+          );
+          return;
+        }
+        try {
+          const { message } = await recallMessageApi(msg.id);
+          const row = asReceiptView(message, viewerId);
+          setMessages((prev) =>
+            mergeMessagesById(prev, mapApiMessagesToChatRoomList([row], viewerId, displayName)),
+          );
+          void fetchConversations();
+        } catch (e) {
+          Alert.alert("Thu hồi tin nhắn", getApiErrorMessage(e));
+        }
       } else if (actionId === "delete") {
         if (USE_API_MOCK) {
-          setMessages((prev) => prev.filter((m) => m.id !== msg.id));
-        } else {
-          Alert.alert("Xóa tin nhắn", "Chưa hỗ trợ xóa trên máy chủ.");
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === msg.id
+                ? {
+                    ...m,
+                    kind: "text",
+                    body: "Tin nhắn đã bị xóa",
+                    file: undefined,
+                    imageUrl: undefined,
+                    stickerUrl: undefined,
+                    stickerEmoji: undefined,
+                    isRemoved: true,
+                    removalMode: "deleted",
+                    replyTo: undefined,
+                    reactions: [],
+                  }
+                : m,
+            ),
+          );
+          return;
+        }
+        try {
+          const { message } = await deleteMessageApi(msg.id);
+          const row = asReceiptView(message, viewerId);
+          setMessages((prev) =>
+            mergeMessagesById(prev, mapApiMessagesToChatRoomList([row], viewerId, displayName)),
+          );
+          void fetchConversations();
+        } catch (e) {
+          Alert.alert("Xóa tin nhắn", getApiErrorMessage(e));
         }
       } else if (actionId === "forward") {
-        Alert.alert("Chuyển tiếp", "Tính năng đang phát triển.");
+        setForwardOpen(true);
       }
     },
-    [actionTarget, displayName],
+    [actionTarget, displayName, fetchConversations, viewerId],
+  );
+
+  const onForwardPick = useCallback(
+    async (targetConversationId: string) => {
+      const msg = actionTarget;
+      if (!msg) return;
+      if (USE_API_MOCK) {
+        Alert.alert("Chuyển tiếp", "Bản mock chưa hỗ trợ chuyển tiếp.");
+        return;
+      }
+      setForwardBusy(true);
+      try {
+        await forwardMessageApi({
+          messageId: msg.id,
+          targetConversationId,
+          clientMessageId: newClientMessageId(),
+        });
+        setForwardOpen(false);
+        setActionTarget(null);
+        void fetchConversations();
+      } catch (e) {
+        Alert.alert("Chuyển tiếp tin nhắn", getApiErrorMessage(e));
+      } finally {
+        setForwardBusy(false);
+      }
+    },
+    [actionTarget, fetchConversations],
   );
 
   const appendOutgoing = useCallback((msg: ChatRoomMessage) => {
@@ -566,6 +708,10 @@ export default function ChatRoomScreen() {
     [appendOutgoing, id],
   );
 
+  const onEmojiPick = useCallback((emoji: string) => {
+    setDraft((prev) => `${prev}${emoji}`);
+  }, []);
+
   const send = useCallback(async () => {
     const body = draft.trim();
     if (!body.length || sendBusy) return;
@@ -687,6 +833,7 @@ export default function ChatRoomScreen() {
           replyingTo={replyingTo}
           onCancelReply={() => setReplyingTo(null)}
           onOpenAttachment={() => setAttachmentOpen(true)}
+          onOpenEmoji={() => setEmojiOpen(true)}
         />
       </KeyboardAvoidingView>
 
@@ -702,6 +849,15 @@ export default function ChatRoomScreen() {
         visible={actionTarget !== null}
         onClose={() => setActionTarget(null)}
         onAction={handleAction}
+        actions={actionItems}
+      />
+
+      <ForwardConversationSheet
+        visible={forwardOpen}
+        loading={forwardBusy}
+        targets={forwardTargets}
+        onClose={() => setForwardOpen(false)}
+        onPick={(conversationId) => void onForwardPick(conversationId)}
       />
 
       <AttachmentSheet
@@ -709,6 +865,8 @@ export default function ChatRoomScreen() {
         onClose={() => setAttachmentOpen(false)}
         onPick={onAttachmentPick}
       />
+
+      <EmojiPickerSheet visible={emojiOpen} onClose={() => setEmojiOpen(false)} onPick={onEmojiPick} />
 
       <StickerPickerSheet visible={stickerOpen} onClose={() => setStickerOpen(false)} onPick={onStickerPick} />
     </SafeAreaView>

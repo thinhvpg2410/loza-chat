@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -43,6 +44,8 @@ type MessageWithRelations = Message & {
   sticker?: (Sticker & { pack: StickerPack }) | null;
 };
 
+type MessageDeletionMode = 'recalled' | 'deleted';
+
 @Injectable()
 export class MessagesService {
   constructor(
@@ -52,6 +55,40 @@ export class MessagesService {
     private readonly stickers: StickersService,
     private readonly domainEvents: MessageDomainEventsService,
   ) {}
+
+  private parseDeletionMode(
+    metadata: Prisma.JsonValue | null,
+  ): MessageDeletionMode | null {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+      return null;
+    }
+    const lifecycle = (metadata as Record<string, unknown>).messageLifecycle;
+    if (!lifecycle || typeof lifecycle !== 'object' || Array.isArray(lifecycle)) {
+      return null;
+    }
+    const mode = (lifecycle as Record<string, unknown>).deletionMode;
+    return mode === 'recalled' || mode === 'deleted' ? mode : null;
+  }
+
+  private buildDeletionMetadata(
+    existing: Prisma.JsonValue | null,
+    mode: MessageDeletionMode,
+    actorId: string,
+    at: Date,
+  ): Prisma.InputJsonValue {
+    const base =
+      existing && typeof existing === 'object' && !Array.isArray(existing)
+        ? ({ ...(existing as Prisma.JsonObject) } as Prisma.JsonObject)
+        : ({} as Prisma.JsonObject);
+
+    base.messageLifecycle = {
+      deletionMode: mode,
+      deletedByUserId: actorId,
+      deletedAt: at.toISOString(),
+    };
+
+    return base as Prisma.InputJsonValue;
+  }
 
   async sendTextMessage(
     senderId: string,
@@ -439,6 +476,182 @@ export class MessagesService {
     return { message: result.message };
   }
 
+  async recallMessage(
+    actorId: string,
+    messageId: string,
+  ): Promise<{ message: MessageView }> {
+    return this.softDeleteMessage(actorId, messageId, 'recalled');
+  }
+
+  async deleteMessage(
+    actorId: string,
+    messageId: string,
+  ): Promise<{ message: MessageView }> {
+    return this.softDeleteMessage(actorId, messageId, 'deleted');
+  }
+
+  async forwardMessage(
+    actorId: string,
+    sourceMessageId: string,
+    targetConversationId: string,
+    clientMessageId: string,
+  ): Promise<{ message: MessageView }> {
+    const source = await this.prisma.message.findUnique({
+      where: { id: sourceMessageId },
+      include: {
+        sender: true,
+        attachments: { orderBy: { sortOrder: 'asc' } },
+        sticker: { include: { pack: true } },
+      },
+    });
+    if (!source) {
+      throw new NotFoundException('Message not found');
+    }
+    await this.membership.requireMember(actorId, source.conversationId);
+
+    if (source.deletedAt) {
+      throw new BadRequestException('Cannot forward a recalled/deleted message');
+    }
+
+    const targetConversation = await this.prisma.conversation.findUnique({
+      where: { id: targetConversationId },
+      select: { id: true, type: true },
+    });
+    if (!targetConversation || targetConversation.type !== ConversationType.direct) {
+      throw new BadRequestException('Target conversation must be a direct conversation');
+    }
+
+    if (source.type === MessageType.system) {
+      throw new BadRequestException('System messages cannot be forwarded');
+    }
+
+    if (source.type === MessageType.text) {
+      return this.sendTextMessage(actorId, {
+        conversationId: targetConversationId,
+        clientMessageId,
+        content: source.content ?? '',
+      });
+    }
+
+    if (source.type === MessageType.sticker) {
+      if (!source.stickerId) {
+        throw new BadRequestException('Source sticker message is invalid');
+      }
+      return this.sendStickerMessage(actorId, {
+        conversationId: targetConversationId,
+        clientMessageId,
+        stickerId: source.stickerId,
+      });
+    }
+
+    if (source.attachments.length > 0) {
+      const clonedAttachmentIds = await this.prisma.$transaction(async (tx) => {
+        await this.membership.requireMemberTx(tx, actorId, targetConversationId);
+
+        const created: string[] = [];
+        for (const att of source.attachments) {
+          const row = await tx.attachment.create({
+            data: {
+              uploadedById: actorId,
+              storageKey: att.storageKey,
+              bucket: att.bucket,
+              mimeType: att.mimeType,
+              originalFileName: att.originalFileName,
+              fileSize: att.fileSize,
+              attachmentType: att.attachmentType,
+              width: att.width,
+              height: att.height,
+              durationSeconds: att.durationSeconds,
+              thumbnailKey: att.thumbnailKey,
+              sortOrder: att.sortOrder,
+            },
+            select: { id: true },
+          });
+          created.push(row.id);
+        }
+        return created;
+      });
+
+      return this.sendMessageWithAttachments(actorId, {
+        conversationId: targetConversationId,
+        clientMessageId,
+        type: source.type,
+        content: source.content ?? undefined,
+        attachmentIds: clonedAttachmentIds,
+      });
+    }
+
+    if (!source.content || source.content.trim().length === 0) {
+      throw new BadRequestException('Source message has no forwardable payload');
+    }
+
+    return this.sendTextMessage(actorId, {
+      conversationId: targetConversationId,
+      clientMessageId,
+      content: source.content,
+    });
+  }
+
+  private async softDeleteMessage(
+    actorId: string,
+    messageId: string,
+    mode: MessageDeletionMode,
+  ): Promise<{ message: MessageView }> {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const message = await tx.message.findUnique({
+        where: { id: messageId },
+        include: {
+          sender: true,
+          attachments: { orderBy: { sortOrder: 'asc' } },
+          sticker: { include: { pack: true } },
+        },
+      });
+      if (!message) {
+        throw new NotFoundException('Message not found');
+      }
+
+      await this.membership.requireMemberTx(tx, actorId, message.conversationId);
+      if (message.senderId !== actorId) {
+        throw new ForbiddenException('Only the sender can perform this action');
+      }
+
+      if (message.deletedAt) {
+        return { message: this.toMessageView(message), changed: false };
+      }
+
+      const now = new Date();
+      const updated = await tx.message.update({
+        where: { id: messageId },
+        data: {
+          deletedAt: now,
+          metadataJson: this.buildDeletionMetadata(
+            message.metadataJson,
+            mode,
+            actorId,
+            now,
+          ),
+        },
+        include: {
+          sender: true,
+          attachments: { orderBy: { sortOrder: 'asc' } },
+          sticker: { include: { pack: true } },
+        },
+      });
+
+      return { message: this.toMessageView(updated), changed: true };
+    });
+
+    if (result.changed) {
+      this.domainEvents.emit({
+        type: 'message.updated',
+        conversationId: result.message.conversationId,
+        message: result.message,
+      });
+    }
+
+    return { message: result.message };
+  }
+
   /**
    * Messages are returned **newest first**. Use `nextCursor` to load **older** messages.
    */
@@ -459,7 +672,6 @@ export class MessagesService {
 
     const where: Prisma.MessageWhereInput = {
       conversationId,
-      deletedAt: null,
       ...(cursorPayload
         ? {
             OR: [
@@ -515,7 +727,6 @@ export class MessagesService {
         : await this.prisma.message.findMany({
             where: {
               conversationId,
-              deletedAt: null,
               id: { in: markerIds },
             },
           });
@@ -760,15 +971,21 @@ export class MessagesService {
       senderId: row.senderId,
       clientMessageId: row.clientMessageId,
       type: row.type,
-      content: row.content,
+      content: row.deletedAt ? null : row.content,
       metadataJson: row.metadataJson ?? null,
+      deletedAt: row.deletedAt,
+      deletionMode: row.deletedAt
+        ? this.parseDeletionMode(row.metadataJson)
+        : null,
       replyToMessageId: row.replyToMessageId,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       sender: toPublicUserProfile(row.sender),
-      attachments: row.attachments.map((a) => toAttachmentPublicDto(a)),
-      sticker: row.sticker ? toStickerPublicDto(row.sticker) : null,
-      reactions: reactionSummary ?? { counts: [], mine: [] },
+      attachments: row.deletedAt
+        ? []
+        : row.attachments.map((a) => toAttachmentPublicDto(a)),
+      sticker: row.deletedAt ? null : row.sticker ? toStickerPublicDto(row.sticker) : null,
+      reactions: row.deletedAt ? { counts: [], mine: [] } : reactionSummary ?? { counts: [], mine: [] },
     };
   }
 }

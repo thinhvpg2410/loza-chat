@@ -53,6 +53,9 @@ export type ApiMessageWithReceipt = {
   senderId: string;
   type: string;
   content: string | null;
+  metadataJson?: Record<string, unknown> | null;
+  deletedAt?: string | null;
+  deletionMode?: "recalled" | "deleted" | null;
   replyToMessageId: string | null;
   createdAt: string;
   updatedAt: string;

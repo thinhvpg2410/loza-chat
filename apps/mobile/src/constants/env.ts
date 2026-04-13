@@ -46,3 +46,38 @@ function resolveApiBaseUrl(): string {
 }
 
 export const API_BASE_URL = resolveApiBaseUrl();
+
+function resolveSocketUrl(): string {
+  const raw = trimEnv(process.env.EXPO_PUBLIC_SOCKET_URL);
+  if (!raw) {
+    return API_BASE_URL;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return raw.replace(/\/$/, "");
+  }
+
+  const needsDevHost = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+  if (!needsDevHost) {
+    return parsed.origin.replace(/\/$/, "");
+  }
+
+  const apiHost = (() => {
+    try {
+      return new URL(API_BASE_URL).hostname;
+    } catch {
+      return "";
+    }
+  })();
+
+  if (apiHost && apiHost !== "localhost" && apiHost !== "127.0.0.1") {
+    parsed.hostname = apiHost;
+    return parsed.origin.replace(/\/$/, "");
+  }
+
+  return parsed.origin.replace(/\/$/, "");
+}
+
+export const SOCKET_URL = resolveSocketUrl();

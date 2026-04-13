@@ -197,3 +197,208 @@ export async function markConversationReadAction(
     /* best-effort */
   }
 }
+
+export type MessageActionResult =
+  | { ok: true; message: Message }
+  | { ok: false; error: string };
+
+export async function recallChatMessageAction(messageId: string): Promise<MessageActionResult> {
+  const gate = await assertApiChatEnabled();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  try {
+    const res = await apiFetchJson<{ message: ApiMessageWithReceipt }>(`/messages/${messageId}/recall`, {
+      method: "POST",
+    });
+    const row: ApiMessageWithReceipt = { ...res.message, sentByViewer: true };
+    return { ok: true, message: mapSingleApiMessage(row, gate.base) };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Không thu hồi được tin nhắn.",
+    };
+  }
+}
+
+export async function deleteChatMessageAction(messageId: string): Promise<MessageActionResult> {
+  const gate = await assertApiChatEnabled();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  try {
+    const res = await apiFetchJson<{ message: ApiMessageWithReceipt }>(`/messages/${messageId}`, {
+      method: "DELETE",
+    });
+    const row: ApiMessageWithReceipt = { ...res.message, sentByViewer: true };
+    return { ok: true, message: mapSingleApiMessage(row, gate.base) };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Không xóa được tin nhắn.",
+    };
+  }
+}
+
+export async function forwardChatMessageAction(input: {
+  messageId: string;
+  targetConversationId: string;
+  clientMessageId: string;
+}): Promise<MessageActionResult> {
+  const gate = await assertApiChatEnabled();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  try {
+    const res = await apiFetchJson<{ message: ApiMessageWithReceipt }>(`/messages/${input.messageId}/forward`, {
+      method: "POST",
+      body: JSON.stringify({
+        targetConversationId: input.targetConversationId,
+        clientMessageId: input.clientMessageId,
+      }),
+    });
+    const row: ApiMessageWithReceipt = { ...res.message, sentByViewer: true };
+    return { ok: true, message: mapSingleApiMessage(row, gate.base) };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Không chuyển tiếp được tin nhắn.",
+    };
+  }
+}
+
+export type ChatUploadInitResult =
+  | {
+      ok: true;
+      uploadSessionId: string;
+      uploadUrl: string;
+      uploadMethod: "PUT";
+      uploadHeaders: Record<string, string>;
+      putBearerToken?: string;
+    }
+  | { ok: false; error: string };
+
+function needsBearerForUploadPut(uploadUrl: string): boolean {
+  try {
+    return new URL(uploadUrl).pathname.includes("/uploads/mock-upload/");
+  } catch {
+    return false;
+  }
+}
+
+export async function initChatUploadAction(input: {
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  uploadType: "image" | "file" | "voice" | "video" | "other";
+  width?: number;
+  height?: number;
+}): Promise<ChatUploadInitResult> {
+  const gate = await assertApiChatEnabled();
+  if (!gate.ok) return { ok: false, error: gate.error };
+
+  try {
+    const init = await apiFetchJson<{
+      uploadSessionId: string;
+      upload: { url: string; method: "PUT"; headers: Record<string, string> };
+    }>("/uploads/init", {
+      method: "POST",
+      body: JSON.stringify({
+        fileName: input.fileName,
+        mimeType: input.mimeType,
+        fileSize: input.fileSize,
+        uploadType: input.uploadType,
+        ...(input.width !== undefined ? { width: input.width } : {}),
+        ...(input.height !== undefined ? { height: input.height } : {}),
+      }),
+    });
+
+    let putBearerToken: string | undefined;
+    if (needsBearerForUploadPut(init.upload.url)) {
+      const jar = await cookies();
+      const token = jar.get(LOZA_ACCESS_COOKIE)?.value;
+      if (!token) {
+        return { ok: false, error: "Phiên đăng nhập không hợp lệ." };
+      }
+      putBearerToken = token;
+    }
+
+    return {
+      ok: true,
+      uploadSessionId: init.uploadSessionId,
+      uploadUrl: init.upload.url,
+      uploadMethod: init.upload.method,
+      uploadHeaders: init.upload.headers,
+      ...(putBearerToken ? { putBearerToken } : {}),
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Không khởi tạo được upload.",
+    };
+  }
+}
+
+export type CompleteChatUploadResult =
+  | { ok: true; attachmentId: string }
+  | { ok: false; error: string };
+
+export async function completeChatUploadAction(
+  uploadSessionId: string,
+): Promise<CompleteChatUploadResult> {
+  const gate = await assertApiChatEnabled();
+  if (!gate.ok) return { ok: false, error: gate.error };
+
+  try {
+    const done = await apiFetchJson<{ attachment: { id: string } }>(
+      `/uploads/${uploadSessionId}/complete`,
+      { method: "POST" },
+    );
+    return { ok: true, attachmentId: done.attachment.id };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Không hoàn tất upload.",
+    };
+  }
+}
+
+export type SendWithAttachmentsResult =
+  | { ok: true; message: Message }
+  | { ok: false; error: string };
+
+export async function sendChatMessageWithAttachmentsAction(input: {
+  conversationId: string;
+  clientMessageId: string;
+  type: "image" | "file" | "voice" | "video" | "other";
+  attachmentIds: string[];
+  content?: string;
+  replyToMessageId?: string;
+}): Promise<SendWithAttachmentsResult> {
+  const gate = await assertApiChatEnabled();
+  if (!gate.ok) return { ok: false, error: gate.error };
+
+  try {
+    const body: Record<string, unknown> = {
+      conversationId: input.conversationId,
+      clientMessageId: input.clientMessageId,
+      type: input.type,
+      attachmentIds: input.attachmentIds,
+    };
+    if (input.content && input.content.trim()) body.content = input.content.trim();
+    if (input.replyToMessageId) body.replyToMessageId = input.replyToMessageId;
+
+    const res = await apiFetchJson<{ message: ApiMessageWithReceipt }>(
+      "/messages/with-attachments",
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      },
+    );
+
+    const row: ApiMessageWithReceipt = {
+      ...res.message,
+      sentByViewer: true,
+    };
+    return { ok: true, message: mapSingleApiMessage(row, gate.base) };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Không gửi được tệp đính kèm.",
+    };
+  }
+}

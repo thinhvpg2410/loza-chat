@@ -1,17 +1,18 @@
 "use client";
 
-import { IconMore, IconReply, IconSmile } from "@/components/chat/icons";
+import { ActionMenu, type ActionMenuItem } from "@/components/common/ActionMenu";
+import { IconReply, IconSmile } from "@/components/chat/icons";
 import { quickReactionEmojis } from "@/lib/mock-stickers";
 
 type MessageActionsProps = {
   onReply: () => void;
   /** Chọn cảm xúc (hover nút react để mở lưới emoji). */
   onPickReaction: (emoji: string) => void;
-  onMore?: () => void;
+  moreItems?: ActionMenuItem[];
   visible: boolean;
 };
 
-export function MessageActions({ onReply, onPickReaction, onMore, visible }: MessageActionsProps) {
+export function MessageActions({ onReply, onPickReaction, moreItems = [], visible }: MessageActionsProps) {
   if (!visible) return null;
 
   return (
@@ -57,17 +58,11 @@ export function MessageActions({ onReply, onPickReaction, onMore, visible }: Mes
         </div>
       </div>
 
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onMore?.();
-        }}
-        className="rounded p-1 text-[var(--zalo-text-muted)] transition-colors duration-150 ease-out hover:bg-black/[0.06] active:bg-black/[0.08] motion-reduce:transition-none"
-        title="Thêm"
-      >
-        <IconMore className="h-4 w-4" />
-      </button>
+      {moreItems.length > 0 ? (
+        <div onClick={(e) => e.stopPropagation()}>
+          <ActionMenu items={moreItems} ariaLabel="Thao tác tin nhắn" compact />
+        </div>
+      ) : null}
     </div>
   );
 }

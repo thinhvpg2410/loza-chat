@@ -13,6 +13,11 @@ export type MessageDomainEvent =
       conversationId: string;
       messageId: string;
       summary: ReactionSummaryView;
+    }
+  | {
+      type: 'message.updated';
+      conversationId: string;
+      message: MessageView;
     };
 
 @Injectable()

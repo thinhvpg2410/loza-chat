@@ -55,6 +55,7 @@ export type FileMessage = MessageCommon & {
   fileName: string;
   fileSizeBytes: number;
   mimeType?: string;
+  fileUrl?: string;
 };
 
 export type StickerMessage = MessageCommon & {

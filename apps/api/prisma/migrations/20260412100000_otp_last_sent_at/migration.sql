@@ -1,2 +1,0 @@
--- AlterTable
-ALTER TABLE "otp_requests" ADD COLUMN "last_sent_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;

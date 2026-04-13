@@ -17,6 +17,19 @@ export function socketMessageViewToApiRow(
   }
   const type = String(m.type ?? "text");
   const content = m.content == null ? null : String(m.content);
+  const metadataJson =
+    m.metadataJson && typeof m.metadataJson === "object"
+      ? (m.metadataJson as Record<string, unknown>)
+      : null;
+  const deletedAt =
+    typeof m.deletedAt === "string"
+      ? m.deletedAt
+      : m.deletedAt instanceof Date
+        ? m.deletedAt.toISOString()
+        : null;
+  const deletionModeRaw = m.deletionMode;
+  const deletionMode =
+    deletionModeRaw === "recalled" || deletionModeRaw === "deleted" ? deletionModeRaw : null;
   const replyToMessageId =
     m.replyToMessageId == null || m.replyToMessageId === ""
       ? null
@@ -48,6 +61,9 @@ export function socketMessageViewToApiRow(
     senderId,
     type,
     content,
+    metadataJson,
+    deletedAt,
+    deletionMode,
     replyToMessageId,
     createdAt,
     updatedAt,

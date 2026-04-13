@@ -40,3 +40,28 @@ export async function addMessageReactionApi(
   }>(`/messages/${messageId}/reactions`, { reaction });
   return data;
 }
+
+export async function recallMessageApi(messageId: string): Promise<{ message: ApiMessageView }> {
+  const { data } = await apiClient.post<{ message: ApiMessageView }>(`/messages/${messageId}/recall`);
+  return data;
+}
+
+export async function deleteMessageApi(messageId: string): Promise<{ message: ApiMessageView }> {
+  const { data } = await apiClient.delete<{ message: ApiMessageView }>(`/messages/${messageId}`);
+  return data;
+}
+
+export async function forwardMessageApi(payload: {
+  messageId: string;
+  targetConversationId: string;
+  clientMessageId: string;
+}): Promise<{ message: ApiMessageView; created?: boolean }> {
+  const { data } = await apiClient.post<{ message: ApiMessageView; created?: boolean }>(
+    `/messages/${payload.messageId}/forward`,
+    {
+      targetConversationId: payload.targetConversationId,
+      clientMessageId: payload.clientMessageId,
+    },
+  );
+  return data;
+}

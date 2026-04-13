@@ -39,6 +39,20 @@ function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message
         }
       : {};
 
+  if (row.deletedAt) {
+    const m: SystemMessage = {
+      kind: "system",
+      id: row.id,
+      conversationId: row.conversationId,
+      body: row.deletionMode === "recalled" ? "Tin nhắn đã được thu hồi" : "Tin nhắn đã bị xóa",
+      sentAt,
+      createdAt,
+      isOwn: false,
+      reactions: [],
+    };
+    return m;
+  }
+
   switch (row.type) {
     case "text": {
       const m: TextMessage = {
@@ -119,6 +133,7 @@ function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message
         fileName,
         fileSizeBytes: Number.isFinite(size) ? size : 0,
         mimeType: att?.mimeType,
+        fileUrl: att ? mockStoragePublicUrl(apiBaseUrl, att.storageKey) : undefined,
         sentAt,
         createdAt,
         isOwn: baseOwn,
