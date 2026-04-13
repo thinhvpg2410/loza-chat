@@ -95,6 +95,8 @@ export type ApiMessageView = {
   type: string;
   content: string | null;
   metadataJson: unknown;
+  deletedAt: string | null;
+  deletionMode: "recalled" | "deleted" | null;
   replyToMessageId: string | null;
   createdAt: string;
   updatedAt: string;

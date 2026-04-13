@@ -24,6 +24,7 @@ export type ReceiptBroadcastPayload = {
 
 export type ChatRealtimeHandlers = {
   onMessageNew?: (message: ApiMessageView) => void;
+  onMessageUpdated?: (message: ApiMessageView) => void;
   onTypingUpdate?: (payload: TypingUpdatePayload) => void;
   onReactionUpdated?: (payload: ReactionUpdatedPayload) => void;
   onMessageDelivered?: (payload: ReceiptBroadcastPayload) => void;
@@ -31,6 +32,7 @@ export type ChatRealtimeHandlers = {
 };
 
 const EV_MESSAGE_NEW = "message:new";
+const EV_MESSAGE_UPDATED = "message:updated";
 const EV_TYPING_UPDATE = "typing:update";
 const EV_REACTION_UPDATED = "message:reaction_updated";
 const EV_MESSAGE_DELIVERED = "message:delivered";
@@ -71,6 +73,15 @@ export function connectChatSocket(accessToken?: string): () => void {
     }
   });
 
+  socket.on(EV_MESSAGE_UPDATED, (body: unknown) => {
+    if (!body || typeof body !== "object") return;
+    const msg = (body as { message?: ApiMessageView }).message;
+    if (msg && typeof msg === "object" && "id" in msg) {
+      handlers.onMessageUpdated?.(msg);
+      useChatStore.getState().scheduleConversationsListRefresh();
+    }
+  });
+
   socket.on(EV_TYPING_UPDATE, (body: unknown) => {
     if (!body || typeof body !== "object") return;
     const p = body as TypingUpdatePayload;
@@ -105,6 +116,7 @@ export function connectChatSocket(accessToken?: string): () => void {
 
   return () => {
     socket?.off(EV_MESSAGE_NEW);
+    socket?.off(EV_MESSAGE_UPDATED);
     socket?.off(EV_TYPING_UPDATE);
     socket?.off(EV_REACTION_UPDATED);
     socket?.off(EV_MESSAGE_DELIVERED);

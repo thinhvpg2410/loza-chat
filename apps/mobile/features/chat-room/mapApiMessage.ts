@@ -4,6 +4,9 @@ import type { ApiMessageWithReceipt } from "@/services/conversations/conversatio
 import type { ChatRoomMessage, MessageKind, MessageReaction, OutgoingDeliveryState, ReplyReference } from "./types";
 
 function previewLineFromApi(m: ApiMessageWithReceipt): string {
+  if (m.deletedAt) {
+    return m.deletionMode === "recalled" ? "Tin nhắn đã được thu hồi" : "Tin nhắn đã bị xóa";
+  }
   if (m.content?.trim()) return m.content.trim();
   if (m.type === "image") return "📷 Ảnh";
   if (m.type === "file") return m.attachments[0]?.originalFileName ?? "📎 Tệp";
@@ -60,6 +63,7 @@ export function mapApiMessageToChatRoom(
   replyLookup: Map<string, { senderLabel: string; preview: string }>,
 ): ChatRoomMessage {
   const senderRole = m.senderId === viewerId ? "me" : "peer";
+  const isRemoved = Boolean(m.deletedAt);
   const base: ChatRoomMessage = {
     id: m.id,
     conversationId: m.conversationId,
@@ -67,11 +71,13 @@ export function mapApiMessageToChatRoom(
     createdAt: typeof m.createdAt === "string" ? m.createdAt : new Date(m.createdAt).toISOString(),
     delivery: outgoingDelivery(m),
     kind: resolveKind(m),
-    reactions: mapReactions(m.reactions),
+    reactions: isRemoved ? [] : mapReactions(m.reactions),
+    isRemoved,
+    removalMode: m.deletionMode ?? undefined,
   };
 
   let replyTo: ReplyReference | undefined;
-  if (m.replyToMessageId) {
+  if (m.replyToMessageId && !isRemoved) {
     const hit = replyLookup.get(m.replyToMessageId);
     replyTo = {
       id: m.replyToMessageId,
@@ -81,6 +87,14 @@ export function mapApiMessageToChatRoom(
   }
 
   const kind = resolveKind(m);
+  if (isRemoved) {
+    return {
+      ...base,
+      kind: "text",
+      body: m.deletionMode === "recalled" ? "Tin nhắn đã được thu hồi" : "Tin nhắn đã bị xóa",
+    };
+  }
+
   if (kind === "text") {
     return {
       ...base,

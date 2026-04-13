@@ -5,38 +5,41 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "@ui/AppText";
 import { colors, radius, spacing } from "@theme";
 
-export type MessageActionId = "reply" | "copy" | "react" | "delete" | "forward";
+export type MessageActionId = "reply" | "copy" | "react" | "recall" | "delete" | "forward";
 
-type ActionItem = {
+export type MessageActionItem = {
   id: MessageActionId;
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
   danger?: boolean;
 };
 
-const DEFAULT_ACTIONS: ActionItem[] = [
+const DEFAULT_ACTIONS: MessageActionItem[] = [
   { id: "reply", label: "Trả lời", icon: "arrow-undo-outline" },
   { id: "copy", label: "Sao chép", icon: "copy-outline" },
   { id: "react", label: "Cảm xúc", icon: "happy-outline" },
   { id: "forward", label: "Chuyển tiếp", icon: "arrow-redo-outline" },
-  { id: "delete", label: "Xóa (mock)", icon: "trash-outline", danger: true },
+  { id: "recall", label: "Thu hồi", icon: "return-up-back-outline", danger: true },
+  { id: "delete", label: "Xóa", icon: "trash-outline", danger: true },
 ];
 
 type MessageActionsSheetProps = {
   visible: boolean;
   onClose: () => void;
   onAction: (id: MessageActionId) => void;
+  actions?: MessageActionItem[];
 };
 
-export function MessageActionsSheet({ visible, onClose, onAction }: MessageActionsSheetProps) {
+export function MessageActionsSheet({ visible, onClose, onAction, actions }: MessageActionsSheetProps) {
   const insets = useSafeAreaInsets();
+  const items = actions?.length ? actions : DEFAULT_ACTIONS;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.wrap}>
         <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Đóng" />
         <View style={[styles.sheet, { paddingBottom: insets.bottom + spacing.sm }]}>
-        {DEFAULT_ACTIONS.map((a) => (
+        {items.map((a) => (
           <Pressable
             key={a.id}
             accessibilityRole="button"

@@ -44,6 +44,8 @@ export type ChatRoomMessage = {
   stickerEmoji?: string;
   replyTo?: ReplyReference;
   reactions?: MessageReaction[];
+  isRemoved?: boolean;
+  removalMode?: "recalled" | "deleted";
 };
 
 export type MessageFeedItem =
