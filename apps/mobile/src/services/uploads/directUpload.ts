@@ -1,7 +1,6 @@
-import * as FileSystem from "expo-file-system";
-
 import { API_BASE_URL } from "@/constants/env";
 import { apiClient } from "@/services/api/client";
+import { getAuthState } from "@/store/authStore";
 
 import type { ApiAttachment } from "../conversations/conversationsApi";
 
@@ -31,48 +30,69 @@ function resolveUploadPutUrl(presignedUrl: string): string {
   return presignedUrl;
 }
 
-function base64ToUint8Array(b64: string): Uint8Array {
-  const binary = atob(b64);
-  const out = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) {
-    out[i] = binary.charCodeAt(i);
+/** Mock-storage PUT goes through our API and needs JWT; S3 presigned must not get Authorization (breaks query sig). */
+function needsBearerForUploadPut(uploadUrl: string): boolean {
+  try {
+    return new URL(uploadUrl).pathname.includes("/uploads/mock-upload/");
+  } catch {
+    return false;
   }
-  return out;
 }
 
-export async function uploadLocalFileToAttachment(opts: {
+async function readLocalUriAsBlob(uri: string): Promise<Blob> {
+  const res = await fetch(uri);
+  if (!res.ok) {
+    throw new Error(`Không đọc được tệp (${res.status})`);
+  }
+  return res.blob();
+}
+
+export type UploadLocalFileOpts = {
   fileUri: string;
   fileName: string;
   mimeType: string;
-  fileSize: number;
   uploadType: MediaKind;
   width?: number;
   height?: number;
-}): Promise<ApiAttachment> {
+};
+
+/**
+ * Presigned pipeline: POST /uploads/init → PUT bytes → POST /uploads/:id/complete.
+ * Uses `fetch(fileUri)` → `blob()` so `ph://`, `content://`, and `file://` (picker) work on device;
+ * `expo-file-system` base64 read often fails on library URIs.
+ */
+export async function uploadLocalFileToAttachment(opts: UploadLocalFileOpts): Promise<ApiAttachment> {
+  const blob = await readLocalUriAsBlob(opts.fileUri);
+  const fileSize = blob.size;
+  if (!fileSize) {
+    throw new Error("Tệp rỗng hoặc không đọc được.");
+  }
+  const mimeType =
+    (blob.type && blob.type !== "") ? blob.type : opts.mimeType || "application/octet-stream";
+
   const { data: init } = await apiClient.post<UploadInitResponse>("/uploads/init", {
     fileName: opts.fileName,
-    mimeType: opts.mimeType,
-    fileSize: opts.fileSize,
+    mimeType,
+    fileSize,
     uploadType: opts.uploadType,
     ...(opts.width !== undefined ? { width: opts.width } : {}),
     ...(opts.height !== undefined ? { height: opts.height } : {}),
   });
 
   const putUrl = resolveUploadPutUrl(init.upload.url);
-  const base64 = await FileSystem.readAsStringAsync(opts.fileUri, {
-    encoding: "base64",
-  });
-  const body = base64ToUint8Array(base64);
+  const putHeaders: Record<string, string> = { ...init.upload.headers };
+  const token = getAuthState().accessToken;
+  if (needsBearerForUploadPut(init.upload.url) && token) {
+    putHeaders.Authorization = `Bearer ${token}`;
+  }
 
-  const headers: Record<string, string> = { ...init.upload.headers };
-  const arrayBuffer = body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer;
-  const res = await fetch(putUrl, {
+  const put = await fetch(putUrl, {
     method: init.upload.method,
-    headers,
-    body: arrayBuffer,
+    headers: putHeaders,
+    body: blob,
   });
-  if (!res.ok) {
-    throw new Error(`Tải lên thất bại (${res.status})`);
+  if (!put.ok) {
+    throw new Error(`Tải lên thất bại (${put.status})`);
   }
 
   const { data: done } = await apiClient.post<{ attachment: ApiAttachment }>(

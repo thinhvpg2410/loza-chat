@@ -1,7 +1,6 @@
 import { useFocusEffect } from "@react-navigation/native";
 import * as Clipboard from "expo-clipboard";
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -625,19 +624,12 @@ export default function ChatRoomScreen() {
 
     if (!viewerId) return;
     try {
-      const info = await FileSystem.getInfoAsync(uri);
-      const size = info.exists && "size" in info && typeof info.size === "number" ? info.size : 0;
-      if (!size) {
-        Alert.alert("Ảnh", "Không đọc được kích thước tệp.");
-        return;
-      }
       const mime = asset.mimeType ?? "image/jpeg";
       const name = asset.fileName ?? "photo.jpg";
       const att = await uploadLocalFileToAttachment({
         fileUri: uri,
         fileName: name,
         mimeType: mime,
-        fileSize: size,
         uploadType: "image",
         width: asset.width,
         height: asset.height,
@@ -677,19 +669,12 @@ export default function ChatRoomScreen() {
     const file = res.assets?.[0];
     if (!file?.uri) return;
     try {
-      const info = await FileSystem.getInfoAsync(file.uri);
-      const size = info.exists && "size" in info && typeof info.size === "number" ? info.size : file.size ?? 0;
-      if (!size) {
-        Alert.alert("Tệp", "Không đọc được kích thước tệp.");
-        return;
-      }
       const mime = file.mimeType ?? "application/octet-stream";
       const name = file.name ?? "file";
       const att = await uploadLocalFileToAttachment({
         fileUri: file.uri,
         fileName: name,
         mimeType: mime,
-        fileSize: size,
         uploadType: "file",
       });
       const { message } = await sendMessageWithAttachmentsApi({
