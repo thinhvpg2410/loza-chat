@@ -10,6 +10,7 @@ import {
   MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
@@ -59,6 +60,7 @@ import { WsPayloadValidationError, parseWsPayload } from './ws-payload.util';
 })
 export class ChatGateway
   implements
+    OnGatewayInit,
     OnGatewayConnection,
     OnGatewayDisconnect,
     OnModuleInit,
@@ -148,24 +150,46 @@ export class ChatGateway
     this.messageEventsSub?.unsubscribe();
   }
 
+  /**
+   * Authenticate in Socket.IO middleware so the client cannot emit application
+   * events until {@link ChatSocketData.user} is set (avoids races with async
+   * {@link handleConnection}).
+   */
+  afterInit(server: Server): void {
+    server.use(async (socket, next) => {
+      try {
+        const ctx = await this.socketAuth.authenticateHandshake(socket.handshake);
+        const data = socket.data as ChatSocketData;
+        data.user = ctx.user;
+        data.deviceId = ctx.deviceId;
+        data.conversationRooms = new Set<string>();
+        next();
+      } catch (err) {
+        this.logger.debug(`Socket auth failed: ${String(err)}`);
+        next(new Error('Unauthorized'));
+      }
+    });
+  }
+
   async handleConnection(client: Socket): Promise<void> {
     try {
       this.flushPresenceStale();
       this.flushTypingStale();
-      const ctx = await this.socketAuth.authenticateHandshake(client.handshake);
-      const data = client.data as ChatSocketData;
-      data.user = ctx.user;
-      data.deviceId = ctx.deviceId;
-      data.conversationRooms = new Set<string>();
+      const user = (client.data as ChatSocketData).user;
+      if (!user) {
+        this.logger.warn('Socket connected without authenticated user');
+        client.disconnect(true);
+        return;
+      }
 
-      await client.join(userDirectRoomId(ctx.user.id));
+      await client.join(userDirectRoomId(user.id));
 
-      const { becameOnline } = this.presence.addSocket(ctx.user.id, client.id);
+      const { becameOnline } = this.presence.addSocket(user.id, client.id);
       if (becameOnline) {
-        void this.broadcastPresenceToFriends(ctx.user.id, true);
+        void this.broadcastPresenceToFriends(user.id, true);
       }
     } catch (err) {
-      this.logger.debug(`Socket auth failed: ${String(err)}`);
+      this.logger.warn(`Socket connection setup failed: ${String(err)}`);
       client.disconnect(true);
     }
   }
