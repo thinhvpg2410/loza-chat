@@ -24,7 +24,12 @@ export function GroupMemberRow({ member, onPromote, onDemote, onRemove }: GroupM
 
   return (
     <div className="flex items-center gap-1.5 py-1">
-      <Avatar name={member.displayName} size="contact" online={member.online} />
+      <Avatar
+        name={member.displayName}
+        size="contact"
+        src={member.avatarUrl}
+        online={member.online}
+      />
       <div className="min-w-0 flex-1 py-px">
         <div className="flex items-center gap-1.5">
           <span className="truncate text-[13px] font-medium leading-tight text-[var(--zalo-text)]">

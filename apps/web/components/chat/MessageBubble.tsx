@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Avatar } from "@/components/common/Avatar";
 import type { ActionMenuItem } from "@/components/common/ActionMenu";
 import { FileMessage } from "@/components/chat/FileMessage";
 import { ImageMessage } from "@/components/chat/ImageMessage";
@@ -29,15 +30,6 @@ function ownReceiptLabel(message: Message): string | null {
   if (message.peerSeen) return "Đã xem";
   if (message.peerDelivered) return "Đã nhận";
   return "Đã gửi";
-}
-
-function Avatar({ label }: { label: string }) {
-  const initial = label.trim().charAt(0).toUpperCase();
-  return (
-    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[#7eb6ff] to-[var(--zalo-blue)] text-[11px] font-semibold text-white">
-      {initial}
-    </div>
-  );
 }
 
 export function MessageBubble({
@@ -219,7 +211,15 @@ export function MessageBubble({
       onMouseLeave={() => setHover(false)}
     >
       {!isOwn ? (
-        <div className="flex w-8 shrink-0 flex-col justify-end pb-1">{showAvatar ? <Avatar label="L" /> : null}</div>
+        <div className="flex w-9 shrink-0 flex-col justify-end pb-1">
+          {showAvatar ? (
+            <Avatar
+              name={message.senderDisplayName ?? "?"}
+              src={message.senderAvatarUrl}
+              size="sm"
+            />
+          ) : null}
+        </div>
       ) : null}
 
       {/* Tin mình: [actions][bubble][spacer] — actions bên trái bubble, cùng hàng */}
@@ -230,7 +230,7 @@ export function MessageBubble({
       {/* Tin người khác: [avatar][bubble][actions] — actions bên phải bubble, cùng hàng */}
       {!isOwn ? actionsSlot : null}
 
-      {isOwn ? <div className="w-8 shrink-0" aria-hidden /> : null}
+      {isOwn ? <div className="w-9 shrink-0" aria-hidden /> : null}
     </div>
   );
 }

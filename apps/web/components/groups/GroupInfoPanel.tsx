@@ -39,7 +39,7 @@ export function GroupInfoPanel({
     >
       <div className="shrink-0 border-b border-[var(--zalo-border)] bg-white px-3 pb-2.5 pt-3">
         <div className="flex flex-col items-center text-center">
-          <Avatar name={group.name} size="md" />
+          <Avatar name={group.name} size="md" src={group.avatarUrl} />
           <h2 className="mt-2 max-w-full px-1 text-[15px] font-semibold leading-snug text-[var(--zalo-text)]">
             {group.name}
           </h2>

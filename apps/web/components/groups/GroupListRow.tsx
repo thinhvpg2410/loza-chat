@@ -18,7 +18,7 @@ export function GroupListRow({ group, isActive, onSelect }: GroupListRowProps) {
           : "flex w-full gap-2.5 rounded-md px-2 py-2 text-left transition-colors hover:bg-black/[0.035]"
       }
     >
-      <Avatar name={group.name} />
+      <Avatar name={group.name} src={group.avatarUrl} />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
           <span className="truncate text-[14px] font-semibold leading-tight text-[var(--zalo-text)]">

@@ -53,7 +53,12 @@ export function FriendRow({
         className="flex min-w-0 flex-1 items-center gap-2 text-left"
         onClick={() => onSelect(friend.id)}
       >
-        <Avatar name={friend.displayName} size="contact" online={friend.isOnline} />
+        <Avatar
+          name={friend.displayName}
+          size="contact"
+          src={friend.avatarUrl}
+          online={friend.isOnline}
+        />
         <div className="min-w-0 flex-1">
           <div className="truncate text-[13px] font-medium leading-[1.25] text-[var(--zalo-text)]">
             {friend.displayName}

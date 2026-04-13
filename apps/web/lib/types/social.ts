@@ -74,6 +74,7 @@ export type GroupMember = {
   username: string;
   role: GroupMemberRole;
   online?: boolean;
+  avatarUrl?: string;
 };
 
 export type GroupSummary = {

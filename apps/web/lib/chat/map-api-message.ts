@@ -24,6 +24,23 @@ export function mapReactions(r: ApiMessageWithReceipt["reactions"]): MessageReac
   }));
 }
 
+function peerSenderFields(row: ApiMessageWithReceipt): {
+  senderDisplayName?: string;
+  senderAvatarUrl?: string;
+} {
+  if (row.sentByViewer) return {};
+  const s = row.sender;
+  if (!s) return {};
+  const name = (s.displayName ?? "").trim();
+  const raw = s.avatarUrl;
+  const avatar =
+    raw != null && String(raw).trim().length > 0 ? String(raw).trim() : undefined;
+  return {
+    senderDisplayName: name.length > 0 ? name : "?",
+    ...(avatar ? { senderAvatarUrl: avatar } : {}),
+  };
+}
+
 function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message {
   const sentAt = formatSentAt(row.createdAt);
   const createdAt =
@@ -63,6 +80,7 @@ function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message
         sentAt,
         createdAt,
         isOwn: baseOwn,
+        ...peerSenderFields(row),
         ...receipt,
         reactions,
       };
@@ -81,6 +99,7 @@ function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message
         sentAt,
         createdAt,
         isOwn: baseOwn,
+        ...peerSenderFields(row),
         ...receipt,
         reactions,
       };
@@ -112,6 +131,7 @@ function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message
         sentAt,
         createdAt,
         isOwn: baseOwn,
+        ...peerSenderFields(row),
         ...receipt,
         reactions,
       };
@@ -137,6 +157,7 @@ function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message
         sentAt,
         createdAt,
         isOwn: baseOwn,
+        ...peerSenderFields(row),
         ...receipt,
         reactions,
       };
@@ -151,6 +172,7 @@ function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message
         sentAt,
         createdAt,
         isOwn: baseOwn,
+        ...peerSenderFields(row),
         ...receipt,
         reactions,
       };

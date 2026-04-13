@@ -1,20 +1,12 @@
 import type { Conversation } from "@/lib/types/chat";
 import { IconChevronDown, IconMore, IconPhone, IconSidebar, IconVideo } from "@/components/chat/icons";
+import { Avatar } from "@/components/common/Avatar";
 
 type ChatHeaderProps = {
   conversation: Conversation | null;
   /** When set (e.g. typing), replaces the default presence line under the title. */
   statusOverride?: string | null;
 };
-
-function HeaderAvatar({ title }: { title: string }) {
-  const initial = title.trim().charAt(0).toUpperCase();
-  return (
-    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#7eb6ff] to-[var(--zalo-blue)] text-[13px] font-semibold text-white">
-      {initial}
-    </div>
-  );
-}
 
 export function ChatHeader({ conversation, statusOverride = null }: ChatHeaderProps) {
   if (!conversation) {
@@ -48,7 +40,7 @@ export function ChatHeader({ conversation, statusOverride = null }: ChatHeaderPr
         <IconSidebar className="h-5 w-5" />
         <span className="sr-only">Menu</span>
       </button>
-      <HeaderAvatar title={conversation.title} />
+      <Avatar name={conversation.title} size="sm" src={conversation.avatarUrl} />
       <div className="min-w-0 flex-1">
         <button
           type="button"

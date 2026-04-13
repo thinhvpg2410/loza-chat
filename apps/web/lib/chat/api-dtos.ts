@@ -53,6 +53,8 @@ export type ApiMessageWithReceipt = {
   id: string;
   conversationId: string;
   senderId: string;
+  /** Present on API / socket `MessageView` rows; used for peer avatars in the thread. */
+  sender?: ApiPublicUser;
   type: string;
   content: string | null;
   metadataJson?: Record<string, unknown> | null;

@@ -129,7 +129,7 @@ export function CreateGroupModal({ open, selectableMembers, onClose, onCreate }:
                         : "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition hover:bg-black/[0.035]"
                     }
                   >
-                    <Avatar name={f.displayName} size="sm" online={f.isOnline} />
+                    <Avatar name={f.displayName} size="sm" src={f.avatarUrl} online={f.isOnline} />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-[13px] font-semibold text-[var(--zalo-text)]">
                         {f.displayName}

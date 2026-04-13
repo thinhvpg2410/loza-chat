@@ -30,6 +30,10 @@ type MessageCommon = {
   sentAt: string;
   createdAt: string;
   isOwn: boolean;
+  /** Peer messages: sender display name for avatar fallback. */
+  senderDisplayName?: string;
+  /** Peer messages: public avatar URL from API. */
+  senderAvatarUrl?: string;
   /** Direct chat: peer received this outgoing message (from API or realtime receipts). */
   peerDelivered?: boolean;
   /** Direct chat: peer read this outgoing message. */
