@@ -5,6 +5,7 @@ import { ActivityIndicator, AppState, type AppStateStatus, View } from "react-na
 import { USE_API_MOCK } from "@/constants/env";
 import { connectChatSocket, isChatSocketConfigured } from "@/services/socket/socket";
 import { useAuthStore } from "@/store/authStore";
+import { useChatStore } from "@/store/chatStore";
 import { colors } from "@theme";
 
 export default function MainLayout() {
@@ -29,12 +30,16 @@ export default function MainLayout() {
   useEffect(() => {
     const onChange = (state: AppStateStatus) => {
       if (state !== "active") return;
+      if (!ready) return;
       if (!useAuthStore.getState().isAuthenticated) return;
       void useAuthStore.getState().syncProfileFromServer();
+      if (!USE_API_MOCK) {
+        void useChatStore.getState().fetchConversations({ silent: true });
+      }
     };
     const sub = AppState.addEventListener("change", onChange);
     return () => sub.remove();
-  }, []);
+  }, [ready]);
 
   useEffect(() => {
     if (!ready || !isAuthenticated || USE_API_MOCK || !isChatSocketConfigured() || !accessToken) {

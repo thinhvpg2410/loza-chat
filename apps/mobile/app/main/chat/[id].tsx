@@ -269,6 +269,9 @@ export default function ChatRoomScreen() {
       emitConversationJoin(id);
 
       setChatRealtimeHandlers({
+        onSocketConnected: () => {
+          emitConversationJoin(id);
+        },
         onMessageNew: (msg) => {
           if (msg.conversationId !== id) return;
           const row = asReceiptView(msg, viewerId);
@@ -336,7 +339,10 @@ export default function ChatRoomScreen() {
 
   useEffect(() => {
     if (USE_API_MOCK || !isChatSocketConfigured() || !id) return;
-    if (!draft.trim().length) return;
+    if (!draft.trim().length) {
+      emitTypingStop(id);
+      return;
+    }
     emitTypingStart(id);
     if (typingStopTimer.current) clearTimeout(typingStopTimer.current);
     typingStopTimer.current = setTimeout(() => {
