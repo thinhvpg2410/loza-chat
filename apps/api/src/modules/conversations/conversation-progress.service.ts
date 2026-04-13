@@ -200,7 +200,8 @@ export class ConversationProgressService {
       return null;
     }
     return tx.message.findFirst({
-      where: { id: messageId, conversationId, deletedAt: null },
+      // Keep monotonic progression even when a pointed message was later recalled/deleted.
+      where: { id: messageId, conversationId },
     });
   }
 

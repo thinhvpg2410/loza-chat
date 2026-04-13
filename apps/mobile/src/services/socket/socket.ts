@@ -1,5 +1,6 @@
 import { io, type Socket } from "socket.io-client";
 
+import { SOCKET_URL } from "@/constants/env";
 import type { ApiConversationMemberProgress, ApiMessageView } from "@/services/conversations/conversationsApi";
 import { useChatStore } from "@/store/chatStore";
 
@@ -23,6 +24,7 @@ export type ReceiptBroadcastPayload = {
 };
 
 export type ChatRealtimeHandlers = {
+  onSocketConnected?: () => void;
   onMessageNew?: (message: ApiMessageView) => void;
   onMessageUpdated?: (message: ApiMessageView) => void;
   onTypingUpdate?: (payload: TypingUpdatePayload) => void;
@@ -40,6 +42,24 @@ const EV_MESSAGE_SEEN = "message:seen";
 
 let socket: Socket | null = null;
 let handlers: ChatRealtimeHandlers = {};
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+function stopHeartbeatLoop() {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+}
+
+function startHeartbeatLoop() {
+  stopHeartbeatLoop();
+  if (!socket) return;
+  socket.emit("presence:heartbeat", {});
+  heartbeatTimer = setInterval(() => {
+    if (!socket?.connected) return;
+    socket.emit("presence:heartbeat", {});
+  }, 25_000);
+}
 
 export function setChatRealtimeHandlers(next: ChatRealtimeHandlers) {
   handlers = next;
@@ -50,11 +70,11 @@ export function clearChatRealtimeHandlers() {
 }
 
 export function isChatSocketConfigured(): boolean {
-  return Boolean(process.env.EXPO_PUBLIC_SOCKET_URL?.trim());
+  return Boolean(SOCKET_URL);
 }
 
 export function connectChatSocket(accessToken?: string): () => void {
-  const url = process.env.EXPO_PUBLIC_SOCKET_URL?.trim();
+  const url = SOCKET_URL;
   if (!url) {
     return () => {};
   }
@@ -62,6 +82,15 @@ export function connectChatSocket(accessToken?: string): () => void {
   socket = io(url, {
     transports: ["websocket", "polling"],
     auth: accessToken ? { token: accessToken } : {},
+  });
+
+  socket.on("connect", () => {
+    startHeartbeatLoop();
+    handlers.onSocketConnected?.();
+    useChatStore.getState().scheduleConversationsListRefresh();
+  });
+  socket.on("disconnect", () => {
+    stopHeartbeatLoop();
   });
 
   socket.on(EV_MESSAGE_NEW, (body: unknown) => {
@@ -115,6 +144,9 @@ export function connectChatSocket(accessToken?: string): () => void {
   });
 
   return () => {
+    stopHeartbeatLoop();
+    socket?.off("connect");
+    socket?.off("disconnect");
     socket?.off(EV_MESSAGE_NEW);
     socket?.off(EV_MESSAGE_UPDATED);
     socket?.off(EV_TYPING_UPDATE);
@@ -148,6 +180,7 @@ export function emitConversationReceiptsFromMyProgress(
 }
 
 export function emitConversationJoin(conversationId: string) {
+  if (!conversationId.trim().length) return;
   socket?.emit("conversation:join", { conversationId });
 }
 

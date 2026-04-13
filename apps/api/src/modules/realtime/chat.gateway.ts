@@ -150,6 +150,8 @@ export class ChatGateway
 
   async handleConnection(client: Socket): Promise<void> {
     try {
+      this.flushPresenceStale();
+      this.flushTypingStale();
       const ctx = await this.socketAuth.authenticateHandshake(client.handshake);
       const data = client.data as ChatSocketData;
       data.user = ctx.user;
@@ -169,6 +171,8 @@ export class ChatGateway
   }
 
   handleDisconnect(client: Socket): void {
+    this.flushPresenceStale();
+    this.flushTypingStale();
     const user = (client.data as ChatSocketData).user;
     if (!user) {
       return;
@@ -295,6 +299,7 @@ export class ChatGateway
     @MessageBody() body: unknown,
   ): Promise<{ ok: boolean }> {
     try {
+      this.flushTypingStale();
       const user = this.requireUser(client);
       const dto = parseWsPayload(TypingSocketDto, body);
       await this.membership.requireMember(user.id, dto.conversationId);
@@ -321,6 +326,7 @@ export class ChatGateway
     @MessageBody() body: unknown,
   ): Promise<{ ok: boolean }> {
     try {
+      this.flushTypingStale();
       const user = this.requireUser(client);
       const dto = parseWsPayload(TypingSocketDto, body);
       await this.membership.requireMember(user.id, dto.conversationId);
@@ -347,6 +353,8 @@ export class ChatGateway
     @MessageBody() body: unknown,
   ): { ok: boolean } {
     try {
+      this.flushPresenceStale();
+      this.flushTypingStale();
       const user = this.requireUser(client);
       parseWsPayload(PresenceHeartbeatDto, body);
       this.presence.heartbeat(user.id, client.id);
@@ -439,6 +447,30 @@ export class ChatGateway
 
     for (const fid of friendIds) {
       this.server.to(userDirectRoomId(fid)).emit('presence:update', payload);
+    }
+  }
+
+  private flushPresenceStale(): void {
+    const staleOfflineUsers = this.presence.reapStaleSockets();
+    if (staleOfflineUsers.length === 0) {
+      return;
+    }
+    for (const uid of staleOfflineUsers) {
+      void this.broadcastPresenceToFriends(uid, false);
+    }
+  }
+
+  private flushTypingStale(): void {
+    const staleRows = this.typing.reapExpired();
+    if (staleRows.length === 0) {
+      return;
+    }
+    for (const row of staleRows) {
+      this.server.to(conversationRoomId(row.conversationId)).emit('typing:update', {
+        conversationId: row.conversationId,
+        userId: row.userId,
+        isTyping: false,
+      });
     }
   }
 }
