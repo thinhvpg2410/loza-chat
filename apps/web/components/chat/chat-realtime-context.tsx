@@ -50,6 +50,10 @@ type ChatRealtimeProviderProps = {
     row: ApiMessageWithReceipt,
     meta: { bumpUnread: boolean },
   ) => void;
+  onRemoteMessageUpdatedForList?: (
+    conversationId: string,
+    row: ApiMessageWithReceipt,
+  ) => void;
 };
 
 export function ChatRealtimeProvider({
@@ -57,6 +61,7 @@ export function ChatRealtimeProvider({
   conversationIds,
   activeConversationId,
   onRemoteMessageForList,
+  onRemoteMessageUpdatedForList,
 }: ChatRealtimeProviderProps) {
   const [status, setStatus] = useState<"idle" | "connecting" | "ready" | "error">("idle");
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -73,13 +78,13 @@ export function ChatRealtimeProvider({
   const conversationIdsRef = useRef(conversationIds);
   const activeIdRef = useRef(activeConversationId);
   const onListRef = useRef(onRemoteMessageForList);
+  const onListUpdatedRef = useRef(onRemoteMessageUpdatedForList);
   useEffect(() => {
-    queueMicrotask(() => {
-      conversationIdsRef.current = conversationIds;
-      activeIdRef.current = activeConversationId;
-      onListRef.current = onRemoteMessageForList;
-    });
-  }, [conversationIds, activeConversationId, onRemoteMessageForList]);
+    conversationIdsRef.current = conversationIds;
+    activeIdRef.current = activeConversationId;
+    onListRef.current = onRemoteMessageForList;
+    onListUpdatedRef.current = onRemoteMessageUpdatedForList;
+  }, [conversationIds, activeConversationId, onRemoteMessageForList, onRemoteMessageUpdatedForList]);
 
   useEffect(() => {
     let cancelled = false;
@@ -119,6 +124,23 @@ export function ChatRealtimeProvider({
     if (!session) return;
 
     const joinedTracker = joinedRef.current;
+    let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+    const stopHeartbeat = () => {
+      if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+      }
+    };
+
+    const startHeartbeat = (socket: Socket) => {
+      stopHeartbeat();
+      socket.emit("presence:heartbeat", {});
+      heartbeatTimer = setInterval(() => {
+        if (!socket.connected) return;
+        socket.emit("presence:heartbeat", {});
+      }, 25_000);
+    };
 
     const socket = io(session.apiBaseUrl, {
       auth: { token: session.accessToken },
@@ -135,11 +157,13 @@ export function ChatRealtimeProvider({
       setSocketConnected(true);
       setStatus("ready");
       setConnectionError(null);
+      startHeartbeat(socket);
       joinAllPending(socket);
     };
 
     const onDisconnect = () => {
       setSocketConnected(false);
+      stopHeartbeat();
     };
 
     const onConnectError = (err: Error) => {
@@ -169,6 +193,7 @@ export function ChatRealtimeProvider({
       if (!raw || typeof raw !== "object") return;
       const row = socketMessageViewToApiRow(raw, session.viewerUserId);
       if (!row) return;
+      onListUpdatedRef.current?.(row.conversationId, row);
       roomsRef.current.get(row.conversationId)?.onMessageUpdated?.(row);
     };
 
@@ -230,6 +255,7 @@ export function ChatRealtimeProvider({
     }
 
     return () => {
+      stopHeartbeat();
       setSocketConnected(false);
       socket.off("connect", onConnect);
       socket.off("disconnect", onDisconnect);

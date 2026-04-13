@@ -60,9 +60,7 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
   const realtime = useChatRealtime();
   const realtimeRef = useRef(realtime);
   useEffect(() => {
-    queueMicrotask(() => {
-      realtimeRef.current = realtime;
-    });
+    realtimeRef.current = realtime;
   }, [realtime]);
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -97,6 +95,7 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
   const peerReadMaxRef = useRef<MessageTimelineRef | null>(null);
   const typingStartedRef = useRef(false);
   const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const peerTypingExpireTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const imagePickerRef = useRef<HTMLInputElement>(null);
   const filePickerRef = useRef<HTMLInputElement>(null);
 
@@ -122,6 +121,25 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
       realtime.stopTyping(conversation.id);
     }
   }, [realtime, conversation]);
+
+  const schedulePeerTypingExpire = useCallback(() => {
+    if (peerTypingExpireTimerRef.current) {
+      clearTimeout(peerTypingExpireTimerRef.current);
+    }
+    peerTypingExpireTimerRef.current = setTimeout(() => {
+      setPeerTyping(false);
+      peerTypingExpireTimerRef.current = null;
+    }, 7000);
+  }, []);
+
+  useEffect(() => {
+    if (realtime?.socketConnected) return;
+    setPeerTyping(false);
+    if (peerTypingExpireTimerRef.current) {
+      clearTimeout(peerTypingExpireTimerRef.current);
+      peerTypingExpireTimerRef.current = null;
+    }
+  }, [realtime?.socketConnected]);
 
   const notifyTypingActivity = useCallback(() => {
     if (!realtime?.socketConnected || !conversation) return;
@@ -156,6 +174,10 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
       setMessages([]);
       setNextCursor(null);
       setPeerTyping(false);
+      if (peerTypingExpireTimerRef.current) {
+        clearTimeout(peerTypingExpireTimerRef.current);
+        peerTypingExpireTimerRef.current = null;
+      }
       peerDeliveredMaxRef.current = null;
       peerReadMaxRef.current = null;
 
@@ -193,6 +215,10 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
         typingStartedRef.current = false;
         realtimeRef.current?.stopTyping(conversation.id);
       }
+      if (peerTypingExpireTimerRef.current) {
+        clearTimeout(peerTypingExpireTimerRef.current);
+        peerTypingExpireTimerRef.current = null;
+      }
     };
   }, [conversation]);
 
@@ -228,6 +254,12 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
       onTypingUpdate: ({ userId, isTyping }) => {
         if (userId === realtime.viewerUserId) return;
         setPeerTyping(isTyping);
+        if (isTyping) {
+          schedulePeerTypingExpire();
+        } else if (peerTypingExpireTimerRef.current) {
+          clearTimeout(peerTypingExpireTimerRef.current);
+          peerTypingExpireTimerRef.current = null;
+        }
       },
       onReceipt: (kind, p) => {
         if (p.userId === realtime.viewerUserId) return;
@@ -265,7 +297,39 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
         );
       },
     });
-  }, [conversation, realtime, applyReceipts]);
+  }, [conversation, realtime, applyReceipts, schedulePeerTypingExpire]);
+
+  useEffect(() => {
+    if (!conversation || !realtime?.socketConnected) return;
+    let cancelled = false;
+    void fetchConversationMessagesAction(conversation.id).then((r) => {
+      if (cancelled || !r.ok) return;
+      setMessages((prev) => {
+        const byId = new Map(prev.map((m) => [m.id, m]));
+        for (const next of r.messages) {
+          byId.set(next.id, next);
+        }
+        const merged = [...byId.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        const receipts = initialPeerReceiptMaxFromMessages(merged);
+        peerDeliveredMaxRef.current = maxMessageTimelineRefIso(
+          peerDeliveredMaxRef.current,
+          receipts.peerDeliveredMax,
+        );
+        peerReadMaxRef.current = maxMessageTimelineRefIso(peerReadMaxRef.current, receipts.peerReadMax);
+        return applyReceipts(merged);
+      });
+      setNextCursor(r.nextCursor);
+      const last = r.messages[r.messages.length - 1];
+      if (last && !last.isOwn) {
+        void markConversationReadAction(conversation.id, last.id);
+        realtimeRef.current?.emitDelivered(conversation.id, last.id);
+        realtimeRef.current?.emitSeen(conversation.id, last.id);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [conversation, realtime?.socketConnected, applyReceipts]);
 
   const loadOlder = useCallback(async () => {
     if (!conversation || !nextCursor || loadOlderLoading) return;

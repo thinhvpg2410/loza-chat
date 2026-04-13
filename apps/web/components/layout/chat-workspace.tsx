@@ -92,9 +92,7 @@ export function ChatWorkspace({
 
   const selectedIdRef = useRef(selectedId);
   useEffect(() => {
-    queueMicrotask(() => {
-      selectedIdRef.current = selectedId;
-    });
+    selectedIdRef.current = selectedId;
   }, [selectedId]);
 
   const onRemoteMessageForList = useCallback(
@@ -135,6 +133,26 @@ export function ChatWorkspace({
     [],
   );
 
+  const onRemoteMessageUpdatedForList = useCallback(
+    (conversationId: string, row: ApiMessageWithReceipt) => {
+      const preview = listPreviewFromApiMessage(row).slice(0, 240);
+      const at = row.updatedAt || row.createdAt;
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === conversationId
+            ? {
+                ...c,
+                lastMessagePreview: preview,
+                lastMessageAt:
+                  Date.parse(c.lastMessageAt) > Date.parse(at) ? c.lastMessageAt : at,
+              }
+            : c,
+        ),
+      );
+    },
+    [],
+  );
+
   const shell = (
     <div className="flex min-h-0 flex-1 overflow-hidden">
       <div className="flex min-h-0 min-w-0 shrink-0 flex-col">
@@ -170,6 +188,7 @@ export function ChatWorkspace({
         conversationIds={conversationIds}
         activeConversationId={selectedId}
         onRemoteMessageForList={onRemoteMessageForList}
+        onRemoteMessageUpdatedForList={onRemoteMessageUpdatedForList}
       >
         {shell}
       </ChatRealtimeProvider>
