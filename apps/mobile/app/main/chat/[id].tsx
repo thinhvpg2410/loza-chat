@@ -38,6 +38,7 @@ import {
   applyOutgoingReceiptFromPeerPointer,
   getMockThreadMessages,
   mapApiMessagesToChatRoomList,
+  mergeReactionsFromSocketBroadcast,
   mergeReactionsFromSummary,
   newClientMessageId,
   toggleReactionOnMessage,
@@ -56,6 +57,7 @@ import {
   deleteMessageApi,
   forwardMessageApi,
   recallMessageApi,
+  removeMessageReactionApi,
   sendMessageWithAttachmentsApi,
   sendTextMessageApi,
 } from "@/services/messages/messagesApi";
@@ -219,6 +221,8 @@ export default function ChatRoomScreen() {
   const [stickerOpen, setStickerOpen] = useState(false);
 
   const typingStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const messagesRef = useRef<ChatRoomMessage[]>(messages);
+  messagesRef.current = messages;
 
   useEffect(() => {
     if (USE_API_MOCK) {
@@ -258,6 +262,13 @@ export default function ChatRoomScreen() {
     if (USE_API_MOCK) return;
     void loadMessagesFromApi();
   }, [loadMessagesFromApi]);
+
+  /** Only clear socket handlers when this screen unmounts — not on blur (avoids wiping the next chat's handlers when A blurs after B focuses). */
+  useEffect(() => {
+    return () => {
+      clearChatRealtimeHandlers();
+    };
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -306,7 +317,9 @@ export default function ChatRoomScreen() {
           if (p.conversationId !== id) return;
           setMessages((prev) =>
             prev.map((m) =>
-              m.id === p.messageId ? { ...m, reactions: mergeReactionsFromSummary(p.summary) } : m,
+              m.id === p.messageId
+                ? { ...m, reactions: mergeReactionsFromSocketBroadcast(m.reactions, p.summary) }
+                : m,
             ),
           );
         },
@@ -327,7 +340,6 @@ export default function ChatRoomScreen() {
       });
 
       return () => {
-        clearChatRealtimeHandlers();
         emitTypingStop(id);
         if (typingStopTimer.current) {
           clearTimeout(typingStopTimer.current);
@@ -403,31 +415,51 @@ export default function ChatRoomScreen() {
     [conversations],
   );
 
-  const applyReaction = useCallback(
-    async (messageId: string, emoji: string) => {
-      if (USE_API_MOCK) {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === messageId
-              ? { ...msg, reactions: toggleReactionOnMessage(msg.reactions, emoji) }
-              : msg,
-          ),
-        );
-        return;
-      }
-      try {
-        const { summary } = await addMessageReactionApi(messageId, emoji);
+  const applyReaction = useCallback(async (messageId: string, emoji: string) => {
+    if (USE_API_MOCK) {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === messageId
+            ? { ...msg, reactions: toggleReactionOnMessage(msg.reactions, emoji) }
+            : msg,
+        ),
+      );
+      return;
+    }
+    const msg = messagesRef.current.find((m) => m.id === messageId);
+    if (!msg) return;
+    const effective = msg.reactions ?? [];
+    const mine = effective.filter((r) => r.reactedByMe).map((r) => r.emoji);
+    const isMine = effective.some((r) => r.emoji === emoji && r.reactedByMe);
+
+    try {
+      if (isMine) {
+        const { summary } = await removeMessageReactionApi(messageId, emoji);
         setMessages((prev) =>
           prev.map((m) =>
             m.id === messageId ? { ...m, reactions: mergeReactionsFromSummary(summary) } : m,
           ),
         );
-      } catch (e) {
-        Alert.alert("Không thể gửi cảm xúc", getApiErrorMessage(e));
+        return;
       }
-    },
-    [],
-  );
+      for (const e of mine) {
+        const { summary } = await removeMessageReactionApi(messageId, e);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === messageId ? { ...m, reactions: mergeReactionsFromSummary(summary) } : m,
+          ),
+        );
+      }
+      const { summary } = await addMessageReactionApi(messageId, emoji);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId ? { ...m, reactions: mergeReactionsFromSummary(summary) } : m,
+        ),
+      );
+    } catch (e) {
+      Alert.alert("Không thể gửi cảm xúc", getApiErrorMessage(e));
+    }
+  }, []);
 
   const onReactionEmoji = useCallback(
     (messageId: string, emoji: string) => {

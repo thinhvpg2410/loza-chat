@@ -836,7 +836,8 @@ export class MessagesService {
       type: 'message.reaction_updated',
       conversationId: message.conversationId,
       messageId,
-      summary,
+      /** Counts are global; `mine` is viewer-specific so omit in broadcast (clients merge locally). */
+      summary: { counts: summary.counts, mine: [] },
     });
 
     return { summary, alreadyExists: false };
@@ -882,7 +883,7 @@ export class MessagesService {
       type: 'message.reaction_updated',
       conversationId: message.conversationId,
       messageId,
-      summary,
+      summary: { counts: summary.counts, mine: [] },
     });
 
     return { summary };

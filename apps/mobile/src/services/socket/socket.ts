@@ -121,10 +121,21 @@ export function connectChatSocket(accessToken?: string): () => void {
 
   socket.on(EV_REACTION_UPDATED, (body: unknown) => {
     if (!body || typeof body !== "object") return;
-    const p = body as ReactionUpdatedPayload;
-    if (p.conversationId && p.messageId && p.summary) {
-      handlers.onReactionUpdated?.(p);
-    }
+    const raw = body as Partial<ReactionUpdatedPayload> & {
+      summary?: { counts?: { reaction: string; count: number }[]; mine?: string[] };
+    };
+    if (!raw.conversationId || !raw.messageId) return;
+    const counts = raw.summary?.counts;
+    if (!Array.isArray(counts)) return;
+    const p: ReactionUpdatedPayload = {
+      conversationId: raw.conversationId,
+      messageId: raw.messageId,
+      summary: {
+        counts,
+        mine: Array.isArray(raw.summary?.mine) ? raw.summary!.mine : [],
+      },
+    };
+    handlers.onReactionUpdated?.(p);
   });
 
   socket.on(EV_MESSAGE_DELIVERED, (body: unknown) => {

@@ -402,3 +402,48 @@ export async function sendChatMessageWithAttachmentsAction(input: {
     };
   }
 }
+
+export type MessageReactionMutationResult =
+  | { ok: true; summary: ApiMessageWithReceipt["reactions"] }
+  | { ok: false; error: string };
+
+export async function addChatMessageReactionAction(
+  messageId: string,
+  reaction: string,
+): Promise<MessageReactionMutationResult> {
+  const gate = await assertApiChatEnabled();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  try {
+    const res = await apiFetchJson<{ summary: ApiMessageWithReceipt["reactions"]; alreadyExists?: boolean }>(
+      `/messages/${messageId}/reactions`,
+      { method: "POST", body: JSON.stringify({ reaction }) },
+    );
+    return { ok: true, summary: res.summary };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Không gửi được cảm xúc.",
+    };
+  }
+}
+
+export async function removeChatMessageReactionAction(
+  messageId: string,
+  reaction: string,
+): Promise<MessageReactionMutationResult> {
+  const gate = await assertApiChatEnabled();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  const encoded = encodeURIComponent(reaction);
+  try {
+    const res = await apiFetchJson<{ summary: ApiMessageWithReceipt["reactions"] }>(
+      `/messages/${messageId}/reactions/${encoded}`,
+      { method: "DELETE" },
+    );
+    return { ok: true, summary: res.summary };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Không xóa được cảm xúc.",
+    };
+  }
+}

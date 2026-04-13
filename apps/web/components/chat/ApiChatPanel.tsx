@@ -12,11 +12,13 @@ import {
   completeChatUploadAction,
   deleteChatMessageAction,
   fetchConversationMessagesAction,
+  addChatMessageReactionAction,
   fetchConversationsListAction,
   forwardChatMessageAction,
   initChatUploadAction,
   markConversationReadAction,
   recallChatMessageAction,
+  removeChatMessageReactionAction,
   sendChatMessageWithAttachmentsAction,
   sendChatStickerMessageAction,
   sendChatTextMessageAction,
@@ -30,7 +32,7 @@ import type { ApiMessageWithReceipt } from "@/lib/chat/api-dtos";
 import { mapReactions, mapSingleApiMessage } from "@/lib/chat/map-api-message";
 import { maxMessageTimelineRefIso, type MessageTimelineRef } from "@/lib/chat/message-timeline";
 import { messageSnippet } from "@/lib/message-snippet";
-import { toggleViewerReaction } from "@/lib/reaction-utils";
+import { mergeReactionBroadcastCounts } from "@/lib/reaction-utils";
 import type { Conversation, Message, MessageReaction, ReplyPreviewRef } from "@/lib/types/chat";
 
 type ApiChatPanelProps = {
@@ -87,6 +89,8 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [reactionOverrides, setReactionOverrides] = useState<Record<string, MessageReaction[]>>({});
+  const reactionOverridesRef = useRef<Record<string, MessageReaction[]>>({});
+  const reactionBusyRef = useRef<Set<string>>(new Set());
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [replyTarget, setReplyTarget] = useState<{ convId: string; message: Message } | null>(
     null,
@@ -121,6 +125,10 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  useEffect(() => {
+    reactionOverridesRef.current = reactionOverrides;
+  }, [reactionOverrides]);
 
   const applyReceipts = useCallback((list: Message[]) => {
     return applyPeerReceiptPointersToMessages(
@@ -315,12 +323,21 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
       onReactionUpdated: (payload) => {
         if (payload.conversationId !== convId) return;
         setMessages((prev) =>
-          prev.map((m) =>
-            m.id === payload.messageId
-              ? { ...m, reactions: mapReactions(payload.summary) }
-              : m,
-          ),
+          prev.map((m) => {
+            if (m.id !== payload.messageId) return m;
+            const prevRx =
+              reactionOverridesRef.current[payload.messageId] ?? m.reactions ?? [];
+            return {
+              ...m,
+              reactions: mergeReactionBroadcastCounts(prevRx, payload.summary),
+            };
+          }),
         );
+        setReactionOverrides((o) => {
+          if (!(payload.messageId in o)) return o;
+          const { [payload.messageId]: _, ...rest } = o;
+          return rest;
+        });
       },
     });
   }, [conversation, realtime, applyReceipts, schedulePeerTypingExpire]);
@@ -386,15 +403,53 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
     if (r.ok) onConversationsRefresh(r.conversations);
   }, [onConversationsRefresh]);
 
+  const applyServerReactionSummary = useCallback((messageId: string, summary: ApiMessageWithReceipt["reactions"]) => {
+    const rx = mapReactions(summary);
+    setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, reactions: rx } : m)));
+    setReactionOverrides((o) => {
+      if (!(messageId in o)) return o;
+      const { [messageId]: _, ...rest } = o;
+      return rest;
+    });
+  }, []);
+
   const onToggleReaction = useCallback(
-    (messageId: string, emoji: string) => {
-      setReactionOverrides((prev) => {
-        const msg = messages.find((m) => m.id === messageId);
-        const current = prev[messageId] ?? msg?.reactions ?? [];
-        return { ...prev, [messageId]: toggleViewerReaction(current, emoji) };
-      });
+    async (messageId: string, emoji: string) => {
+      if (!conversation) return;
+      const msg = messagesRef.current.find((m) => m.id === messageId);
+      if (!msg || msg.kind === "system") return;
+      if (reactionBusyRef.current.has(messageId)) return;
+      reactionBusyRef.current.add(messageId);
+      setSendError(null);
+      try {
+        const effective = reactionOverridesRef.current[messageId] ?? msg.reactions ?? [];
+        const mine = effective.filter((r) => r.viewerReacted).map((r) => r.emoji);
+        const isMine = effective.some((r) => r.emoji === emoji && r.viewerReacted);
+
+        if (isMine) {
+          const r = await removeChatMessageReactionAction(messageId, emoji);
+          if (!r.ok) {
+            setSendError(r.error);
+            return;
+          }
+          applyServerReactionSummary(messageId, r.summary);
+          return;
+        }
+        for (const e of mine) {
+          const rm = await removeChatMessageReactionAction(messageId, e);
+          if (rm.ok) applyServerReactionSummary(messageId, rm.summary);
+        }
+        const add = await addChatMessageReactionAction(messageId, emoji);
+        if (!add.ok) {
+          setSendError(add.error);
+          return;
+        }
+        applyServerReactionSummary(messageId, add.summary);
+      } finally {
+        reactionBusyRef.current.delete(messageId);
+      }
     },
-    [messages],
+    [conversation, applyServerReactionSummary],
   );
 
   const getReactions = useCallback(

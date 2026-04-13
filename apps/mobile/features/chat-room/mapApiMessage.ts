@@ -174,3 +174,22 @@ export function mergeReactionsFromSummary(
     reactedByMe: mine.has(c.reaction),
   }));
 }
+
+/** Socket broadcast: counts are global; keep each viewer's `reactedByMe` from prior state. */
+export function mergeReactionsFromSocketBroadcast(
+  prev: MessageReaction[] | undefined,
+  summary: { counts: { reaction: string; count: number }[]; mine?: string[] },
+): MessageReaction[] {
+  if (summary.mine && summary.mine.length > 0) {
+    return mergeReactionsFromSummary({
+      counts: summary.counts ?? [],
+      mine: summary.mine,
+    });
+  }
+  const prevMe = new Map((prev ?? []).map((r) => [r.emoji, Boolean(r.reactedByMe)]));
+  return (summary.counts ?? []).map((c) => ({
+    emoji: c.reaction,
+    count: c.count,
+    reactedByMe: prevMe.get(c.reaction) ?? false,
+  }));
+}

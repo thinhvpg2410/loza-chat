@@ -44,6 +44,16 @@ export const MessageList = forwardRef<FlatList<MessageFeedItem>, MessageListProp
   const contentHeightRef = useRef(0);
 
   const feed = useMemo(() => buildMessageFeed(messages), [messages]);
+  const reactionSignature = useMemo(
+    () =>
+      messages
+        .map((m) => {
+          const rx = m.reactions?.map((r) => `${r.emoji}:${r.count}:${r.reactedByMe ? 1 : 0}`).join("|") ?? "";
+          return `${m.id}:${rx}`;
+        })
+        .join(";"),
+    [messages],
+  );
 
   const renderItem: ListRenderItem<MessageFeedItem> = useCallback(
     ({ item }) => {
@@ -107,6 +117,7 @@ export const MessageList = forwardRef<FlatList<MessageFeedItem>, MessageListProp
     <FlatList
       ref={listRef}
       data={feed}
+      extraData={reactionSignature}
       renderItem={renderItem}
       keyExtractor={keyExtractor}
       style={styles.list}
