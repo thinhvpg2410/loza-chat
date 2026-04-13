@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { ActionMenuItem } from "@/components/common/ActionMenu";
 import { FileMessage } from "@/components/chat/FileMessage";
 import { ImageMessage } from "@/components/chat/ImageMessage";
 import { MessageActions } from "@/components/chat/MessageActions";
@@ -16,6 +17,9 @@ type MessageBubbleProps = {
   reactions: MessageReaction[];
   onToggleReaction: (emoji: string) => void;
   onReply: () => void;
+  onRecall?: () => void;
+  onDelete?: () => void;
+  onForward?: () => void;
   onOpenImage: (url: string) => void;
 };
 
@@ -42,6 +46,9 @@ export function MessageBubble({
   reactions,
   onToggleReaction,
   onReply,
+  onRecall,
+  onDelete,
+  onForward,
   onOpenImage,
 }: MessageBubbleProps) {
   const [hover, setHover] = useState(false);
@@ -67,6 +74,12 @@ export function MessageBubble({
     />
   );
 
+  const moreItems: ActionMenuItem[] = [
+    ...(onForward ? [{ id: "forward", label: "Chuyển tiếp", onSelect: onForward }] : []),
+    ...(onRecall ? [{ id: "recall", label: "Thu hồi", danger: true, onSelect: onRecall }] : []),
+    ...(onDelete ? [{ id: "delete", label: "Xóa", danger: true, onSelect: onDelete }] : []),
+  ];
+
   const actionsSlot = (
     <div
       className={`flex shrink-0 items-start pt-0.5 transition-[opacity,width] duration-150 ease-out motion-reduce:transition-none ${
@@ -77,6 +90,7 @@ export function MessageBubble({
         visible={hover}
         onReply={onReply}
         onPickReaction={(emoji) => onToggleReaction(emoji)}
+        moreItems={moreItems}
       />
     </div>
   );

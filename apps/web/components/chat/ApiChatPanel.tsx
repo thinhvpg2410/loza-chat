@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { ForwardMessageDialog } from "@/components/chat/ForwardMessageDialog";
 import { useChatRealtime } from "@/components/chat/chat-realtime-context";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { ImagePreviewModal } from "@/components/chat/ImagePreviewModal";
@@ -8,10 +10,13 @@ import { MessageInput } from "@/components/chat/MessageInput";
 import { MessageList } from "@/components/chat/MessageList";
 import {
   completeChatUploadAction,
+  deleteChatMessageAction,
   fetchConversationMessagesAction,
   fetchConversationsListAction,
+  forwardChatMessageAction,
   initChatUploadAction,
   markConversationReadAction,
+  recallChatMessageAction,
   sendChatMessageWithAttachmentsAction,
   sendChatStickerMessageAction,
   sendChatTextMessageAction,
@@ -32,6 +37,17 @@ type ApiChatPanelProps = {
   conversation: Conversation | null;
   onConversationsRefresh?: (conversations: Conversation[]) => void;
 };
+
+type ConfirmActionState =
+  | {
+      kind: "recall" | "delete";
+      messageId: string;
+      title: string;
+      description: string;
+      confirmLabel: string;
+      variant: "default" | "danger";
+    }
+  | null;
 
 function buildClientMessageId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -65,6 +81,14 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
   const [peerTyping, setPeerTyping] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadingLabel, setUploadingLabel] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<ConfirmActionState>(null);
+  const [messageActionBusy, setMessageActionBusy] = useState(false);
+  const [forwardOpen, setForwardOpen] = useState(false);
+  const [forwardSourceMessageId, setForwardSourceMessageId] = useState<string | null>(null);
+  const [forwardOptions, setForwardOptions] = useState<Conversation[]>([]);
+  const [forwardLoading, setForwardLoading] = useState(false);
+  const [forwardError, setForwardError] = useState<string | null>(null);
+  const [forwardBusyConversationId, setForwardBusyConversationId] = useState<string | null>(null);
 
   const messageScrollRef = useRef<HTMLDivElement>(null);
   const scrollAfterOwnSendRef = useRef(false);
@@ -193,6 +217,13 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
         if (row.sentByViewer) {
           scrollAfterOwnSendRef.current = true;
         }
+      },
+      onMessageUpdated: (row: ApiMessageWithReceipt) => {
+        setMessages((prev) => {
+          const mapped = mapSingleApiMessage(row, apiBase);
+          if (!prev.some((m) => m.id === row.id)) return prev;
+          return applyReceipts(prev.map((m) => (m.id === row.id ? mapped : m)));
+        });
       },
       onTypingUpdate: ({ userId, isTyping }) => {
         if (userId === realtime.viewerUserId) return;
@@ -479,6 +510,76 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
     [uploadAndSendAttachment],
   );
 
+  const updateMessageInThread = useCallback(
+    (nextMessage: Message) => {
+      setMessages((prev) => {
+        if (!prev.some((m) => m.id === nextMessage.id)) return prev;
+        return applyReceipts(prev.map((m) => (m.id === nextMessage.id ? nextMessage : m)));
+      });
+    },
+    [applyReceipts],
+  );
+
+  const openForwardForMessage = useCallback(
+    async (message: Message) => {
+      if (!conversation) return;
+      if (message.kind === "system") return;
+      setForwardError(null);
+      setForwardSourceMessageId(message.id);
+      setForwardOpen(true);
+      setForwardLoading(true);
+      const r = await fetchConversationsListAction();
+      setForwardLoading(false);
+      if (!r.ok) {
+        setForwardError(r.error);
+        setForwardOptions([]);
+        return;
+      }
+      setForwardOptions(r.conversations.filter((c) => c.id !== conversation.id));
+    },
+    [conversation],
+  );
+
+  const runForwardMessage = useCallback(
+    async (targetConversationId: string) => {
+      if (!forwardSourceMessageId) return;
+      setForwardError(null);
+      setForwardBusyConversationId(targetConversationId);
+      const r = await forwardChatMessageAction({
+        messageId: forwardSourceMessageId,
+        targetConversationId,
+        clientMessageId: buildClientMessageId(),
+      });
+      setForwardBusyConversationId(null);
+      if (!r.ok) {
+        setForwardError(r.error);
+        return;
+      }
+      setForwardOpen(false);
+      setForwardSourceMessageId(null);
+      setSendError("Đã chuyển tiếp tin nhắn.");
+      void refreshSidebar();
+    },
+    [forwardSourceMessageId, refreshSidebar],
+  );
+
+  const runRecallOrDelete = useCallback(async () => {
+    if (!confirmAction) return;
+    setMessageActionBusy(true);
+    const res =
+      confirmAction.kind === "recall"
+        ? await recallChatMessageAction(confirmAction.messageId)
+        : await deleteChatMessageAction(confirmAction.messageId);
+    setMessageActionBusy(false);
+    if (!res.ok) {
+      setSendError(res.error);
+      return;
+    }
+    updateMessageInThread(res.message);
+    setConfirmAction(null);
+    void refreshSidebar();
+  }, [confirmAction, refreshSidebar, updateMessageInThread]);
+
   useLayoutEffect(() => {
     const el = messageScrollRef.current;
     if (!el || !scrollAfterOwnSendRef.current) return;
@@ -539,6 +640,29 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
                   onReply={(m) => {
                     if (conversation) setReplyTarget({ convId: conversation.id, message: m });
                   }}
+                  onRecall={(m) => {
+                    if (!m.isOwn || m.kind === "system") return;
+                    setConfirmAction({
+                      kind: "recall",
+                      messageId: m.id,
+                      title: "Thu hồi tin nhắn?",
+                      description: "Tin nhắn sẽ bị thu hồi với tất cả thành viên trong cuộc trò chuyện.",
+                      confirmLabel: "Thu hồi",
+                      variant: "danger",
+                    });
+                  }}
+                  onDelete={(m) => {
+                    if (!m.isOwn || m.kind === "system") return;
+                    setConfirmAction({
+                      kind: "delete",
+                      messageId: m.id,
+                      title: "Xóa tin nhắn?",
+                      description: "Tin nhắn sẽ chuyển sang trạng thái đã xóa.",
+                      confirmLabel: "Xóa",
+                      variant: "danger",
+                    });
+                  }}
+                  onForward={(m) => void openForwardForMessage(m)}
                   onOpenImage={setPreviewUrl}
                 />
               </>
@@ -617,6 +741,39 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
       ) : (
         <MessageInput value="" onChange={() => {}} onSend={() => {}} disabled />
       )}
+      <ForwardMessageDialog
+        open={forwardOpen}
+        options={forwardOptions}
+        busyConversationId={forwardBusyConversationId}
+        error={forwardError}
+        onClose={() => {
+          if (forwardBusyConversationId) return;
+          setForwardOpen(false);
+          setForwardError(null);
+          setForwardSourceMessageId(null);
+        }}
+        onPickConversation={(id) => void runForwardMessage(id)}
+      />
+      {forwardOpen && forwardLoading ? (
+        <div className="fixed inset-0 z-[121] flex items-center justify-center pointer-events-none">
+          <div className="rounded-md bg-white px-3 py-2 text-[12px] text-[var(--zalo-text-muted)] shadow ring-1 ring-black/[0.08]">
+            Đang tải danh sách hội thoại…
+          </div>
+        </div>
+      ) : null}
+      <ConfirmDialog
+        open={confirmAction !== null}
+        title={confirmAction?.title ?? ""}
+        description={confirmAction?.description}
+        confirmLabel={confirmAction?.confirmLabel ?? "Xác nhận"}
+        variant={confirmAction?.variant ?? "default"}
+        busy={messageActionBusy}
+        onClose={() => {
+          if (messageActionBusy) return;
+          setConfirmAction(null);
+        }}
+        onConfirm={() => void runRecallOrDelete()}
+      />
       <ImagePreviewModal imageUrl={previewUrl} onClose={() => setPreviewUrl(null)} />
     </section>
   );

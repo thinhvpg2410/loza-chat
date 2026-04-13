@@ -15,6 +15,7 @@ export type ChatReceiptPayload = {
 
 export type RoomRealtimeHandlers = {
   onMessageNew: (row: ApiMessageWithReceipt) => void;
+  onMessageUpdated?: (row: ApiMessageWithReceipt) => void;
   onTypingUpdate: (p: { userId: string; isTyping: boolean }) => void;
   onReceipt: (kind: "delivered" | "seen", p: ChatReceiptPayload) => void;
   onReactionUpdated?: (p: {
@@ -163,6 +164,14 @@ export function ChatRealtimeProvider({
       roomsRef.current.get(convId)?.onMessageNew(row);
     };
 
+    const onMessageUpdated = (payload: { message?: unknown }) => {
+      const raw = payload?.message;
+      if (!raw || typeof raw !== "object") return;
+      const row = socketMessageViewToApiRow(raw, session.viewerUserId);
+      if (!row) return;
+      roomsRef.current.get(row.conversationId)?.onMessageUpdated?.(row);
+    };
+
     const onTyping = (payload: {
       conversationId?: string;
       userId?: string;
@@ -209,6 +218,7 @@ export function ChatRealtimeProvider({
     socket.on("connect_error", onConnectError);
     socket.io.on("reconnect_failed", onReconnectFailed);
     socket.on("message:new", onMessageNew);
+    socket.on("message:updated", onMessageUpdated);
     socket.on("typing:update", onTyping);
     socket.on("message:delivered", onDelivered);
     socket.on("message:seen", onSeen);
@@ -226,6 +236,7 @@ export function ChatRealtimeProvider({
       socket.off("connect_error", onConnectError);
       socket.io.off("reconnect_failed", onReconnectFailed);
       socket.off("message:new", onMessageNew);
+      socket.off("message:updated", onMessageUpdated);
       socket.off("typing:update", onTyping);
       socket.off("message:delivered", onDelivered);
       socket.off("message:seen", onSeen);

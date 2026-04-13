@@ -39,6 +39,20 @@ function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message
         }
       : {};
 
+  if (row.deletedAt) {
+    const m: SystemMessage = {
+      kind: "system",
+      id: row.id,
+      conversationId: row.conversationId,
+      body: row.deletionMode === "recalled" ? "Tin nhắn đã được thu hồi" : "Tin nhắn đã bị xóa",
+      sentAt,
+      createdAt,
+      isOwn: false,
+      reactions: [],
+    };
+    return m;
+  }
+
   switch (row.type) {
     case "text": {
       const m: TextMessage = {

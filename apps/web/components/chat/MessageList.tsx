@@ -9,6 +9,9 @@ type MessageListProps = {
   getReactions: (messageId: string) => MessageReaction[];
   onToggleReaction: (messageId: string, emoji: string) => void;
   onReply: (message: Message) => void;
+  onRecall?: (message: Message) => void;
+  onDelete?: (message: Message) => void;
+  onForward?: (message: Message) => void;
   onOpenImage: (url: string) => void;
 };
 
@@ -28,6 +31,9 @@ export function MessageList({
   getReactions,
   onToggleReaction,
   onReply,
+  onRecall,
+  onDelete,
+  onForward,
   onOpenImage,
 }: MessageListProps) {
   const sorted = [...messages].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -53,6 +59,9 @@ export function MessageList({
         reactions={getReactions(m.id)}
         onToggleReaction={(emoji) => onToggleReaction(m.id, emoji)}
         onReply={() => onReply(m)}
+        onRecall={onRecall && m.isOwn && m.kind !== "system" ? () => onRecall(m) : undefined}
+        onDelete={onDelete && m.isOwn && m.kind !== "system" ? () => onDelete(m) : undefined}
+        onForward={onForward && m.kind !== "system" ? () => onForward(m) : undefined}
         onOpenImage={onOpenImage}
       />,
     );

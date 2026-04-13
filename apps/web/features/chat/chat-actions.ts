@@ -198,6 +198,69 @@ export async function markConversationReadAction(
   }
 }
 
+export type MessageActionResult =
+  | { ok: true; message: Message }
+  | { ok: false; error: string };
+
+export async function recallChatMessageAction(messageId: string): Promise<MessageActionResult> {
+  const gate = await assertApiChatEnabled();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  try {
+    const res = await apiFetchJson<{ message: ApiMessageWithReceipt }>(`/messages/${messageId}/recall`, {
+      method: "POST",
+    });
+    const row: ApiMessageWithReceipt = { ...res.message, sentByViewer: true };
+    return { ok: true, message: mapSingleApiMessage(row, gate.base) };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Không thu hồi được tin nhắn.",
+    };
+  }
+}
+
+export async function deleteChatMessageAction(messageId: string): Promise<MessageActionResult> {
+  const gate = await assertApiChatEnabled();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  try {
+    const res = await apiFetchJson<{ message: ApiMessageWithReceipt }>(`/messages/${messageId}`, {
+      method: "DELETE",
+    });
+    const row: ApiMessageWithReceipt = { ...res.message, sentByViewer: true };
+    return { ok: true, message: mapSingleApiMessage(row, gate.base) };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Không xóa được tin nhắn.",
+    };
+  }
+}
+
+export async function forwardChatMessageAction(input: {
+  messageId: string;
+  targetConversationId: string;
+  clientMessageId: string;
+}): Promise<MessageActionResult> {
+  const gate = await assertApiChatEnabled();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  try {
+    const res = await apiFetchJson<{ message: ApiMessageWithReceipt }>(`/messages/${input.messageId}/forward`, {
+      method: "POST",
+      body: JSON.stringify({
+        targetConversationId: input.targetConversationId,
+        clientMessageId: input.clientMessageId,
+      }),
+    });
+    const row: ApiMessageWithReceipt = { ...res.message, sentByViewer: true };
+    return { ok: true, message: mapSingleApiMessage(row, gate.base) };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Không chuyển tiếp được tin nhắn.",
+    };
+  }
+}
+
 export type ChatUploadInitResult =
   | {
       ok: true;
