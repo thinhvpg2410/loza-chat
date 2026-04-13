@@ -1,5 +1,6 @@
 import type { Conversation } from "@/lib/types/chat";
 import { Avatar } from "@/components/common/Avatar";
+import { formatConversationListActivityTime } from "@/lib/format-conversation-list-time";
 
 type ConversationItemProps = {
   conversation: Conversation;
@@ -9,6 +10,18 @@ type ConversationItemProps = {
 
 export function ConversationItem({ conversation, isActive, onSelect }: ConversationItemProps) {
   const unread = conversation.unreadCount && conversation.unreadCount > 0;
+  const lastAtRaw = conversation.lastMessageAt;
+  const lastAtMs = Date.parse(lastAtRaw);
+  const lastAtLabel = formatConversationListActivityTime(lastAtRaw);
+  const lastAtTitle = Number.isFinite(lastAtMs)
+    ? new Date(lastAtMs).toLocaleString("vi-VN", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : undefined;
 
   return (
     <button
@@ -31,8 +44,11 @@ export function ConversationItem({ conversation, isActive, onSelect }: Conversat
           <span className="truncate text-[14px] font-semibold leading-tight text-[var(--zalo-text)]">
             {conversation.title}
           </span>
-          <span className="shrink-0 text-[11px] tabular-nums text-[var(--zalo-text-muted)]">
-            {conversation.lastMessageAt}
+          <span
+            className="shrink-0 text-[11px] tabular-nums text-[var(--zalo-text-muted)]"
+            title={lastAtTitle}
+          >
+            {lastAtLabel}
           </span>
         </div>
         <div className="mt-0.5 flex items-center justify-between gap-2">

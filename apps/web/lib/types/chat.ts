@@ -4,6 +4,7 @@ export type Conversation = {
   title: string;
   avatarUrl?: string;
   lastMessagePreview: string;
+  /** ISO timestamp of last activity (API); list formats to HH:mm / dd/mm / dd/mm/yy. */
   lastMessageAt: string;
   unreadCount?: number;
   isPinned?: boolean;
