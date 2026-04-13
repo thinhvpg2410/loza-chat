@@ -11,6 +11,7 @@ import type { AppConfiguration } from '../../config/configuration';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ObjectStoragePort } from '../storage/object-storage.port';
 import type { UploadInitDto } from './dto/upload-init.dto';
+import { publicMediaUrlForStorageKey } from '../../common/media/public-media-url';
 import { toAttachmentPublicDto } from '../../common/mappers/attachment-public.mapper';
 import type { AttachmentPublicDto } from './dto/upload-complete-response.dto';
 import { UploadRulesService } from './upload-rules.service';
@@ -174,7 +175,8 @@ export class UploadsService {
       return attachment;
     });
 
-    return { attachment: toAttachmentPublicDto(result) };
+    const publicUrl = publicMediaUrlForStorageKey(this.config, result.storageKey);
+    return { attachment: toAttachmentPublicDto(result, publicUrl) };
   }
 
   /**

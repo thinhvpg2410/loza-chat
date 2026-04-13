@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   ConversationType,
   MessageType,
@@ -14,6 +15,8 @@ import {
   type StickerPack,
   type User,
 } from '@prisma/client';
+import type { AppConfiguration } from '../../config/configuration';
+import { publicMediaUrlForStorageKey } from '../../common/media/public-media-url';
 import { toAttachmentPublicDto } from '../../common/mappers/attachment-public.mapper';
 import { toPublicUserProfile } from '../../common/types/public-user-profile';
 import {
@@ -54,6 +57,7 @@ export class MessagesService {
     private readonly uploadRules: UploadRulesService,
     private readonly stickers: StickersService,
     private readonly domainEvents: MessageDomainEventsService,
+    private readonly config: ConfigService<AppConfiguration, true>,
   ) {}
 
   private parseDeletionMode(
@@ -984,7 +988,12 @@ export class MessagesService {
       sender: toPublicUserProfile(row.sender),
       attachments: row.deletedAt
         ? []
-        : row.attachments.map((a) => toAttachmentPublicDto(a)),
+        : row.attachments.map((a) =>
+            toAttachmentPublicDto(
+              a,
+              publicMediaUrlForStorageKey(this.config, a.storageKey),
+            ),
+          ),
       sticker: row.deletedAt ? null : row.sticker ? toStickerPublicDto(row.sticker) : null,
       reactions: row.deletedAt ? { counts: [], mine: [] } : reactionSummary ?? { counts: [], mine: [] },
     };

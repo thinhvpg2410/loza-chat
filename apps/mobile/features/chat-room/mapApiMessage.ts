@@ -1,4 +1,4 @@
-import { publicUrlForStorageKey } from "@/services/media/publicMediaUrl";
+import { attachmentPublicReadUrl } from "@/services/media/publicMediaUrl";
 import type { ApiMessageWithReceipt } from "@/services/conversations/conversationsApi";
 
 import type { ChatRoomMessage, MessageKind, MessageReaction, OutgoingDeliveryState, ReplyReference } from "./types";
@@ -117,7 +117,7 @@ export function mapApiMessageToChatRoom(
 
   if (kind === "image") {
     const att = firstAttachment(m);
-    const url = att ? publicUrlForStorageKey(att.storageKey) : "";
+    const url = att ? attachmentPublicReadUrl(att) : "";
     return {
       ...base,
       kind: "image",

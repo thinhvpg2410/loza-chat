@@ -8,6 +8,12 @@ export class AttachmentPublicDto {
   @ApiProperty()
   storageKey!: string;
 
+  @ApiProperty({
+    description:
+      'Absolute HTTPS URL to fetch the object (CDN/S3). Clients should use this instead of guessing mock-public vs S3.',
+  })
+  publicUrl!: string;
+
   @ApiProperty()
   bucket!: string;
 

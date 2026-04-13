@@ -1,4 +1,4 @@
-import { mockStoragePublicUrl } from "@/lib/chat/attachment-public-url";
+import { attachmentReadUrl } from "@/lib/chat/attachment-public-url";
 import type { ApiMessageWithReceipt } from "@/lib/chat/api-dtos";
 import type {
   FileMessage,
@@ -101,7 +101,7 @@ function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message
     }
     case "image": {
       const imgAtt = row.attachments.find((a) => a.attachmentType === "image");
-      const url = imgAtt ? mockStoragePublicUrl(apiBaseUrl, imgAtt.storageKey) : "";
+      const url = imgAtt ? attachmentReadUrl(apiBaseUrl, imgAtt) : "";
       const m: ImageMessage = {
         kind: "image",
         id: row.id,
@@ -133,7 +133,7 @@ function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message
         fileName,
         fileSizeBytes: Number.isFinite(size) ? size : 0,
         mimeType: att?.mimeType,
-        fileUrl: att ? mockStoragePublicUrl(apiBaseUrl, att.storageKey) : undefined,
+        fileUrl: att ? attachmentReadUrl(apiBaseUrl, att) : undefined,
         sentAt,
         createdAt,
         isOwn: baseOwn,

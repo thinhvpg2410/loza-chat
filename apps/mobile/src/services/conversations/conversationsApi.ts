@@ -63,6 +63,8 @@ export async function markConversationReadApi(
 export type ApiAttachment = {
   id: string;
   storageKey: string;
+  /** CDN/S3 or mock-public URL from API; prefer over building mock-public locally. */
+  publicUrl?: string | null;
   bucket: string;
   mimeType: string;
   originalFileName: string;

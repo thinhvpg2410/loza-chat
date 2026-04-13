@@ -29,6 +29,8 @@ export type ApiConversationListItem = {
 export type ApiAttachment = {
   id: string;
   storageKey: string;
+  /** When set (S3/CDN or mock-public), use this instead of constructing mock-public from `storageKey`. */
+  publicUrl?: string | null;
   mimeType: string;
   originalFileName: string;
   fileSize: string;
