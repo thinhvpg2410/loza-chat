@@ -14,8 +14,8 @@ import { messageContentPreview } from '../../common/utils/message-content-previe
 import { toPublicUserProfile } from '../../common/types/public-user-profile';
 import { sortUserPair } from '../../common/utils/sort-user-pair';
 import { PrismaService } from '../../prisma/prisma.service';
-import { BlocksService } from '../blocks/blocks.service';
 import { FriendsService } from '../friends/friends.service';
+import type { RelationshipStatus } from '../friends/types/relationship-status';
 import { ConversationMembershipService } from './conversation-membership.service';
 import { ConversationUnreadService } from './conversation-unread.service';
 import type {
@@ -28,24 +28,34 @@ export class ConversationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly friends: FriendsService,
-    private readonly blocks: BlocksService,
     private readonly membership: ConversationMembershipService,
     private readonly unread: ConversationUnreadService,
   ) {}
 
+  /** Block-only guard: non-friends may still open chat and send (client shows a warning banner). */
+  private assertNotBlockedForDirectPair(relationship: RelationshipStatus): void {
+    if (relationship === 'blocked_by_me') {
+      throw new ForbiddenException(
+        'Bạn đã chặn người này. Không thể nhắn tin.',
+      );
+    }
+    if (relationship === 'blocked_me') {
+      throw new ForbiddenException(
+        'Bạn không thể nhắn tin vì đã bị chặn.',
+      );
+    }
+  }
+
   /**
-   * Project rule: direct chat is only between friends, with no block either way,
-   * and never with self. Call after e.g. `GET /users/:id/public-profile` shows
-   * `relationshipStatus === 'friend'`.
+   * Direct thread: not with self, target must exist and be active, and neither
+   * side may have blocked the other. Strangers may open a direct conversation.
    */
   private async assertMayOpenDirectConversation(
     currentUserId: string,
     targetUserId: string,
   ): Promise<void> {
     if (currentUserId === targetUserId) {
-      throw new BadRequestException(
-        'Cannot start a conversation with yourself',
-      );
+      throw new BadRequestException('Không thể trò chuyện với chính bạn.');
     }
 
     const target = await this.prisma.user.findUnique({
@@ -55,17 +65,45 @@ export class ConversationsService {
       throw new NotFoundException('User not found');
     }
 
-    if (await this.blocks.isEitherBlocked(currentUserId, targetUserId)) {
-      throw new ForbiddenException('Cannot message this user');
-    }
-
     const relationship = await this.friends.getRelationshipStatus(
       currentUserId,
       targetUserId,
     );
-    if (relationship !== 'friend') {
-      throw new ForbiddenException('You can only message friends');
+    this.assertNotBlockedForDirectPair(relationship);
+  }
+
+  /**
+   * Blocks sending into a direct thread only when either user has blocked the other.
+   */
+  async assertMaySendDirectMessage(
+    senderId: string,
+    conversationId: string,
+  ): Promise<void> {
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: {
+        type: true,
+        directUserOneId: true,
+        directUserTwoId: true,
+      },
+    });
+    if (!conv || conv.type !== ConversationType.direct) {
+      return;
     }
+    const one = conv.directUserOneId;
+    const two = conv.directUserTwoId;
+    if (!one || !two) {
+      throw new BadRequestException('Hội thoại trực tiếp không hợp lệ.');
+    }
+    const peerId = one === senderId ? two : two === senderId ? one : null;
+    if (!peerId) {
+      throw new ForbiddenException('Bạn không thuộc hội thoại này.');
+    }
+    const relationship = await this.friends.getRelationshipStatus(
+      senderId,
+      peerId,
+    );
+    this.assertNotBlockedForDirectPair(relationship);
   }
 
   async createOrGetDirect(
@@ -234,7 +272,29 @@ export class ConversationsService {
             }
           : null,
         unreadCount: unreadMap.get(c.id) ?? 0,
+        directPeerRelationshipStatus: null,
       });
+    }
+
+    const directPeerIds = items
+      .filter(
+        (row) =>
+          row.type === ConversationType.direct &&
+          row.otherParticipant !== null,
+      )
+      .map((row) => row.otherParticipant!.id);
+    const relMap = await this.friends.getRelationshipStatusesForTargets(
+      userId,
+      directPeerIds,
+    );
+    for (const row of items) {
+      if (
+        row.type === ConversationType.direct &&
+        row.otherParticipant !== null
+      ) {
+        row.directPeerRelationshipStatus =
+          relMap.get(row.otherParticipant.id) ?? 'none';
+      }
     }
 
     return { conversations: items };
@@ -268,6 +328,11 @@ export class ConversationsService {
       directUsers,
     );
 
+    const directPeerRelationshipStatus =
+      conversation.type === ConversationType.direct && otherUser
+        ? await this.friends.getRelationshipStatus(userId, otherUser.id)
+        : null;
+
     return {
       id: conversation.id,
       type: conversation.type,
@@ -284,6 +349,7 @@ export class ConversationsService {
       memberCount: conversation._count.members,
       otherParticipant:
         otherUser && otherUser.isActive ? toPublicUserProfile(otherUser) : null,
+      directPeerRelationshipStatus,
       myMembership: {
         joinedAt: member.joinedAt,
         role: member.role,

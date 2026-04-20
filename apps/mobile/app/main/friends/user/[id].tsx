@@ -3,7 +3,15 @@ import { isAxiosError } from "axios";
 import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  InteractionManager,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 
 import { BlockReportSheet, ProfileSharedMediaPlaceholder } from "@components/friends";
 import { AppTabScreen, ShellHeader } from "@components/shell";
@@ -302,118 +310,129 @@ export default function UserProfileScreen() {
   }, [outgoingRequestId, refreshFriends]);
 
   const onUnfriend = useCallback(() => {
-    Alert.alert("Huỷ kết bạn", `Ngừng kết bạn với ${user.name}?`, [
-      { text: "Huỷ", style: "cancel" },
-      {
-        text: "Xác nhận",
-        style: "destructive",
-        onPress: () => {
-          void (async () => {
-            if (USE_API_MOCK) {
-              Alert.alert("Mock", "Đã huỷ kết bạn (mock).");
-              router.back();
-              return;
-            }
-            setActionBusy(true);
-            try {
-              await unfriendUserApi(user.id);
-              setRelationship("none");
-              void refreshFriends();
-              void fetchConversations();
-              Alert.alert("Đã cập nhật", "Đã huỷ kết bạn.");
-            } catch (e) {
-              Alert.alert("Lỗi", getApiErrorMessage(e));
-            } finally {
-              setActionBusy(false);
-            }
-          })();
+    setSheetOpen(false);
+    InteractionManager.runAfterInteractions(() => {
+      Alert.alert("Huỷ kết bạn", `Ngừng kết bạn với ${user.name}?`, [
+        { text: "Huỷ", style: "cancel" },
+        {
+          text: "Xác nhận",
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              if (USE_API_MOCK) {
+                Alert.alert("Mock", "Đã huỷ kết bạn (mock).");
+                router.back();
+                return;
+              }
+              setActionBusy(true);
+              try {
+                await unfriendUserApi(user.id.trim());
+                setRelationship("none");
+                void refreshFriends();
+                void fetchConversations();
+                Alert.alert("Đã cập nhật", "Đã huỷ kết bạn.", [
+                  { text: "OK", onPress: () => router.back() },
+                ]);
+              } catch (e) {
+                Alert.alert("Lỗi", getApiErrorMessage(e));
+              } finally {
+                setActionBusy(false);
+              }
+            })();
+          },
         },
-      },
-    ]);
+      ]);
+    });
   }, [fetchConversations, refreshFriends, router, user.id, user.name]);
 
   const onBlock = useCallback(() => {
-    Alert.alert("Chặn", `Chặn ${user.name}? Họ sẽ bị xoá khỏi danh sách bạn bè.`, [
-      { text: "Huỷ", style: "cancel" },
-      {
-        text: "Chặn",
-        style: "destructive",
-        onPress: () => {
-          void (async () => {
-            if (USE_API_MOCK) {
-              setBlockedMock(true);
-              Alert.alert("Đã chặn", "Người này sẽ không nhắn tin cho bạn (mock).", [
-                { text: "OK", onPress: () => router.back() },
-              ]);
-              return;
-            }
-            setActionBusy(true);
-            try {
-              await blockUserApi(user.id);
-              void refreshFriends();
-              void fetchConversations();
-              Alert.alert("Đã chặn", "Bạn đã chặn người này.", [
-                { text: "OK", onPress: () => router.back() },
-              ]);
-            } catch (e) {
-              Alert.alert("Lỗi", getApiErrorMessage(e));
-            } finally {
-              setActionBusy(false);
-            }
-          })();
+    setSheetOpen(false);
+    InteractionManager.runAfterInteractions(() => {
+      Alert.alert("Chặn", `Chặn ${user.name}? Họ sẽ bị xoá khỏi danh sách bạn bè.`, [
+        { text: "Huỷ", style: "cancel" },
+        {
+          text: "Chặn",
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              if (USE_API_MOCK) {
+                setBlockedMock(true);
+                Alert.alert("Đã chặn", "Người này sẽ không nhắn tin cho bạn (mock).", [
+                  { text: "OK", onPress: () => router.back() },
+                ]);
+                return;
+              }
+              setActionBusy(true);
+              try {
+                await blockUserApi(user.id.trim());
+                void refreshFriends();
+                void fetchConversations();
+                Alert.alert("Đã chặn", "Bạn đã chặn người này.", [
+                  { text: "OK", onPress: () => router.back() },
+                ]);
+              } catch (e) {
+                Alert.alert("Lỗi", getApiErrorMessage(e));
+              } finally {
+                setActionBusy(false);
+              }
+            })();
+          },
         },
-      },
-    ]);
+      ]);
+    });
   }, [fetchConversations, refreshFriends, router, user.id, user.name]);
 
   const onUnblock = useCallback(() => {
-    Alert.alert("Bỏ chặn", `Cho phép ${user.name} hiển thị lại trong tìm kiếm và tương tác?`, [
-      { text: "Huỷ", style: "cancel" },
-      {
-        text: "Bỏ chặn",
-        onPress: () => {
-          void (async () => {
-            setActionBusy(true);
-            try {
-              await unblockUserApi(user.id);
-              void refreshFriends();
-              Alert.alert("Đã bỏ chặn", "Bạn có thể tìm và xem hồ sơ người này lại.");
-              router.replace({
-                pathname: "/main/friends/user/[id]",
-                params: {
-                  id,
-                  name: encodeURIComponent(user.name),
-                  avatarUrl: encodeURIComponent(user.avatarUrl ?? ""),
-                },
-              });
-              setRelationship("none");
-              setApiError(null);
-              setApiLoading(true);
+    setSheetOpen(false);
+    InteractionManager.runAfterInteractions(() => {
+      Alert.alert("Bỏ chặn", `Cho phép ${user.name} hiển thị lại trong tìm kiếm và tương tác?`, [
+        { text: "Huỷ", style: "cancel" },
+        {
+          text: "Bỏ chặn",
+          onPress: () => {
+            void (async () => {
+              setActionBusy(true);
               try {
-                const data = await getUserPublicProfileApi(id);
-                const p = data.profile;
-                setRelationship(data.relationshipStatus);
-                setProfileUser({
-                  id: p.id,
-                  name: p.displayName?.trim() || "Người dùng",
-                  avatarUrl: p.avatarUrl ?? "",
-                  username: p.username ?? undefined,
-                  subtitle: p.statusMessage ?? undefined,
+                await unblockUserApi(user.id.trim());
+                void refreshFriends();
+                Alert.alert("Đã bỏ chặn", "Bạn có thể tìm và xem hồ sơ người này lại.");
+                router.replace({
+                  pathname: "/main/friends/user/[id]",
+                  params: {
+                    id,
+                    name: encodeURIComponent(user.name),
+                    avatarUrl: encodeURIComponent(user.avatarUrl ?? ""),
+                  },
                 });
+                setRelationship("none");
+                setApiError(null);
+                setApiLoading(true);
+                try {
+                  const data = await getUserPublicProfileApi(id);
+                  const p = data.profile;
+                  setRelationship(data.relationshipStatus);
+                  setProfileUser({
+                    id: p.id,
+                    name: p.displayName?.trim() || "Người dùng",
+                    avatarUrl: p.avatarUrl ?? "",
+                    username: p.username ?? undefined,
+                    subtitle: p.statusMessage ?? undefined,
+                  });
+                } catch (e) {
+                  setApiError(getApiErrorMessage(e));
+                } finally {
+                  setApiLoading(false);
+                }
               } catch (e) {
-                setApiError(getApiErrorMessage(e));
+                Alert.alert("Lỗi", getApiErrorMessage(e));
               } finally {
-                setApiLoading(false);
+                setActionBusy(false);
               }
-            } catch (e) {
-              Alert.alert("Lỗi", getApiErrorMessage(e));
-            } finally {
-              setActionBusy(false);
-            }
-          })();
+            })();
+          },
         },
-      },
-    ]);
+      ]);
+    });
   }, [id, refreshFriends, router, user.avatarUrl, user.id, user.name]);
 
   const onReport = useCallback(() => {

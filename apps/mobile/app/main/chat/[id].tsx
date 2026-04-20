@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  StyleSheet,
   View,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -188,6 +189,17 @@ export default function ChatRoomScreen() {
     return "Trò chuyện";
   }, [isGroup, memberCount, peerMeta?.isOnline]);
 
+  const directSendGuard = useMemo(() => {
+    if (USE_API_MOCK || isGroup) {
+      return { canSend: true, bannerKind: null as null | "blocked_by_me" | "blocked_me" | "stranger" };
+    }
+    const rel = listRow?.directPeerRelationshipStatus;
+    if (rel === "blocked_by_me") return { canSend: false, bannerKind: "blocked_by_me" as const };
+    if (rel === "blocked_me") return { canSend: false, bannerKind: "blocked_me" as const };
+    if (!rel || rel === "friend") return { canSend: true, bannerKind: null };
+    return { canSend: true, bannerKind: "stranger" as const };
+  }, [isGroup, listRow?.directPeerRelationshipStatus]);
+
   const openGroupInfo = useCallback(() => {
     if (!isGroup) return;
     router.push({
@@ -284,6 +296,8 @@ export default function ChatRoomScreen() {
         return () => {};
       }
 
+      void fetchConversations();
+
       setPeerTyping(false);
       emitConversationJoin(id);
 
@@ -359,6 +373,10 @@ export default function ChatRoomScreen() {
 
   useEffect(() => {
     if (USE_API_MOCK || !isChatSocketConfigured() || !id) return;
+    if (!isGroup && !directSendGuard.canSend) {
+      emitTypingStop(id);
+      return;
+    }
     if (!draft.trim().length) {
       emitTypingStop(id);
       return;
@@ -369,13 +387,19 @@ export default function ChatRoomScreen() {
       emitTypingStop(id);
       typingStopTimer.current = null;
     }, 2000);
+
+    const typingKeepAlive = setInterval(() => {
+      emitTypingStart(id);
+    }, 8000);
+
     return () => {
       if (typingStopTimer.current) {
         clearTimeout(typingStopTimer.current);
         typingStopTimer.current = null;
       }
+      clearInterval(typingKeepAlive);
     };
-  }, [draft, id]);
+  }, [draft, directSendGuard.canSend, id, isGroup]);
 
   const openImageViewer = useCallback((uri: string) => {
     setViewerUri(uri);
@@ -619,6 +643,15 @@ export default function ChatRoomScreen() {
   }, []);
 
   const pickPhoto = useCallback(async () => {
+    if (!USE_API_MOCK && !isGroup && !directSendGuard.canSend) {
+      Alert.alert(
+        "Không thể gửi",
+        directSendGuard.bannerKind === "blocked_by_me"
+          ? "Bạn đã chặn người này."
+          : "Bạn đã bị chặn.",
+      );
+      return;
+    }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       Alert.alert("Quyền truy cập", "Cần quyền thư viện ảnh để gửi ảnh.");
@@ -674,9 +707,28 @@ export default function ChatRoomScreen() {
     } catch (e) {
       Alert.alert("Gửi ảnh", getApiErrorMessage(e));
     }
-  }, [appendOutgoing, displayName, fetchConversations, id, replyingTo?.id, viewerId]);
+  }, [
+    appendOutgoing,
+    directSendGuard.bannerKind,
+    directSendGuard.canSend,
+    displayName,
+    fetchConversations,
+    id,
+    isGroup,
+    replyingTo?.id,
+    viewerId,
+  ]);
 
   const pickFile = useCallback(async () => {
+    if (!USE_API_MOCK && !isGroup && !directSendGuard.canSend) {
+      Alert.alert(
+        "Không thể gửi",
+        directSendGuard.bannerKind === "blocked_by_me"
+          ? "Bạn đã chặn người này."
+          : "Bạn đã bị chặn.",
+      );
+      return;
+    }
     if (USE_API_MOCK) {
       appendOutgoing({
         id: `local-file-${Date.now()}`,
@@ -717,10 +769,29 @@ export default function ChatRoomScreen() {
     } catch (e) {
       Alert.alert("Gửi tệp", getApiErrorMessage(e));
     }
-  }, [appendOutgoing, displayName, fetchConversations, id, replyingTo?.id, viewerId]);
+  }, [
+    appendOutgoing,
+    directSendGuard.bannerKind,
+    directSendGuard.canSend,
+    displayName,
+    fetchConversations,
+    id,
+    isGroup,
+    replyingTo?.id,
+    viewerId,
+  ]);
 
   const onAttachmentPick = useCallback(
     (kind: AttachmentKind) => {
+      if (!USE_API_MOCK && !isGroup && !directSendGuard.canSend) {
+        Alert.alert(
+          "Không thể gửi",
+          directSendGuard.bannerKind === "blocked_by_me"
+            ? "Bạn đã chặn người này."
+            : "Bạn đã bị chặn.",
+        );
+        return;
+      }
       if (kind === "photo") {
         void pickPhoto();
       } else if (kind === "file") {
@@ -731,7 +802,7 @@ export default function ChatRoomScreen() {
         Alert.alert("Camera", "Placeholder — tích hợp camera sau.");
       }
     },
-    [pickFile, pickPhoto],
+    [directSendGuard.bannerKind, directSendGuard.canSend, isGroup, pickFile, pickPhoto],
   );
 
   const onStickerPick = useCallback(
@@ -777,6 +848,15 @@ export default function ChatRoomScreen() {
     }
 
     if (!viewerId) return;
+    if (!isGroup && !directSendGuard.canSend) {
+      Alert.alert(
+        "Không thể gửi",
+        directSendGuard.bannerKind === "blocked_by_me"
+          ? "Bạn đã chặn người này. Không thể gửi tin nhắn."
+          : "Bạn đã bị chặn. Không thể gửi tin nhắn.",
+      );
+      return;
+    }
     const replyToMessageId = replyingTo?.id;
     setSendBusy(true);
     setDraft("");
@@ -805,9 +885,20 @@ export default function ChatRoomScreen() {
     } finally {
       setSendBusy(false);
     }
-  }, [draft, displayName, fetchConversations, id, replyingTo, sendBusy, viewerId]);
+  }, [
+    directSendGuard.bannerKind,
+    directSendGuard.canSend,
+    draft,
+    displayName,
+    fetchConversations,
+    id,
+    isGroup,
+    replyingTo,
+    sendBusy,
+    viewerId,
+  ]);
 
-  const showTypingRow = !USE_API_MOCK && peerTyping && !isGroup && Boolean(directPeerId);
+  const showTypingRow = !USE_API_MOCK && peerTyping && !isGroup;
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: colors.chatRoomBackground }}>
@@ -852,12 +943,30 @@ export default function ChatRoomScreen() {
           </View>
         ) : (
           <>
-            {showTypingRow ? (
-              <View style={{ paddingHorizontal: 16, paddingBottom: 4 }}>
-                <TypingIndicator visible label={`${displayName} đang nhập…`} />
+            {!USE_API_MOCK && !isGroup && directSendGuard.bannerKind === "blocked_by_me" ? (
+              <View style={{ marginHorizontal: 12, marginBottom: 6, padding: 10, borderRadius: 8, backgroundColor: "#fee2e2" }}>
+                <AppText variant="caption" style={{ color: "#991b1b", textAlign: "center" }}>
+                  Bạn đã chặn người này. Tin nhắn không được gửi đi.
+                </AppText>
+              </View>
+            ) : null}
+            {!USE_API_MOCK && !isGroup && directSendGuard.bannerKind === "blocked_me" ? (
+              <View style={{ marginHorizontal: 12, marginBottom: 6, padding: 10, borderRadius: 8, backgroundColor: "#fee2e2" }}>
+                <AppText variant="caption" style={{ color: "#991b1b", textAlign: "center" }}>
+                  Bạn đã bị chặn. Không thể gửi tin nhắn trong cuộc trò chuyện này.
+                </AppText>
+              </View>
+            ) : null}
+            {!USE_API_MOCK && !isGroup && directSendGuard.bannerKind === "stranger" ? (
+              <View style={{ marginHorizontal: 12, marginBottom: 6, padding: 10, borderRadius: 8, backgroundColor: "#fef3c7" }}>
+                <AppText variant="caption" style={{ color: "#78350f", textAlign: "center" }}>
+                  Cảnh báo: {displayName} chưa là bạn bè hoặc chưa chấp nhận lời mời. Bạn vẫn có thể nhắn tin — hãy cẩn trọng với
+                  nội dung từ người lạ.
+                </AppText>
               </View>
             ) : null}
             <MessageList
+              threadKey={id}
               messages={messages}
               peerAvatarUrl={displayAvatar}
               peerName={displayName}
@@ -868,11 +977,25 @@ export default function ChatRoomScreen() {
             />
           </>
         )}
+        {showTypingRow ? (
+          <View
+            style={{
+              borderTopWidth: StyleSheet.hairlineWidth,
+              borderTopColor: colors.border,
+              backgroundColor: colors.background,
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+            }}
+          >
+            <TypingIndicator visible label={`${displayName} đang nhập…`} />
+          </View>
+        ) : null}
         <MessageInputBar
           value={draft}
           onChangeText={setDraft}
           onSend={() => void send()}
           bottomInset={insets.bottom}
+          disabled={!USE_API_MOCK && !isGroup && !directSendGuard.canSend}
           replyingTo={replyingTo}
           onCancelReply={() => setReplyingTo(null)}
           onOpenAttachment={() => setAttachmentOpen(true)}

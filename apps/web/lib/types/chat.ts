@@ -1,3 +1,5 @@
+import type { RelationshipStatus } from "@/lib/types/social";
+
 /** Thread summary for the conversation list (middle column). */
 export type Conversation = {
   id: string;
@@ -11,6 +13,12 @@ export type Conversation = {
   isMuted?: boolean;
   isOnline?: boolean;
   lastSeenLabel?: string;
+  /** API threads: `direct` or `group` from list/detail. */
+  chatType?: "direct" | "group";
+  /** Direct: other participant id (for deep links / receipts). */
+  directPeerId?: string;
+  /** Direct: viewer ↔ peer; drives block / stranger banners and send guard. */
+  directPeerRelationshipStatus?: RelationshipStatus | null;
 };
 
 export type MessageReaction = {

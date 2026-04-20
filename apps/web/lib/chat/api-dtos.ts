@@ -24,6 +24,8 @@ export type ApiConversationListItem = {
     senderId: string;
   } | null;
   unreadCount: number;
+  /** Present on API list for direct threads. */
+  directPeerRelationshipStatus?: string | null;
 };
 
 export type ApiAttachment = {

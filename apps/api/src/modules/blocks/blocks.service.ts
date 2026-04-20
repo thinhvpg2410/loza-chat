@@ -5,8 +5,15 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { FriendRequestStatus, Prisma } from '@prisma/client';
+import type { PublicUserProfile } from '../../common/types/public-user-profile';
+import { toPublicUserProfile } from '../../common/types/public-user-profile';
 import { sortUserPair } from '../../common/utils/sort-user-pair';
 import { PrismaService } from '../../prisma/prisma.service';
+
+export type BlockedUserListEntry = {
+  user: PublicUserProfile;
+  blockedAt: string;
+};
 
 @Injectable()
 export class BlocksService {
@@ -101,5 +108,17 @@ export class BlocksService {
     if (result.count === 0) {
       throw new NotFoundException('Block record not found');
     }
+  }
+
+  async listBlockedBy(blockerId: string): Promise<BlockedUserListEntry[]> {
+    const rows = await this.prisma.block.findMany({
+      where: { blockerId },
+      orderBy: { createdAt: 'desc' },
+      include: { blocked: true },
+    });
+    return rows.map((row) => ({
+      user: toPublicUserProfile(row.blocked),
+      blockedAt: row.createdAt.toISOString(),
+    }));
   }
 }

@@ -120,7 +120,7 @@ export default function FriendsTabScreen() {
             }}
           >
             <AppText variant="micro" color="textInverse" style={{ fontSize: 10, fontWeight: "700" }}>
-              {requestBadge > 9 ? "9+" : requestBadge}
+              {requestBadge > 99 ? "99+" : requestBadge}
             </AppText>
           </View>
         ) : null}
@@ -145,14 +145,14 @@ export default function FriendsTabScreen() {
 
       <ChatSearchBar value={query} onChangeText={setQuery} placeholder="Tìm bạn" />
 
-      <View style={{ paddingHorizontal: spacing.md, paddingBottom: spacing.xs, flexDirection: "row", gap: spacing.md }}>
+      <View style={{ paddingHorizontal: spacing.md, paddingBottom: spacing.xs, flexDirection: "row", gap: spacing.sm }}>
         <Pressable
           accessibilityRole="button"
           onPress={() => router.push("/main/friends/add")}
           style={({ pressed }) => ({
             opacity: pressed ? 0.75 : 1,
             alignItems: "center",
-            width: 68,
+            width: 64,
           })}
         >
           <View
@@ -177,7 +177,7 @@ export default function FriendsTabScreen() {
           style={({ pressed }) => ({
             opacity: pressed ? 0.75 : 1,
             alignItems: "center",
-            width: 68,
+            width: 64,
           })}
         >
           <View
@@ -198,6 +198,35 @@ export default function FriendsTabScreen() {
             Lời mời
           </AppText>
         </Pressable>
+        {!USE_API_MOCK ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push("/main/friends/blocked")}
+            style={({ pressed }) => ({
+              opacity: pressed ? 0.75 : 1,
+              alignItems: "center",
+              width: 64,
+            })}
+          >
+            <View
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 999,
+                backgroundColor: colors.surface,
+                alignItems: "center",
+                justifyContent: "center",
+                borderWidth: 1,
+                borderColor: colors.border,
+              }}
+            >
+              <Ionicons name="ban-outline" size={18} color={colors.primary} />
+            </View>
+            <AppText variant="micro" color="textSecondary" style={{ marginTop: 4, textAlign: "center" }}>
+              Đã chặn
+            </AppText>
+          </Pressable>
+        ) : null}
       </View>
 
       {showListError ? (

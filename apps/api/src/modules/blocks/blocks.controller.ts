@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   Param,
   ParseUUIDPipe,
   Post,
@@ -29,6 +30,15 @@ import { CreateBlockDto } from './dto/create-block.dto';
 @Controller('blocks')
 export class BlocksController {
   constructor(private readonly blocksService: BlocksService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'List users you have blocked' })
+  @ApiOkResponse({ description: 'Blocked users with profile and blockedAt' })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
+  async list(@GetUser('id') blockerId: string) {
+    const blocks = await this.blocksService.listBlockedBy(blockerId);
+    return { blocks };
+  }
 
   @Post()
   @ApiOperation({

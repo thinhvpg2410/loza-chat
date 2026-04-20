@@ -20,6 +20,8 @@ const NEAR_END_THRESHOLD_PX = 88;
 
 type MessageListProps = {
   messages: ChatRoomMessage[];
+  /** Conversation id (or any stable key): when it changes, scroll resets to newest messages. */
+  threadKey?: string;
   peerAvatarUrl?: string;
   peerName?: string;
   onMessagePress?: (message: ChatRoomMessage) => void;
@@ -29,7 +31,7 @@ type MessageListProps = {
 };
 
 export const MessageList = forwardRef<FlatList<MessageFeedItem>, MessageListProps>(function MessageList(
-  { messages, peerAvatarUrl, peerName, onMessagePress, onMessageLongPress, onImagePress, onReactionEmoji },
+  { messages, threadKey, peerAvatarUrl, peerName, onMessagePress, onMessageLongPress, onImagePress, onReactionEmoji },
   ref,
 ) {
   const listRef = useRef<FlatList<MessageFeedItem>>(null);
@@ -95,6 +97,17 @@ export const MessageList = forwardRef<FlatList<MessageFeedItem>, MessageListProp
       listRef.current?.scrollToEnd({ animated: false });
     }
   }, []);
+
+  useEffect(() => {
+    prevLengthRef.current = 0;
+    nearBottomRef.current = true;
+    contentHeightRef.current = 0;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        listRef.current?.scrollToEnd({ animated: false });
+      });
+    });
+  }, [threadKey]);
 
   useEffect(() => {
     const len = messages.length;

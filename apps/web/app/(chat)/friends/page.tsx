@@ -14,6 +14,7 @@ export default async function FriendsPage() {
       initialFriends={init.friends}
       initialError={init.error}
       selfProfile={init.selfProfile}
+      incomingRequestCount={init.incomingRequestCount}
     />
   );
 }

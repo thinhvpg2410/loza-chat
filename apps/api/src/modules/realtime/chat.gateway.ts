@@ -327,16 +327,15 @@ export class ChatGateway
       const user = this.requireUser(client);
       const dto = parseWsPayload(TypingSocketDto, body);
       await this.membership.requireMember(user.id, dto.conversationId);
-      const started = this.typing.startTyping(dto.conversationId, user.id);
-      if (started) {
-        this.server
-          .to(conversationRoomId(dto.conversationId))
-          .emit('typing:update', {
-            conversationId: dto.conversationId,
-            userId: user.id,
-            isTyping: true,
-          });
-      }
+      /** Always broadcast so peers can refresh TTL (typing UI), not only on first key. */
+      this.typing.startTyping(dto.conversationId, user.id);
+      this.server
+        .to(conversationRoomId(dto.conversationId))
+        .emit('typing:update', {
+          conversationId: dto.conversationId,
+          userId: user.id,
+          isTyping: true,
+        });
       return { ok: true };
     } catch (err) {
       this.emitStructuredError(client, 'typing:start', err);

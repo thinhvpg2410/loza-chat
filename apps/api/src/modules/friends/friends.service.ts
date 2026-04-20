@@ -76,6 +76,99 @@ export class FriendsService {
     return 'none';
   }
 
+  /**
+   * Batch version of {@link getRelationshipStatus} for inbox rows (one round of
+   * queries for many peers).
+   */
+  async getRelationshipStatusesForTargets(
+    viewerId: string,
+    targetUserIds: string[],
+  ): Promise<Map<string, RelationshipStatus>> {
+    const map = new Map<string, RelationshipStatus>();
+    const unique = [...new Set(targetUserIds)].filter((id) => id && id !== viewerId);
+    if (unique.length === 0) {
+      return map;
+    }
+
+    const blocks = await this.prisma.block.findMany({
+      where: {
+        OR: [
+          { blockerId: viewerId, blockedId: { in: unique } },
+          { blockedId: viewerId, blockerId: { in: unique } },
+        ],
+      },
+    });
+    for (const id of unique) {
+      if (blocks.some((b) => b.blockerId === viewerId && b.blockedId === id)) {
+        map.set(id, 'blocked_by_me');
+      } else if (blocks.some((b) => b.blockerId === id && b.blockedId === viewerId)) {
+        map.set(id, 'blocked_me');
+      }
+    }
+
+    const afterBlocks = unique.filter((id) => !map.has(id));
+    if (afterBlocks.length === 0) {
+      return map;
+    }
+
+    const friendshipOr = afterBlocks.map((tid) => {
+      const [a, b] = sortUserPair(viewerId, tid);
+      return { userOneId: a, userTwoId: b };
+    });
+    const friendships = await this.prisma.friendship.findMany({
+      where: { OR: friendshipOr },
+    });
+    const friendPairKeys = new Set(
+      friendships.map((f) => `${f.userOneId}\0${f.userTwoId}`),
+    );
+    for (const tid of afterBlocks) {
+      const [a, b] = sortUserPair(viewerId, tid);
+      if (friendPairKeys.has(`${a}\0${b}`)) {
+        map.set(tid, 'friend');
+      }
+    }
+
+    const afterFriends = afterBlocks.filter((id) => !map.has(id));
+    if (afterFriends.length === 0) {
+      return map;
+    }
+
+    const outgoing = await this.prisma.friendRequest.findMany({
+      where: {
+        senderId: viewerId,
+        receiverId: { in: afterFriends },
+        status: FriendRequestStatus.pending,
+      },
+    });
+    for (const r of outgoing) {
+      map.set(r.receiverId, 'outgoing_request');
+    }
+
+    const afterOut = afterFriends.filter((id) => !map.has(id));
+    if (afterOut.length === 0) {
+      return map;
+    }
+
+    const incoming = await this.prisma.friendRequest.findMany({
+      where: {
+        senderId: { in: afterOut },
+        receiverId: viewerId,
+        status: FriendRequestStatus.pending,
+      },
+    });
+    for (const r of incoming) {
+      map.set(r.senderId, 'incoming_request');
+    }
+
+    for (const id of afterOut) {
+      if (!map.has(id)) {
+        map.set(id, 'none');
+      }
+    }
+
+    return map;
+  }
+
   async sendRequest(
     senderId: string,
     receiverId: string,

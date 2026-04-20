@@ -4,6 +4,7 @@ import type {
   MessageType,
 } from '@prisma/client';
 import type { PublicUserProfile } from '../../../common/types/public-user-profile';
+import type { RelationshipStatus } from '../../friends/types/relationship-status';
 
 export interface ConversationLastMessagePreview {
   id: string;
@@ -25,6 +26,8 @@ export interface ConversationListItemView {
   updatedAt: Date;
   mutedUntil: Date | null;
   otherParticipant: PublicUserProfile | null;
+  /** Direct only: viewer ↔ {@link otherParticipant} for in-app warnings. */
+  directPeerRelationshipStatus: RelationshipStatus | null;
   lastMessage: ConversationLastMessagePreview | null;
   unreadCount: number;
   lastReadMessageId: string | null;
@@ -40,6 +43,8 @@ export interface ConversationDetailView {
   avatarUrl: string | null;
   memberCount: number;
   otherParticipant: PublicUserProfile | null;
+  /** Direct only: relationship with {@link otherParticipant}. */
+  directPeerRelationshipStatus: RelationshipStatus | null;
   myMembership: {
     joinedAt: Date;
     role: ConversationMemberRole | null;

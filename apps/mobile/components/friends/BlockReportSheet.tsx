@@ -45,8 +45,8 @@ export function BlockReportSheet({
               accessibilityRole="button"
               accessibilityLabel="Huỷ kết bạn"
               onPress={() => {
+                /* Parent closes sheet then shows Alert — do not onClose() here or iOS can drop the alert. */
                 onUnfriend?.();
-                onClose();
               }}
               style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
             >
@@ -62,7 +62,6 @@ export function BlockReportSheet({
               accessibilityLabel="Bỏ chặn"
               onPress={() => {
                 onUnblock?.();
-                onClose();
               }}
               style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
             >
@@ -77,7 +76,6 @@ export function BlockReportSheet({
               accessibilityLabel="Chặn"
               onPress={() => {
                 onBlock();
-                onClose();
               }}
               style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
             >

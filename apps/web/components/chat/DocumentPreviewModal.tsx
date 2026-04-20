@@ -65,9 +65,7 @@ export function DocumentPreviewModal({
             </button>
           </div>
         </header>
-        <p className="shrink-0 border-b border-[var(--zalo-border)]/80 bg-[var(--zalo-surface)] px-3 py-1.5 text-[11px] text-[var(--zalo-text-muted)]">
-          Word/Excel cần URL file HTTPS công khai. PDF có thể xem qua Google Viewer nếu file chỉ có HTTP.
-        </p>
+
         <div className="relative min-h-0 flex-1 bg-[var(--zalo-surface)]">
           <iframe
             title={title}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { ForwardMessageDialog } from "@/components/chat/ForwardMessageDialog";
 import { useChatRealtime } from "@/components/chat/chat-realtime-context";
@@ -9,6 +9,7 @@ import { DocumentPreviewModal } from "@/components/chat/DocumentPreviewModal";
 import { ImagePreviewModal } from "@/components/chat/ImagePreviewModal";
 import { MessageInput } from "@/components/chat/MessageInput";
 import { MessageList } from "@/components/chat/MessageList";
+import { TypingIndicator } from "@/components/chat/TypingIndicator";
 import {
   completeChatUploadAction,
   deleteChatMessageAction,
@@ -162,7 +163,7 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
     peerTypingExpireTimerRef.current = setTimeout(() => {
       setPeerTyping(false);
       peerTypingExpireTimerRef.current = null;
-    }, 7000);
+    }, 12_000);
   }, []);
 
   useEffect(() => {
@@ -176,6 +177,10 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
 
   const notifyTypingActivity = useCallback(() => {
     if (!realtime?.socketConnected || !conversation) return;
+    if (conversation.chatType === "direct") {
+      const rel = conversation.directPeerRelationshipStatus;
+      if (rel === "blocked_by_me" || rel === "blocked_me") return;
+    }
     if (!typingStartedRef.current) {
       typingStartedRef.current = true;
       realtime.startTyping(conversation.id);
@@ -189,6 +194,22 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
       }
     }, 2200);
   }, [realtime, conversation]);
+
+  /** Re-send typing:start while composing so peers keep seeing “đang nhập” (server + local TTL). */
+  useEffect(() => {
+    if (!conversation) return;
+    if (!realtime?.socketConnected) return;
+    if (conversation.chatType === "direct") {
+      const rel = conversation.directPeerRelationshipStatus;
+      if (rel === "blocked_by_me" || rel === "blocked_me") return;
+    }
+    if (!draft.trim()) return;
+    const convId = conversation.id;
+    const id = window.setInterval(() => {
+      realtimeRef.current?.startTyping(convId);
+    }, 8000);
+    return () => clearInterval(id);
+  }, [conversation, draft, realtime?.socketConnected]);
 
   useEffect(() => {
     if (!conversation) return;
@@ -207,6 +228,7 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
 
       setLoading(true);
       setLoadError(null);
+      setSendError(null);
       setMessages([]);
       setNextCursor(null);
       setPeerTyping(false);
@@ -470,6 +492,17 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
     if (!conversation) return;
     const body = draft.trim();
     if (!body || sending || uploading) return;
+    if (conversation.chatType === "direct") {
+      const rel = conversation.directPeerRelationshipStatus;
+      if (rel === "blocked_by_me") {
+        setSendError("Bạn đã chặn người này. Không thể gửi tin nhắn.");
+        return;
+      }
+      if (rel === "blocked_me") {
+        setSendError("Bạn không thể nhắn tin vì đã bị chặn.");
+        return;
+      }
+    }
 
     flushTypingStop();
     setSendError(null);
@@ -517,6 +550,17 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
     async (stickerId: string, _emoji: string) => {
       void _emoji;
       if (!conversation || sending || uploading) return;
+      if (conversation.chatType === "direct") {
+        const rel = conversation.directPeerRelationshipStatus;
+        if (rel === "blocked_by_me") {
+          setSendError("Bạn đã chặn người này. Không thể gửi tin nhắn.");
+          return;
+        }
+        if (rel === "blocked_me") {
+          setSendError("Bạn không thể nhắn tin vì đã bị chặn.");
+          return;
+        }
+      }
       flushTypingStop();
       setSendError(null);
       setSending(true);
@@ -555,6 +599,17 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
     async (file: File, mode: "image" | "file") => {
       if (!conversation) return;
       if (sending || uploading) return;
+      if (conversation.chatType === "direct") {
+        const rel = conversation.directPeerRelationshipStatus;
+        if (rel === "blocked_by_me") {
+          setSendError("Bạn đã chặn người này. Không thể gửi tin nhắn.");
+          return;
+        }
+        if (rel === "blocked_me") {
+          setSendError("Bạn không thể nhắn tin vì đã bị chặn.");
+          return;
+        }
+      }
 
       setSendError(null);
       setUploading(true);
@@ -801,12 +856,55 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
 
   const typingStatus = peerTyping ? "Đang soạn tin nhắn…" : null;
 
+  const directMessagingGuard = useMemo(() => {
+    const c = conversation;
+    if (!c || c.chatType !== "direct") {
+      return { canSend: true, bannerKind: null as null | "blocked_by_me" | "blocked_me" | "stranger" };
+    }
+    const rel = c.directPeerRelationshipStatus;
+    if (rel === "blocked_by_me") return { canSend: false, bannerKind: "blocked_by_me" as const };
+    if (rel === "blocked_me") return { canSend: false, bannerKind: "blocked_me" as const };
+    if (!rel || rel === "friend") return { canSend: true, bannerKind: null };
+    return { canSend: true, bannerKind: "stranger" as const };
+  }, [conversation]);
+
+  const directMessagingBanner =
+    directMessagingGuard.bannerKind === "blocked_by_me" ? (
+      <div
+        className="border-t border-red-200 bg-red-50 px-3 py-2"
+        role="status"
+      >
+        <p className="text-center text-[12px] font-medium text-red-800">
+          Bạn đã chặn người này. Tin nhắn không được gửi đi.
+        </p>
+      </div>
+    ) : directMessagingGuard.bannerKind === "blocked_me" ? (
+      <div
+        className="border-t border-red-200 bg-red-50 px-3 py-2"
+        role="status"
+      >
+        <p className="text-center text-[12px] font-medium text-red-800">
+          Bạn đã bị chặn. Không thể gửi tin nhắn trong cuộc trò chuyện này.
+        </p>
+      </div>
+    ) : directMessagingGuard.bannerKind === "stranger" ? (
+      <div
+        className="border-t border-amber-200 bg-amber-50 px-3 py-2"
+        role="status"
+      >
+        <p className="text-center text-[12px] text-amber-950">
+          Cảnh báo: {conversation?.title ?? "Người này"} chưa là bạn bè hoặc chưa chấp nhận lời mời kết bạn. Bạn vẫn có
+          thể nhắn tin — hãy cẩn trọng với nội dung từ người lạ.
+        </p>
+      </div>
+    ) : null;
+
   return (
     <section
       className="flex min-w-0 flex-1 flex-col bg-[var(--zalo-chat-bg)]"
       aria-label="Khung trò chuyện"
     >
-      <ChatHeader conversation={conversation} statusOverride={typingStatus} />
+      <ChatHeader conversation={conversation} />
       <div
         ref={messageScrollRef}
         onScroll={onMessageScroll}
@@ -895,6 +993,22 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
               <p className="text-center text-[12px] text-red-700">{sendError}</p>
             </div>
           ) : null}
+          {directMessagingBanner}
+          {peerTyping && conversation ? (
+            <div
+              className="shrink-0 border-t border-[var(--zalo-border)] bg-[var(--zalo-surface)]/80 px-2"
+              role="status"
+              aria-live="polite"
+            >
+              <TypingIndicator
+                label={
+                  conversation.chatType === "direct"
+                    ? `${conversation.title} đang nhập…`
+                    : "Đang soạn tin nhắn…"
+                }
+              />
+            </div>
+          ) : null}
           <MessageInput
             value={draft}
             onChange={(v) => {
@@ -902,7 +1016,7 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
               notifyTypingActivity();
             }}
             onSend={() => void sendText()}
-            disabled={loading || sending || uploading}
+            disabled={loading || sending || uploading || !directMessagingGuard.canSend}
             replyTo={replyRef}
             onCancelReply={() => setReplyTarget(null)}
             attachmentsEnabled

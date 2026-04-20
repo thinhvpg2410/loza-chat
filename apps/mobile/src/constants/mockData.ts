@@ -1,3 +1,5 @@
+import type { RelationshipStatus } from "@/services/users/usersPublicApi";
+
 export type ConversationKind = "direct" | "group";
 
 export type MockConversation = {
@@ -19,6 +21,8 @@ export type MockConversation = {
   memberCount?: number;
   /** Direct chat: other participant user id (real API) */
   directPeerId?: string;
+  /** API: relationship with direct peer (warnings / send guard). */
+  directPeerRelationshipStatus?: RelationshipStatus | null;
 };
 
 export type MockFriend = {

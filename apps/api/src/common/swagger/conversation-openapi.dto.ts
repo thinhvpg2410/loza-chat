@@ -54,6 +54,13 @@ export class ConversationListItemOpenApiDto {
   otherParticipant!: PublicUserProfileOpenApiDto | null;
 
   @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Direct chats only: relationship between viewer and otherParticipant (for UI warnings). Sending is blocked only when blocked_by_me or blocked_me.',
+  })
+  directPeerRelationshipStatus!: string | null;
+
+  @ApiPropertyOptional({
     type: ConversationLastMessagePreviewOpenApiDto,
     nullable: true,
   })
@@ -122,6 +129,13 @@ export class ConversationDetailOpenApiDto {
     nullable: true,
   })
   otherParticipant!: PublicUserProfileOpenApiDto | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Direct chats only: relationship between viewer and otherParticipant (for UI warnings).',
+  })
+  directPeerRelationshipStatus!: string | null;
 
   @ApiProperty({ type: MyMembershipOpenApiDto })
   myMembership!: MyMembershipOpenApiDto;

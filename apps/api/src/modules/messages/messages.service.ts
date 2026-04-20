@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ForbiddenException,
+  forwardRef,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -28,6 +30,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { toStickerPublicDto } from '../stickers/mappers/sticker-public.mapper';
 import { StickersService } from '../stickers/stickers.service';
 import { ConversationMembershipService } from '../conversations/conversation-membership.service';
+import { ConversationsService } from '../conversations/conversations.service';
 import { UploadRulesService } from '../uploads/upload-rules.service';
 import { isAllowedReaction } from './constants/reaction-allowlist';
 import { MessageDomainEventsService } from './message-domain-events.service';
@@ -54,6 +57,8 @@ export class MessagesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly membership: ConversationMembershipService,
+    @Inject(forwardRef(() => ConversationsService))
+    private readonly conversations: ConversationsService,
     private readonly uploadRules: UploadRulesService,
     private readonly stickers: StickersService,
     private readonly domainEvents: MessageDomainEventsService,
@@ -100,6 +105,8 @@ export class MessagesService {
   ): Promise<{
     message: MessageView;
   }> {
+    await this.conversations.assertMaySendDirectMessage(senderId, dto.conversationId);
+
     const result = await this.prisma.$transaction(async (tx) => {
       await this.membership.requireMemberTx(tx, senderId, dto.conversationId);
 
@@ -203,6 +210,7 @@ export class MessagesService {
     dto: SendStickerMessageDto,
   ): Promise<{ message: MessageView }> {
     await this.stickers.requireSendableSticker(dto.stickerId);
+    await this.conversations.assertMaySendDirectMessage(senderId, dto.conversationId);
 
     const result = await this.prisma.$transaction(async (tx) => {
       await this.membership.requireMemberTx(tx, senderId, dto.conversationId);
@@ -333,6 +341,8 @@ export class MessagesService {
 
     const content =
       dto.content !== undefined && dto.content.length > 0 ? dto.content : null;
+
+    await this.conversations.assertMaySendDirectMessage(senderId, dto.conversationId);
 
     const result = await this.prisma.$transaction(async (tx) => {
       await this.membership.requireMemberTx(tx, senderId, dto.conversationId);

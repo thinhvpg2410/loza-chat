@@ -29,6 +29,8 @@ type MessageInputBarProps = {
   onSend: () => void;
   /** Safe area bottom inset (home indicator) */
   bottomInset: number;
+  /** When true, composer is read-only and send is disabled. */
+  disabled?: boolean;
   placeholder?: string;
   replyingTo?: ReplyReference | null;
   onCancelReply?: () => void;
@@ -41,6 +43,7 @@ export function MessageInputBar({
   onChangeText,
   onSend,
   bottomInset,
+  disabled = false,
   placeholder = "Tin nhắn",
   replyingTo,
   onCancelReply,
@@ -49,7 +52,7 @@ export function MessageInputBar({
 }: MessageInputBarProps) {
   const [inputHeight, setInputHeight] = useState(MIN_INPUT);
   const trimmed = value.trim();
-  const canSend = trimmed.length > 0;
+  const canSend = !disabled && trimmed.length > 0;
 
   useEffect(() => {
     if (!value) setInputHeight(MIN_INPUT);
@@ -79,8 +82,9 @@ export function MessageInputBar({
           accessibilityRole="button"
           accessibilityLabel="Emoji"
           hitSlop={8}
+          disabled={disabled}
           onPress={() => onOpenEmoji?.()}
-          style={({ pressed }) => [styles.iconBtn, pressed && styles.iconPressed]}
+          style={({ pressed }) => [styles.iconBtn, pressed && styles.iconPressed, disabled && styles.iconDisabled]}
         >
           <Ionicons name="happy-outline" size={ICON_GLYPH} color={colors.textMuted} />
         </Pressable>
@@ -89,6 +93,7 @@ export function MessageInputBar({
           <TextInput
             value={value}
             onChangeText={onChangeText}
+            editable={!disabled}
             placeholder={placeholder}
             placeholderTextColor={colors.textPlaceholder}
             multiline
@@ -108,8 +113,9 @@ export function MessageInputBar({
           accessibilityRole="button"
           accessibilityLabel="Đính kèm"
           hitSlop={8}
+          disabled={disabled}
           onPress={() => onOpenAttachment?.()}
-          style={({ pressed }) => [styles.iconBtn, pressed && styles.iconPressed]}
+          style={({ pressed }) => [styles.iconBtn, pressed && styles.iconPressed, disabled && styles.iconDisabled]}
         >
           <Ionicons name="add" size={ICON_GLYPH + 2} color={colors.textMuted} />
         </Pressable>
@@ -160,6 +166,9 @@ const styles = StyleSheet.create({
   },
   iconPressed: {
     opacity: 0.65,
+  },
+  iconDisabled: {
+    opacity: 0.35,
   },
   field: {
     flex: 1,
