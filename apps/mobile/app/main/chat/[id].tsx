@@ -1124,6 +1124,7 @@ export default function ChatRoomScreen() {
         void (async () => {
           if (voiceRecording) {
             try {
+              const recordedDurationSec = Math.max(1, voiceRecordingDurationSec);
               const uri = await stopVoiceRecording();
               if (!uri) {
                 Alert.alert("Ghi âm", "Không đọc được file ghi âm.");
@@ -1134,6 +1135,7 @@ export default function ChatRoomScreen() {
                 fileName: `voice-${Date.now()}.m4a`,
                 mimeType: "audio/mp4",
                 uploadType: "voice",
+                durationSeconds: recordedDurationSec,
               });
               const { message } = await sendMessageWithAttachmentsApi({
                 conversationId: id,

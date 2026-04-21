@@ -1,6 +1,7 @@
-import { memo } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { Audio } from "expo-av";
 
 import { AppText } from "@ui/AppText";
 import { formatFileSize } from "@features/chat-room";
@@ -15,12 +16,24 @@ type FileMessageProps = {
   position: BubblePosition;
   name: string;
   sizeBytes: number;
+  mime?: string;
+  fileUrl?: string;
   replyTo?: ReplyReference;
   onPress: () => void;
   onLongPress?: () => void;
 };
 
-function UnpackedFileMessage({ role, position, name, sizeBytes, replyTo, onPress, onLongPress }: FileMessageProps) {
+function UnpackedFileMessage({
+  role,
+  position,
+  name,
+  sizeBytes,
+  mime,
+  fileUrl,
+  replyTo,
+  onPress,
+  onLongPress,
+}: FileMessageProps) {
   const bg =
     role === "me"
       ? { backgroundColor: colors.chatBubbleOutgoing }
@@ -30,6 +43,50 @@ function UnpackedFileMessage({ role, position, name, sizeBytes, replyTo, onPress
           borderColor: colors.chatBubbleIncomingBorder,
         };
   const shadow = role === "peer" ? shadows.hairline : shadows.none;
+  const isVoice = useMemo(() => Boolean(mime?.toLowerCase().startsWith("audio/") && fileUrl), [fileUrl, mime]);
+  const soundRef = useRef<Audio.Sound | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  const stopVoice = useCallback(async () => {
+    if (!soundRef.current) return;
+    try {
+      await soundRef.current.stopAsync();
+      await soundRef.current.unloadAsync();
+    } finally {
+      soundRef.current = null;
+      setIsPlaying(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      void stopVoice();
+    };
+  }, [stopVoice]);
+
+  const toggleVoice = useCallback(async () => {
+    if (!fileUrl || !isVoice) return;
+    if (soundRef.current) {
+      await stopVoice();
+      return;
+    }
+    try {
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: fileUrl },
+        { shouldPlay: true },
+        (status) => {
+          if (!status.isLoaded) return;
+          if (status.didJustFinish) {
+            void stopVoice();
+          }
+        },
+      );
+      soundRef.current = sound;
+      setIsPlaying(true);
+    } catch {
+      setIsPlaying(false);
+    }
+  }, [fileUrl, isVoice, stopVoice]);
 
   return (
     <Pressable
@@ -51,20 +108,44 @@ function UnpackedFileMessage({ role, position, name, sizeBytes, replyTo, onPress
           <ReplyInline reply={replyTo} />
         </View>
       ) : null}
-      <View style={styles.cardRow}>
-        <View style={[styles.iconBox, role === "me" ? styles.iconBoxOut : styles.iconBoxIn]}>
-          <Ionicons name="document-text-outline" size={20} color={colors.primary} />
+      {isVoice ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={isPlaying ? "Dừng ghi âm" : "Phát ghi âm"}
+          onPress={() => {
+            void toggleVoice();
+          }}
+          style={({ pressed }) => [styles.voiceRow, pressed && styles.pressedIn]}
+        >
+          <View style={[styles.iconBox, role === "me" ? styles.iconBoxOut : styles.iconBoxIn]}>
+            <Ionicons name={isPlaying ? "pause-outline" : "play-outline"} size={20} color={colors.primary} />
+          </View>
+          <View style={styles.meta}>
+            <AppText variant="subhead" numberOfLines={1} style={styles.fileName}>
+              Ghi âm
+            </AppText>
+            <AppText variant="micro" color="textMuted">
+              {isPlaying ? "Đang phát..." : "Nhấn để nghe ngay"}
+            </AppText>
+          </View>
+        </Pressable>
+      ) : null}
+      {!isVoice ? (
+        <View style={styles.cardRow}>
+          <View style={[styles.iconBox, role === "me" ? styles.iconBoxOut : styles.iconBoxIn]}>
+            <Ionicons name="document-text-outline" size={20} color={colors.primary} />
+          </View>
+          <View style={styles.meta}>
+            <AppText variant="subhead" numberOfLines={2} style={styles.fileName}>
+              {name}
+            </AppText>
+            <AppText variant="micro" color="textMuted">
+              {formatFileSize(sizeBytes)}
+            </AppText>
+          </View>
+          <Ionicons name="download-outline" size={16} color={colors.textMuted} />
         </View>
-        <View style={styles.meta}>
-          <AppText variant="subhead" numberOfLines={2} style={styles.fileName}>
-            {name}
-          </AppText>
-          <AppText variant="micro" color="textMuted">
-            {formatFileSize(sizeBytes)}
-          </AppText>
-        </View>
-        <Ionicons name="download-outline" size={16} color={colors.textMuted} />
-      </View>
+      ) : null}
     </Pressable>
   );
 }
@@ -85,6 +166,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+  },
+  voiceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 2,
   },
   iconBox: {
     width: 36,

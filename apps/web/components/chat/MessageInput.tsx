@@ -148,6 +148,13 @@ export function MessageInput({
     }
   }, [activeMentionIndex, mentionItems.length]);
 
+  const resize = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "0px";
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  }, []);
+
   const applyMentionToken = useCallback(
     (token: string) => {
       if (!mentionQuery) return;
@@ -166,13 +173,6 @@ export function MessageInput({
     },
     [mentionQuery, onChange, resize, value],
   );
-
-  const resize = useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "0px";
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
-  }, []);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (mentionItems.length > 0) {

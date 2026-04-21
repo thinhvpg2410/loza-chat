@@ -162,6 +162,7 @@ export function MessageBubble({
       case "file": {
         const fileUrl = message.fileUrl;
         const isVideo = Boolean(message.mimeType?.toLowerCase().startsWith("video/"));
+        const isVoice = Boolean(message.mimeType?.toLowerCase().startsWith("audio/"));
         const canPreview =
           Boolean(fileUrl) &&
           isDocumentPreviewable(message.fileName, message.mimeType) &&
@@ -184,34 +185,50 @@ export function MessageBubble({
                 />
               </div>
             ) : null}
-            <div
-              className={`rounded-lg px-0.5 py-0.5 ${
-                isOwn ? "bg-[var(--zalo-blue)]" : "bg-transparent"
-              }`}
-            >
-              <FileMessage
-                fileName={message.fileName}
-                fileSizeBytes={message.fileSizeBytes}
-                isOwn={isOwn}
-                onPreview={
-                  canPreview && fileUrl && onOpenDocument
-                    ? () =>
-                        onOpenDocument(
-                          buildDocumentPreviewEmbedUrl(fileUrl, message.fileName, message.mimeType),
-                          message.fileName,
-                          fileUrl,
-                        )
-                    : undefined
-                }
-                onOpenExternal={
-                  fileUrl
-                    ? () => {
-                        window.open(fileUrl, "_blank", "noopener,noreferrer");
-                      }
-                    : undefined
-                }
-              />
-            </div>
+            {isVoice && fileUrl ? (
+              <div
+                className={`rounded-lg px-2 py-1 ${
+                  isOwn ? "rounded-br-sm bg-[var(--zalo-blue)] ring-1 ring-white/25" : "rounded-bl-sm bg-white ring-1 ring-black/[0.08]"
+                }`}
+              >
+                <audio
+                  controls
+                  src={fileUrl}
+                  className="block h-10 w-[min(320px,68vw)] min-w-[240px] max-w-full"
+                  preload="metadata"
+                />
+              </div>
+            ) : null}
+            {!isVoice ? (
+              <div
+                className={`rounded-lg px-0.5 py-0.5 ${
+                  isOwn ? "bg-[var(--zalo-blue)]" : "bg-transparent"
+                }`}
+              >
+                <FileMessage
+                  fileName={message.fileName}
+                  fileSizeBytes={message.fileSizeBytes}
+                  isOwn={isOwn}
+                  onPreview={
+                    canPreview && fileUrl && onOpenDocument
+                      ? () =>
+                          onOpenDocument(
+                            buildDocumentPreviewEmbedUrl(fileUrl, message.fileName, message.mimeType),
+                            message.fileName,
+                            fileUrl,
+                          )
+                      : undefined
+                  }
+                  onOpenExternal={
+                    fileUrl
+                      ? () => {
+                          window.open(fileUrl, "_blank", "noopener,noreferrer");
+                        }
+                      : undefined
+                  }
+                />
+              </div>
+            ) : null}
             <p className={`text-[10px] ${timeClass}`}>{message.sentAt}</p>
             {receiptBlock}
           </div>

@@ -54,6 +54,7 @@ export type UploadLocalFileOpts = {
   uploadType: MediaKind;
   width?: number;
   height?: number;
+  durationSeconds?: number;
 };
 
 /**
@@ -77,6 +78,7 @@ export async function uploadLocalFileToAttachment(opts: UploadLocalFileOpts): Pr
     uploadType: opts.uploadType,
     ...(opts.width !== undefined ? { width: opts.width } : {}),
     ...(opts.height !== undefined ? { height: opts.height } : {}),
+    ...(opts.durationSeconds !== undefined ? { durationSeconds: opts.durationSeconds } : {}),
   });
 
   const putUrl = resolveUploadPutUrl(init.upload.url);

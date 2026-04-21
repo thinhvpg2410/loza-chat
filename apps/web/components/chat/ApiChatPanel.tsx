@@ -127,6 +127,7 @@ export function ApiChatPanel({
   const [uploadRetryFile, setUploadRetryFile] = useState<File | null>(null);
   const [uploadRetryMode, setUploadRetryMode] = useState<"image" | "file" | "voice" | null>(null);
   const [voiceRecordingDurationSec, setVoiceRecordingDurationSec] = useState(0);
+  const [voicePreviewDurationSec, setVoicePreviewDurationSec] = useState(0);
   const [voiceWaveLevels, setVoiceWaveLevels] = useState<number[]>([0.2, 0.4, 0.65, 0.45, 0.25]);
   const [voicePreviewFile, setVoicePreviewFile] = useState<File | null>(null);
   const [voicePreviewUrl, setVoicePreviewUrl] = useState<string | null>(null);
@@ -728,7 +729,7 @@ export function ApiChatPanel({
   );
 
   const uploadAndSendAttachment = useCallback(
-    async (file: File, mode: "image" | "file" | "voice") => {
+    async (file: File, mode: "image" | "file" | "voice", durationSeconds?: number) => {
       if (!conversation) return;
       if (sending || uploading) return;
       if (conversation.chatType === "direct") {
@@ -779,6 +780,9 @@ export function ApiChatPanel({
           mimeType: normalizedMime,
           fileSize: file.size,
           uploadType,
+          ...(uploadType === "voice" && durationSeconds !== undefined
+            ? { durationSeconds: Math.max(1, Math.round(durationSeconds)) }
+            : {}),
         });
         if (!init.ok) {
           setSendError(init.error);
@@ -886,6 +890,7 @@ export function ApiChatPanel({
         }
       };
       recorder.onstop = () => {
+        const recordedDurationSec = Math.max(1, voiceRecordingDurationSec);
         const blob = new Blob(mediaChunksRef.current, { type: recorder.mimeType || "audio/webm" });
         mediaChunksRef.current = [];
         mediaRecorderRef.current = null;
@@ -913,6 +918,7 @@ export function ApiChatPanel({
           }
           setVoicePreviewFile(file);
           setVoicePreviewUrl(URL.createObjectURL(file));
+          setVoicePreviewDurationSec(recordedDurationSec);
         }
       };
       recorder.start();
@@ -967,7 +973,7 @@ export function ApiChatPanel({
       audioCtxRef.current?.close().catch(() => undefined);
       audioCtxRef.current = null;
     }
-  }, [conversation, voicePreviewUrl, voiceRecording]);
+  }, [conversation, voicePreviewDurationSec, voicePreviewUrl, voiceRecording, voiceRecordingDurationSec]);
 
   const cancelVoiceRecording = useCallback(() => {
     mediaChunksRef.current = [];
@@ -1377,6 +1383,7 @@ export function ApiChatPanel({
                     URL.revokeObjectURL(voicePreviewUrl);
                     setVoicePreviewFile(null);
                     setVoicePreviewUrl(null);
+                    setVoicePreviewDurationSec(0);
                   }}
                 >
                   Hủy
@@ -1387,10 +1394,11 @@ export function ApiChatPanel({
                   onClick={() => {
                     const file = voicePreviewFile;
                     if (!file) return;
-                    void uploadAndSendAttachment(file, "voice");
+                    void uploadAndSendAttachment(file, "voice", voicePreviewDurationSec);
                     URL.revokeObjectURL(voicePreviewUrl);
                     setVoicePreviewFile(null);
                     setVoicePreviewUrl(null);
+                    setVoicePreviewDurationSec(0);
                   }}
                 >
                   Gửi ghi âm

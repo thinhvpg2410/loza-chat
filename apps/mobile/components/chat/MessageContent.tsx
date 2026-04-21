@@ -62,6 +62,8 @@ function UnpackedMessageContent({
           position={position}
           name={message.file.name}
           sizeBytes={message.file.sizeBytes}
+          mime={message.file.mime}
+          fileUrl={message.file.url}
           replyTo={message.replyTo}
           onPress={onPress}
           onLongPress={onLongPress}

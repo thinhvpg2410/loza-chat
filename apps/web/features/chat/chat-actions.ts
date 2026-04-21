@@ -293,6 +293,7 @@ export async function initChatUploadAction(input: {
   uploadType: "image" | "file" | "voice" | "video" | "other";
   width?: number;
   height?: number;
+  durationSeconds?: number;
 }): Promise<ChatUploadInitResult> {
   const gate = await assertApiChatEnabled();
   if (!gate.ok) return { ok: false, error: gate.error };
@@ -310,6 +311,7 @@ export async function initChatUploadAction(input: {
         uploadType: input.uploadType,
         ...(input.width !== undefined ? { width: input.width } : {}),
         ...(input.height !== undefined ? { height: input.height } : {}),
+        ...(input.durationSeconds !== undefined ? { durationSeconds: input.durationSeconds } : {}),
       }),
     });
 
