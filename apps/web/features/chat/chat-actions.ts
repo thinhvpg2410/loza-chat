@@ -6,8 +6,10 @@ import { LOZA_ACCESS_COOKIE } from "@/lib/auth/constants";
 import { decodeJwtSub } from "@/lib/auth/decode-jwt-sub";
 import { getWebApiSession } from "@/lib/auth/web-api-session";
 import type { ApiConversationListItem, ApiMessageWithReceipt } from "@/lib/chat/api-dtos";
+import { attachmentReadUrl } from "@/lib/chat/attachment-public-url";
 import { mapConversationListItem } from "@/lib/chat/map-api-conversation";
 import { mapApiMessagesToChatMessages, mapSingleApiMessage } from "@/lib/chat/map-api-message";
+import type { ApiAttachment } from "@/lib/chat/api-dtos";
 import type { Conversation, Message } from "@/lib/types/chat";
 
 export type ChatRealtimeSessionResult =
@@ -85,13 +87,17 @@ export type ListConversationsResult =
   | { ok: true; conversations: Conversation[] }
   | { ok: false; error: string };
 
-export async function fetchConversationsListAction(): Promise<ListConversationsResult> {
+export async function fetchConversationsListAction(
+  type?: "direct" | "group",
+): Promise<ListConversationsResult> {
   const gate = await assertApiChatEnabled();
   if (!gate.ok) return { ok: false, error: gate.error };
 
   try {
+    const path =
+      type !== undefined ? `/conversations?type=${encodeURIComponent(type)}` : "/conversations";
     const { conversations } = await apiFetchJson<{ conversations: ApiConversationListItem[] }>(
-      "/conversations",
+      path,
     );
     return { ok: true, conversations: conversations.map(mapConversationListItem) };
   } catch (e) {
@@ -334,7 +340,7 @@ export async function initChatUploadAction(input: {
 }
 
 export type CompleteChatUploadResult =
-  | { ok: true; attachmentId: string }
+  | { ok: true; attachmentId: string; publicReadUrl: string }
   | { ok: false; error: string };
 
 export async function completeChatUploadAction(
@@ -344,15 +350,32 @@ export async function completeChatUploadAction(
   if (!gate.ok) return { ok: false, error: gate.error };
 
   try {
-    const done = await apiFetchJson<{ attachment: { id: string } }>(
+    const done = await apiFetchJson<{ attachment: ApiAttachment }>(
       `/uploads/${uploadSessionId}/complete`,
       { method: "POST" },
     );
-    return { ok: true, attachmentId: done.attachment.id };
+    const publicReadUrl = attachmentReadUrl(gate.base, done.attachment);
+    return { ok: true, attachmentId: done.attachment.id, publicReadUrl };
   } catch (e) {
     return {
       ok: false,
       error: e instanceof Error ? e.message : "Không hoàn tất upload.",
+    };
+  }
+}
+
+export type HideMessageSelfResult = { ok: true } | { ok: false; error: string };
+
+export async function hideChatMessageForSelfAction(messageId: string): Promise<HideMessageSelfResult> {
+  const gate = await assertApiChatEnabled();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  try {
+    await apiFetchJson(`/messages/${messageId}/hide-self`, { method: "POST", body: "{}" });
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Không ẩn được tin nhắn.",
     };
   }
 }

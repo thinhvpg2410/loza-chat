@@ -154,6 +154,7 @@ export function MessageBubble({
         );
       case "file": {
         const fileUrl = message.fileUrl;
+        const isVideo = Boolean(message.mimeType?.toLowerCase().startsWith("video/"));
         const canPreview =
           Boolean(fileUrl) &&
           isDocumentPreviewable(message.fileName, message.mimeType) &&
@@ -161,6 +162,21 @@ export function MessageBubble({
         return (
           <div className="flex max-w-[min(100%,320px)] flex-col gap-1">
             {replyQuote}
+            {isVideo && fileUrl ? (
+              <div
+                className={`overflow-hidden rounded-lg ${
+                  isOwn ? "rounded-br-sm ring-1 ring-white/25" : "rounded-bl-sm ring-1 ring-black/[0.08]"
+                }`}
+              >
+                <video
+                  src={fileUrl}
+                  controls
+                  playsInline
+                  className="max-h-[240px] w-full bg-black object-contain"
+                  preload="metadata"
+                />
+              </div>
+            ) : null}
             <div
               className={`rounded-lg px-0.5 py-0.5 ${
                 isOwn ? "bg-[var(--zalo-blue)]" : "bg-transparent"

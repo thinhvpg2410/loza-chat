@@ -3,12 +3,16 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatPanel } from "@/components/chat/ChatPanel";
-import { ChatRealtimeProvider } from "@/components/chat/chat-realtime-context";
+import {
+  ChatRealtimeProvider,
+  type GroupRoomEvent,
+} from "@/components/chat/chat-realtime-context";
 import { ConversationList } from "@/components/chat/ConversationList";
 import type { ApiMessageWithReceipt } from "@/lib/chat/api-dtos";
 import { listPreviewFromApiMessage } from "@/lib/chat/list-preview-from-api";
 import { getConversationById, mockConversations } from "@/lib/mock-chat";
 import type { Conversation } from "@/lib/types/chat";
+import { fetchConversationsListAction } from "@/features/chat/chat-actions";
 
 export type ChatWorkspaceProps = {
   chatSource?: "mock" | "api";
@@ -122,6 +126,7 @@ export function ChatWorkspace({
               {
                 id: conversationId,
                 title: "Trò chuyện",
+                chatType: "group" as const,
                 lastMessagePreview: preview,
                 lastMessageAt: at,
                 unreadCount: meta.bumpUnread && conversationId !== active ? 1 : 0,
@@ -131,6 +136,22 @@ export function ChatWorkspace({
       });
     },
     [],
+  );
+
+  const onGroupRoomEvent = useCallback(
+    (ev: GroupRoomEvent) => {
+      if (ev.type === "group_dissolved") {
+        const gone = ev.conversationId;
+        setConversations((prev) => prev.filter((c) => c.id !== gone));
+        if (selectedIdRef.current === gone) {
+          setSelectedId((cur) => (cur === gone ? null : cur));
+        }
+      }
+      void fetchConversationsListAction().then((r) => {
+        if (r.ok) handleConversationsRefresh(r.conversations);
+      });
+    },
+    [handleConversationsRefresh],
   );
 
   const onRemoteMessageUpdatedForList = useCallback(
@@ -176,6 +197,13 @@ export function ChatWorkspace({
         conversation={activeConversation}
         chatSource={chatSource}
         onConversationsRefresh={chatSource === "api" ? handleConversationsRefresh : undefined}
+        onGroupConversationEnded={
+          chatSource === "api"
+            ? (id) => {
+                setSelectedId((cur) => (cur === id ? null : cur));
+              }
+            : undefined
+        }
       />
     </div>
   );
@@ -189,6 +217,7 @@ export function ChatWorkspace({
         activeConversationId={selectedId}
         onRemoteMessageForList={onRemoteMessageForList}
         onRemoteMessageUpdatedForList={onRemoteMessageUpdatedForList}
+        onGroupRoomEvent={onGroupRoomEvent}
       >
         {shell}
       </ChatRealtimeProvider>

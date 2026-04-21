@@ -18,7 +18,7 @@ import { colors, radius, spacing } from "@theme";
 export type PickableMember = {
   id: string;
   name: string;
-  avatarUrl: string;
+  avatarUrl?: string | null;
   subtitle?: string;
 };
 
@@ -76,7 +76,10 @@ export function GroupMemberPickerModal({
             accessibilityLabel="Xong"
             hitSlop={8}
             onPress={() => {
-              onDone?.();
+              if (onDone) {
+                onDone();
+                return;
+              }
               onClose();
             }}
             style={({ pressed }) => ({ opacity: pressed ? 0.65 : 1, padding: spacing.xs, minWidth: 48, alignItems: "flex-end" })}
@@ -114,7 +117,13 @@ export function GroupMemberPickerModal({
                 onPress={() => onToggle(item.id)}
                 style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
               >
-                <Image source={{ uri: item.avatarUrl }} style={styles.avatar} contentFit="cover" transition={100} />
+                {item.avatarUrl ? (
+                  <Image source={{ uri: item.avatarUrl }} style={styles.avatar} contentFit="cover" transition={100} />
+                ) : (
+                  <View style={[styles.avatar, styles.avatarPh]}>
+                    <Ionicons name="person" size={18} color={colors.textMuted} />
+                  </View>
+                )}
                 <View style={styles.meta}>
                   <AppText variant="headline" numberOfLines={1} style={styles.name}>
                     {item.name}
@@ -188,6 +197,10 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: colors.surfaceSecondary,
     marginRight: 10,
+  },
+  avatarPh: {
+    alignItems: "center",
+    justifyContent: "center",
   },
   meta: {
     flex: 1,

@@ -6,9 +6,11 @@ type ChatHeaderProps = {
   conversation: Conversation | null;
   /** When set (e.g. typing), replaces the default presence line under the title. */
   statusOverride?: string | null;
+  /** Nút “Thêm” (group chat: mở thông tin nhóm). */
+  onMoreClick?: () => void;
 };
 
-export function ChatHeader({ conversation, statusOverride = null }: ChatHeaderProps) {
+export function ChatHeader({ conversation, statusOverride = null, onMoreClick }: ChatHeaderProps) {
   if (!conversation) {
     return (
       <header className="flex h-[52px] shrink-0 items-center border-b border-[var(--zalo-border)] bg-white px-3">
@@ -72,6 +74,7 @@ export function ChatHeader({ conversation, statusOverride = null }: ChatHeaderPr
           type="button"
           className="rounded-full p-2 text-[var(--zalo-text-muted)] transition hover:bg-black/[0.05] hover:text-[var(--zalo-text)]"
           title="Thêm"
+          onClick={() => onMoreClick?.()}
         >
           <IconMore className="h-5 w-5" />
           <span className="sr-only">Thêm</span>

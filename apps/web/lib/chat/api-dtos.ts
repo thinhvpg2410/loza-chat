@@ -7,6 +7,43 @@ export type ApiPublicUser = {
   username: string | null;
 };
 
+export type ApiGroupSettings = {
+  onlyAdminsCanPost: boolean;
+  joinApprovalRequired: boolean;
+  onlyAdminsCanAddMembers: boolean;
+  onlyAdminsCanRemoveMembers: boolean;
+  moderatorsCanRecallMessages: boolean;
+};
+
+/** Pending join queue item from `GET /groups/:id/join-requests`. */
+export type ApiJoinQueueItem = {
+  kind: "self_request" | "invite_pending";
+  userId: string;
+  createdAt: string;
+};
+
+export type ApiGroupMember = {
+  userId: string;
+  role: string;
+  status: string;
+  joinedAt: string;
+  user: ApiPublicUser;
+};
+
+export type ApiGroupDetail = {
+  conversationId: string;
+  title: string | null;
+  avatarUrl: string | null;
+  createdById: string | null;
+  createdAt: string;
+  updatedAt: string;
+  myRole: string;
+  myStatus: string;
+  settings: ApiGroupSettings;
+  members: ApiGroupMember[];
+  pendingMembers: ApiGroupMember[];
+};
+
 export type ApiConversationListItem = {
   conversationId: string;
   type: string;

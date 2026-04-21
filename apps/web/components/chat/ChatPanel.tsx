@@ -26,6 +26,7 @@ export type ChatPanelProps = {
   conversation: Conversation | null;
   chatSource?: "mock" | "api";
   onConversationsRefresh?: (conversations: Conversation[]) => void;
+  onGroupConversationEnded?: (conversationId: string) => void;
 };
 
 const MOCK_ATTACH_IMAGE =
@@ -262,6 +263,7 @@ export function ChatPanel({
   conversation,
   chatSource = "mock",
   onConversationsRefresh,
+  onGroupConversationEnded,
 }: ChatPanelProps) {
   if (chatSource === "api") {
     return (
@@ -269,6 +271,7 @@ export function ChatPanel({
         key={conversation?.id ?? "__none__"}
         conversation={conversation}
         onConversationsRefresh={onConversationsRefresh}
+        onGroupConversationEnded={onGroupConversationEnded}
       />
     );
   }

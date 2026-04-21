@@ -5,6 +5,7 @@ import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { ForwardMessageDialog } from "@/components/chat/ForwardMessageDialog";
 import { useChatRealtime } from "@/components/chat/chat-realtime-context";
 import { ChatHeader } from "@/components/chat/ChatHeader";
+import { GroupChatInfoDrawer } from "@/components/groups/GroupChatInfoDrawer";
 import { DocumentPreviewModal } from "@/components/chat/DocumentPreviewModal";
 import { ImagePreviewModal } from "@/components/chat/ImagePreviewModal";
 import { MessageInput } from "@/components/chat/MessageInput";
@@ -25,12 +26,14 @@ import {
   sendChatStickerMessageAction,
   sendChatTextMessageAction,
 } from "@/features/chat/chat-actions";
+import { fetchGroupDetailAction } from "@/features/chat/groups-actions";
+import { useGroupChat } from "@/hooks/useGroupChat";
 import {
   applyPeerReceiptPointersToMessages,
   initialPeerReceiptMaxFromMessages,
   mergeReceiptPointerFromSocketPayload,
 } from "@/lib/chat/apply-peer-receipts";
-import type { ApiMessageWithReceipt } from "@/lib/chat/api-dtos";
+import type { ApiGroupDetail, ApiMessageWithReceipt } from "@/lib/chat/api-dtos";
 import { mapReactions, mapSingleApiMessage } from "@/lib/chat/map-api-message";
 import { maxMessageTimelineRefIso, type MessageTimelineRef } from "@/lib/chat/message-timeline";
 import { messageSnippet } from "@/lib/message-snippet";
@@ -40,6 +43,8 @@ import type { Conversation, Message, MessageReaction, ReplyPreviewRef } from "@/
 type ApiChatPanelProps = {
   conversation: Conversation | null;
   onConversationsRefresh?: (conversations: Conversation[]) => void;
+  /** Sau khi rời / giải tán nhóm từ khay thông tin — để workspace bỏ chọn hội thoại. */
+  onGroupConversationEnded?: (conversationId: string) => void;
 };
 
 type ConfirmActionState =
@@ -77,7 +82,11 @@ function shouldFollowIncomingMessage(
 
 type ScrollToEndAfterPaint = "none" | "smooth" | "auto";
 
-export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPanelProps) {
+export function ApiChatPanel({
+  conversation,
+  onConversationsRefresh,
+  onGroupConversationEnded,
+}: ApiChatPanelProps) {
   const realtime = useChatRealtime();
   const realtimeRef = useRef(realtime);
   useEffect(() => {
@@ -104,7 +113,9 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
   );
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
-  const [peerTyping, setPeerTyping] = useState(false);
+  const [typingPeers, setTypingPeers] = useState<Record<string, boolean>>({});
+  const [groupDetail, setGroupDetail] = useState<ApiGroupDetail | null>(null);
+  const [groupInfoOpen, setGroupInfoOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadingLabel, setUploadingLabel] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmActionState>(null);
@@ -161,14 +172,14 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
       clearTimeout(peerTypingExpireTimerRef.current);
     }
     peerTypingExpireTimerRef.current = setTimeout(() => {
-      setPeerTyping(false);
+      setTypingPeers({});
       peerTypingExpireTimerRef.current = null;
     }, 12_000);
   }, []);
 
   useEffect(() => {
     if (realtime?.socketConnected) return;
-    setPeerTyping(false);
+    setTypingPeers({});
     if (peerTypingExpireTimerRef.current) {
       clearTimeout(peerTypingExpireTimerRef.current);
       peerTypingExpireTimerRef.current = null;
@@ -231,11 +242,12 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
       setSendError(null);
       setMessages([]);
       setNextCursor(null);
-      setPeerTyping(false);
+      setTypingPeers({});
       if (peerTypingExpireTimerRef.current) {
         clearTimeout(peerTypingExpireTimerRef.current);
         peerTypingExpireTimerRef.current = null;
       }
+      setGroupDetail(null);
       peerDeliveredMaxRef.current = null;
       peerReadMaxRef.current = null;
 
@@ -284,6 +296,31 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
   }, [conversation]);
 
   useEffect(() => {
+    if (!conversation || conversation.chatType !== "group") {
+      setGroupDetail(null);
+      return;
+    }
+    let cancelled = false;
+    void fetchGroupDetailAction(conversation.id).then((r) => {
+      if (cancelled) return;
+      setGroupDetail(r.ok ? r.group : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [conversation?.id, conversation?.chatType]);
+
+  const reloadGroupDetail = useCallback(async () => {
+    if (!conversation || conversation.chatType !== "group") return;
+    const r = await fetchGroupDetailAction(conversation.id);
+    if (r.ok) setGroupDetail(r.group);
+  }, [conversation?.id, conversation?.chatType]);
+
+  useEffect(() => {
+    setGroupInfoOpen(false);
+  }, [conversation?.id]);
+
+  useEffect(() => {
     if (!conversation || !realtime?.viewerUserId) return;
     const convId = conversation.id;
     const apiBase = realtime.apiBaseUrl;
@@ -315,7 +352,12 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
       },
       onTypingUpdate: ({ userId, isTyping }) => {
         if (userId === realtime.viewerUserId) return;
-        setPeerTyping(isTyping);
+        setTypingPeers((prev) => {
+          const next = { ...prev };
+          if (isTyping) next[userId] = true;
+          else delete next[userId];
+          return next;
+        });
         if (isTyping) {
           schedulePeerTypingExpire();
         } else if (peerTypingExpireTimerRef.current) {
@@ -430,6 +472,26 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
     const r = await fetchConversationsListAction();
     if (r.ok) onConversationsRefresh(r.conversations);
   }, [onConversationsRefresh]);
+
+  useGroupChat({
+    realtime,
+    conversationId: conversation?.chatType === "group" ? conversation.id : null,
+    isGroup: conversation?.chatType === "group",
+    onGroupEvent: useCallback(
+      (ev) => {
+        void refreshSidebar();
+        if (ev.type === "group_dissolved") {
+          setGroupDetail(null);
+          return;
+        }
+        const id = ev.conversationId;
+        void fetchGroupDetailAction(id).then((r) => {
+          setGroupDetail(r.ok ? r.group : null);
+        });
+      },
+      [refreshSidebar],
+    ),
+  });
 
   const applyServerReactionSummary = useCallback((messageId: string, summary: ApiMessageWithReceipt["reactions"]) => {
     const rx = mapReactions(summary);
@@ -854,7 +916,12 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
         }
       : null;
 
-  const typingStatus = peerTyping ? "Đang soạn tin nhắn…" : null;
+  const typingPeerCount = useMemo(() => {
+    if (!realtime) return 0;
+    return Object.entries(typingPeers).filter(
+      ([uid, on]) => on && uid !== realtime.viewerUserId,
+    ).length;
+  }, [typingPeers, realtime]);
 
   const directMessagingGuard = useMemo(() => {
     const c = conversation;
@@ -867,6 +934,31 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
     if (!rel || rel === "friend") return { canSend: true, bannerKind: null };
     return { canSend: true, bannerKind: "stranger" as const };
   }, [conversation]);
+
+  const groupMessagingGuard = useMemo(() => {
+    const c = conversation;
+    if (!c || c.chatType !== "group") {
+      return { canSend: true, banner: null as string | null };
+    }
+    if (!groupDetail) {
+      return { canSend: true, banner: null as string | null };
+    }
+    if (groupDetail.myStatus === "pending") {
+      return {
+        canSend: false,
+        banner: "Bạn đang chờ trưởng nhóm hoặc phó nhóm duyệt vào nhóm.",
+      };
+    }
+    if (groupDetail.settings.onlyAdminsCanPost && groupDetail.myRole === "member") {
+      return {
+        canSend: false,
+        banner: "Chỉ trưởng nhóm và phó nhóm được gửi tin trong nhóm này.",
+      };
+    }
+    return { canSend: true, banner: null as string | null };
+  }, [conversation, groupDetail]);
+
+  const canSendMessages = directMessagingGuard.canSend && groupMessagingGuard.canSend;
 
   const directMessagingBanner =
     directMessagingGuard.bannerKind === "blocked_by_me" ? (
@@ -899,12 +991,24 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
       </div>
     ) : null;
 
+  const groupMessagingBanner =
+    groupMessagingGuard.banner && conversation?.chatType === "group" ? (
+      <div className="border-t border-amber-200 bg-amber-50 px-3 py-2" role="status">
+        <p className="text-center text-[12px] text-amber-950">{groupMessagingGuard.banner}</p>
+      </div>
+    ) : null;
+
   return (
     <section
       className="flex min-w-0 flex-1 flex-col bg-[var(--zalo-chat-bg)]"
       aria-label="Khung trò chuyện"
     >
-      <ChatHeader conversation={conversation} />
+      <ChatHeader
+        conversation={conversation}
+        onMoreClick={
+          conversation?.chatType === "group" ? () => setGroupInfoOpen(true) : undefined
+        }
+      />
       <div
         ref={messageScrollRef}
         onScroll={onMessageScroll}
@@ -994,7 +1098,8 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
             </div>
           ) : null}
           {directMessagingBanner}
-          {peerTyping && conversation ? (
+          {groupMessagingBanner}
+          {typingPeerCount > 0 && conversation ? (
             <div
               className="shrink-0 border-t border-[var(--zalo-border)] bg-[var(--zalo-surface)]/80 px-2"
               role="status"
@@ -1004,7 +1109,9 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
                 label={
                   conversation.chatType === "direct"
                     ? `${conversation.title} đang nhập…`
-                    : "Đang soạn tin nhắn…"
+                    : typingPeerCount === 1
+                      ? "Đang soạn tin nhắn…"
+                      : `${typingPeerCount} người đang nhập…`
                 }
               />
             </div>
@@ -1016,7 +1123,7 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
               notifyTypingActivity();
             }}
             onSend={() => void sendText()}
-            disabled={loading || sending || uploading || !directMessagingGuard.canSend}
+            disabled={loading || sending || uploading || !canSendMessages}
             replyTo={replyRef}
             onCancelReply={() => setReplyTarget(null)}
             attachmentsEnabled
@@ -1102,6 +1209,19 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
         downloadUrl={documentPreview?.downloadUrl ?? null}
         onClose={() => setDocumentPreview(null)}
       />
+      {conversation?.chatType === "group" ? (
+        <GroupChatInfoDrawer
+          open={groupInfoOpen}
+          onClose={() => setGroupInfoOpen(false)}
+          conversation={conversation}
+          groupDetail={groupDetail}
+          onGroupDetailChange={setGroupDetail}
+          viewerHintUserId={realtime?.viewerUserId ?? null}
+          reloadGroupDetail={reloadGroupDetail}
+          refreshConversationList={refreshSidebar}
+          onGroupConversationEnded={onGroupConversationEnded}
+        />
+      ) : null}
     </section>
   );
 }

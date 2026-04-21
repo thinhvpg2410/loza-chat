@@ -28,6 +28,7 @@ export function mapConversationListItem(item: ApiConversationListItem): Conversa
     unreadCount: item.unreadCount,
     isMuted: Boolean(item.mutedUntil),
     chatType: item.type === "direct" ? "direct" : "group",
+    memberCount: item.memberCount,
     directPeerId: isDirect ? item.otherParticipant?.id : undefined,
     directPeerRelationshipStatus: isDirect ? (rel ?? null) : null,
   };

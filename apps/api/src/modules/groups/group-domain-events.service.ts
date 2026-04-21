@@ -3,6 +3,11 @@ import { Subject } from 'rxjs';
 
 export type GroupDomainEvent =
   | {
+      type: 'group.created';
+      conversationId: string;
+      title: string;
+    }
+  | {
       type: 'group.updated';
       conversationId: string;
       payload: { title?: string | null; avatarUrl?: string | null };
@@ -18,9 +23,25 @@ export type GroupDomainEvent =
       userId: string;
     }
   | {
-      type: 'group.system_message';
+      type: 'group.dissolved';
       conversationId: string;
-      messageId: string;
+    }
+  | {
+      type: 'group.join_request_created';
+      conversationId: string;
+      userId: string;
+    }
+  | {
+      type: 'group.join_request_decided';
+      conversationId: string;
+      userId: string;
+      approved: boolean;
+    }
+  | {
+      type: 'group.member_role_updated';
+      conversationId: string;
+      userId: string;
+      role: 'owner' | 'admin' | 'member';
     };
 
 @Injectable()

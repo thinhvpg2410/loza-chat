@@ -1,16 +1,23 @@
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
+import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
-import { Alert, FlatList, Pressable, StyleSheet, TextInput, View } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, TextInput, View } from "react-native";
 
 import { GroupMemberPickerModal, SelectedMemberChips } from "@components/group";
 import type { PickableMember } from "@components/group";
 import { AppTabScreen, ShellHeader } from "@components/shell";
 import { AppText } from "@ui/AppText";
+import { USE_API_MOCK } from "@/constants/env";
 import { MOCK_FRIENDS } from "@/constants/mockData";
+import { fetchFriendsListApi } from "@/services/friends/friendsApi";
+import { createGroupApi } from "@/services/groups/groupsApi";
+import { attachmentPublicReadUrl } from "@/services/media/publicMediaUrl";
+import { uploadLocalFileToAttachment } from "@/services/uploads/directUpload";
 import { colors, radius, spacing } from "@theme";
 
-const pickables: PickableMember[] = MOCK_FRIENDS.map((f) => ({
+const mockPickables: PickableMember[] = MOCK_FRIENDS.map((f) => ({
   id: f.id,
   name: f.name,
   avatarUrl: f.avatarUrl,
@@ -22,11 +29,54 @@ export default function CreateGroupScreen() {
   const [name, setName] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [apiFriends, setApiFriends] = useState<PickableMember[]>([]);
+  const [friendsLoading, setFriendsLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [groupAvatarUri, setGroupAvatarUri] = useState<string | null>(null);
 
-  const selectedMembers = useMemo(
-    () => MOCK_FRIENDS.filter((f) => selectedIds.has(f.id)).map((f) => ({ id: f.id, name: f.name })),
-    [selectedIds],
+  useEffect(() => {
+    if (USE_API_MOCK) return;
+    let cancelled = false;
+    setFriendsLoading(true);
+    void fetchFriendsListApi()
+      .then((list) => {
+        if (cancelled) return;
+        setApiFriends(
+          list.map((f) => ({
+            id: f.id,
+            name: f.displayName,
+            avatarUrl: f.avatarUrl ?? undefined,
+            subtitle: f.username ? `@${f.username}` : undefined,
+          })),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setApiFriends([]);
+      })
+      .finally(() => {
+        if (!cancelled) setFriendsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const pickables = USE_API_MOCK ? mockPickables : apiFriends;
+
+  const quickList = useMemo(
+    () =>
+      USE_API_MOCK
+        ? MOCK_FRIENDS.map((f) => ({ id: f.id, label: f.name }))
+        : apiFriends.map((f) => ({ id: f.id, label: f.name })),
+    [apiFriends],
   );
+
+  const selectedMembers = useMemo(() => {
+    if (USE_API_MOCK) {
+      return MOCK_FRIENDS.filter((f) => selectedIds.has(f.id)).map((f) => ({ id: f.id, name: f.name }));
+    }
+    return apiFriends.filter((f) => selectedIds.has(f.id)).map((f) => ({ id: f.id, name: f.name }));
+  }, [selectedIds, apiFriends]);
 
   const toggle = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -45,17 +95,71 @@ export default function CreateGroupScreen() {
     });
   }, []);
 
-  const canCreate = name.trim().length > 0 && selectedIds.size > 0;
+  const canCreate = name.trim().length > 0 && selectedIds.size >= 2 && !creating;
+
+  const pickGroupAvatar = useCallback(async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert("Quyền truy cập", "Cần quyền thư viện ảnh để chọn ảnh nhóm.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    });
+    if (result.canceled) return;
+    const uri = result.assets[0]?.uri;
+    if (uri) setGroupAvatarUri(uri);
+  }, []);
 
   const onCreate = useCallback(() => {
     if (!canCreate) return;
-    Alert.alert("Đã tạo nhóm", `“${name.trim()}” — ${selectedIds.size} thành viên (mock).`, [
-      {
-        text: "OK",
-        onPress: () => router.back(),
-      },
-    ]);
-  }, [canCreate, name, router, selectedIds.size]);
+    if (USE_API_MOCK) {
+      if (selectedIds.size < 2) {
+        Alert.alert("Thiếu thành viên", "Chọn ít nhất 2 thành viên để tạo nhóm.");
+        return;
+      }
+      Alert.alert("Đã tạo nhóm", `“${name.trim()}” — ${selectedIds.size} thành viên (mock).`, [
+        { text: "OK", onPress: () => router.back() },
+      ]);
+      return;
+    }
+    setCreating(true);
+    void (async () => {
+      try {
+        let avatarUrl: string | undefined;
+        if (groupAvatarUri) {
+          const att = await uploadLocalFileToAttachment({
+            fileUri: groupAvatarUri,
+            fileName: "group-avatar.jpg",
+            mimeType: "image/jpeg",
+            uploadType: "image",
+          });
+          avatarUrl = attachmentPublicReadUrl(att);
+        }
+        const res = await createGroupApi({
+          title: name.trim(),
+          memberIds: [...selectedIds],
+          ...(avatarUrl ? { avatarUrl } : {}),
+        });
+        router.replace({
+          pathname: "/main/chat/[id]",
+          params: {
+            id: res.group.conversationId,
+            title: encodeURIComponent(res.group.title ?? name.trim()),
+          },
+        });
+      } catch (e) {
+        const msg = (e as { response?: { data?: { message?: string } }; message?: string })?.response?.data
+          ?.message;
+        Alert.alert("Lỗi", String(msg ?? (e instanceof Error ? e.message : "Không tạo được nhóm.")));
+      } finally {
+        setCreating(false);
+      }
+    })();
+  }, [canCreate, groupAvatarUri, name, router, selectedIds]);
 
   return (
     <AppTabScreen edges={["top", "left", "right", "bottom"]}>
@@ -78,16 +182,50 @@ export default function CreateGroupScreen() {
           <Pressable
             accessibilityLabel="Tạo"
             hitSlop={8}
-            disabled={!canCreate}
+            disabled={!canCreate || creating}
             onPress={onCreate}
-            style={({ pressed }) => ({ opacity: !canCreate ? 0.35 : pressed ? 0.65 : 1, padding: spacing.xs })}
+            style={({ pressed }) => ({
+              opacity: !canCreate || creating ? 0.35 : pressed ? 0.65 : 1,
+              padding: spacing.xs,
+            })}
           >
-            <AppText variant="subhead" color="primary" style={{ fontWeight: "700" }}>
-              Tạo
-            </AppText>
+            {creating ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <AppText variant="subhead" color="primary" style={{ fontWeight: "700" }}>
+                Tạo
+              </AppText>
+            )}
           </Pressable>
         }
       />
+
+      <View style={[styles.fieldBlock, { flexDirection: "row", alignItems: "center", gap: spacing.md }]}>
+        <Pressable
+          onPress={() => void pickGroupAvatar()}
+          style={({ pressed }) => [styles.avatarPick, pressed && { opacity: 0.85 }]}
+        >
+          {groupAvatarUri ? (
+            <Image source={{ uri: groupAvatarUri }} style={styles.avatarImg} contentFit="cover" />
+          ) : (
+            <View style={[styles.avatarImg, styles.avatarPh]}>
+              <Ionicons name="camera-outline" size={22} color={colors.textMuted} />
+            </View>
+          )}
+        </Pressable>
+        <View style={{ flex: 1 }}>
+          <AppText variant="micro" color="textMuted">
+            Ảnh nhóm (tùy chọn, crop vuông)
+          </AppText>
+          {groupAvatarUri ? (
+            <Pressable onPress={() => setGroupAvatarUri(null)} style={{ marginTop: 4 }}>
+              <AppText variant="caption" color="primary" style={{ fontWeight: "600" }}>
+                Bỏ ảnh
+              </AppText>
+            </Pressable>
+          ) : null}
+        </View>
+      </View>
 
       <View style={styles.fieldBlock}>
         <AppText variant="caption" color="textMuted" style={styles.label}>
@@ -116,14 +254,22 @@ export default function CreateGroupScreen() {
 
       <SelectedMemberChips members={selectedMembers} onRemove={removeChip} />
 
+      {friendsLoading && !USE_API_MOCK ? (
+        <View style={{ padding: spacing.md }}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      ) : null}
+
       <FlatList
-        data={MOCK_FRIENDS}
+        data={quickList}
         keyExtractor={(item) => item.id}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.listHint}
         ListHeaderComponent={
           <AppText variant="micro" color="textPlaceholder" style={{ marginBottom: spacing.sm }}>
-            Hoặc chọn nhanh bên dưới (mock).
+            {USE_API_MOCK
+              ? "Hoặc chọn nhanh bên dưới (mock). Cần ít nhất 2 thành viên."
+              : "Chọn bạn bè — tối thiểu 2 thành viên để tạo nhóm."}
           </AppText>
         }
         renderItem={({ item }) => {
@@ -134,9 +280,13 @@ export default function CreateGroupScreen() {
               style={({ pressed }) => [styles.quickRow, pressed && { backgroundColor: colors.surface }]}
             >
               <AppText variant="headline" numberOfLines={1} style={{ flex: 1, fontWeight: "600" }}>
-                {item.name}
+                {item.label}
               </AppText>
-              <Ionicons name={on ? "checkmark-circle" : "ellipse-outline"} size={22} color={on ? colors.primary : colors.textMuted} />
+              <Ionicons
+                name={on ? "checkmark-circle" : "ellipse-outline"}
+                size={22}
+                color={on ? colors.primary : colors.textMuted}
+              />
             </Pressable>
           );
         }}
@@ -172,6 +322,20 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.text,
     backgroundColor: colors.background,
+  },
+  avatarPick: {},
+  avatarImg: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  avatarPh: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderStyle: "dashed",
   },
   memberHeader: {
     flexDirection: "row",

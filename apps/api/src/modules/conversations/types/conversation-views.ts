@@ -1,5 +1,6 @@
 import type {
   ConversationMemberRole,
+  ConversationMemberStatus,
   ConversationType,
   MessageType,
 } from '@prisma/client';
@@ -48,6 +49,7 @@ export interface ConversationDetailView {
   myMembership: {
     joinedAt: Date;
     role: ConversationMemberRole | null;
+    status: ConversationMemberStatus;
     lastReadMessageId: string | null;
     lastDeliveredMessageId: string | null;
     mutedUntil: Date | null;

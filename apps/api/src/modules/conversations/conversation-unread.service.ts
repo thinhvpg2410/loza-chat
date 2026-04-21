@@ -29,6 +29,10 @@ export class ConversationUnreadService {
       LEFT JOIN messages lr ON lr.id = cm.last_read_message_id
       WHERE m.deleted_at IS NULL
         AND m.sender_id <> ${userId}
+        AND NOT EXISTS (
+          SELECT 1 FROM message_user_hidden h
+          WHERE h.message_id = m.id AND h.user_id = ${userId}
+        )
         AND m.conversation_id IN (${Prisma.join(
           conversationIds.map((id) => Prisma.sql`${id}`),
         )})

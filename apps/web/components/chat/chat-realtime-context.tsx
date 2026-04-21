@@ -13,6 +13,16 @@ export type ChatReceiptPayload = {
   at: string;
 };
 
+export type GroupRoomEvent =
+  | { type: "group_created"; conversationId: string; title: string }
+  | { type: "group_updated"; conversationId: string; payload?: Record<string, unknown> }
+  | { type: "members_added"; conversationId: string; userIds: string[] }
+  | { type: "members_removed"; conversationId: string; userId: string }
+  | { type: "group_dissolved"; conversationId: string }
+  | { type: "join_request_created"; conversationId: string; userId: string }
+  | { type: "join_request_decided"; conversationId: string; userId: string; approved: boolean }
+  | { type: "member_role_updated"; conversationId: string; userId: string; role: string };
+
 export type RoomRealtimeHandlers = {
   onMessageNew: (row: ApiMessageWithReceipt) => void;
   onMessageUpdated?: (row: ApiMessageWithReceipt) => void;
@@ -25,7 +35,7 @@ export type RoomRealtimeHandlers = {
   }) => void;
 };
 
-type ChatRealtimeContextValue = {
+export type ChatRealtimeContextValue = {
   status: "idle" | "connecting" | "ready" | "error";
   connectionError: string | null;
   /** True after first successful Socket.IO connect for this session (false on disconnect). */
@@ -33,6 +43,8 @@ type ChatRealtimeContextValue = {
   viewerUserId: string;
   apiBaseUrl: string;
   registerRoom: (conversationId: string, handlers: RoomRealtimeHandlers) => () => void;
+  /** Subscribe to normalized group room events (also receives provider `onGroupRoomEvent`). */
+  subscribeGroupRoom: (listener: (ev: GroupRoomEvent) => void) => () => void;
   startTyping: (conversationId: string) => void;
   stopTyping: (conversationId: string) => void;
   emitSeen: (conversationId: string, messageId: string) => void;
@@ -54,6 +66,7 @@ type ChatRealtimeProviderProps = {
     conversationId: string,
     row: ApiMessageWithReceipt,
   ) => void;
+  onGroupRoomEvent?: (ev: GroupRoomEvent) => void;
 };
 
 export function ChatRealtimeProvider({
@@ -62,6 +75,7 @@ export function ChatRealtimeProvider({
   activeConversationId,
   onRemoteMessageForList,
   onRemoteMessageUpdatedForList,
+  onGroupRoomEvent,
 }: ChatRealtimeProviderProps) {
   const [status, setStatus] = useState<"idle" | "connecting" | "ready" | "error">("idle");
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -75,16 +89,25 @@ export function ChatRealtimeProvider({
   const socketRef = useRef<Socket | null>(null);
   const joinedRef = useRef<Set<string>>(new Set());
   const roomsRef = useRef<Map<string, RoomRealtimeHandlers>>(new Map());
+  const groupListenersRef = useRef(new Set<(ev: GroupRoomEvent) => void>());
   const conversationIdsRef = useRef(conversationIds);
   const activeIdRef = useRef(activeConversationId);
   const onListRef = useRef(onRemoteMessageForList);
   const onListUpdatedRef = useRef(onRemoteMessageUpdatedForList);
+  const onGroupRef = useRef(onGroupRoomEvent);
   useEffect(() => {
     conversationIdsRef.current = conversationIds;
     activeIdRef.current = activeConversationId;
     onListRef.current = onRemoteMessageForList;
     onListUpdatedRef.current = onRemoteMessageUpdatedForList;
-  }, [conversationIds, activeConversationId, onRemoteMessageForList, onRemoteMessageUpdatedForList]);
+    onGroupRef.current = onGroupRoomEvent;
+  }, [
+    conversationIds,
+    activeConversationId,
+    onRemoteMessageForList,
+    onRemoteMessageUpdatedForList,
+    onGroupRoomEvent,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -238,6 +261,96 @@ export function ChatRealtimeProvider({
       setConnectionError(msg);
     };
 
+    const dispatchGroup = (ev: GroupRoomEvent) => {
+      onGroupRef.current?.(ev);
+      for (const fn of groupListenersRef.current) {
+        try {
+          fn(ev);
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+
+    const onGroupUpdated = (payload: {
+      conversationId?: string;
+      title?: unknown;
+      avatarUrl?: unknown;
+    }) => {
+      const id = payload.conversationId;
+      if (!id) return;
+      dispatchGroup({
+        type: "group_updated",
+        conversationId: id,
+        payload: payload as Record<string, unknown>,
+      });
+    };
+
+    const onMembersAdded = (payload: { conversationId?: string; userIds?: string[] }) => {
+      const id = payload.conversationId;
+      const userIds = payload.userIds;
+      if (!id || !userIds) return;
+      dispatchGroup({ type: "members_added", conversationId: id, userIds });
+    };
+
+    const onMembersRemoved = (payload: { conversationId?: string; userId?: string }) => {
+      const id = payload.conversationId;
+      const userId = payload.userId;
+      if (!id || !userId) return;
+      dispatchGroup({ type: "members_removed", conversationId: id, userId });
+    };
+
+    const onGroupDissolved = (payload: { conversationId?: string }) => {
+      const id = payload.conversationId;
+      if (!id) return;
+      dispatchGroup({ type: "group_dissolved", conversationId: id });
+    };
+
+    const onGroupCreatedDot = (payload: { conversationId?: string; title?: unknown }) => {
+      const id = payload.conversationId;
+      if (!id) return;
+      dispatchGroup({
+        type: "group_created",
+        conversationId: id,
+        title: typeof payload.title === "string" ? payload.title : "",
+      });
+    };
+
+    const onJoinRequestCreated = (payload: { conversationId?: string; userId?: string }) => {
+      const id = payload.conversationId;
+      const userId = payload.userId;
+      if (!id || !userId) return;
+      dispatchGroup({ type: "join_request_created", conversationId: id, userId });
+    };
+
+    const onJoinRequestDecided = (payload: {
+      conversationId?: string;
+      userId?: string;
+      approved?: boolean;
+    }) => {
+      const id = payload.conversationId;
+      const userId = payload.userId;
+      if (!id || !userId || typeof payload.approved !== "boolean") return;
+      dispatchGroup({
+        type: "join_request_decided",
+        conversationId: id,
+        userId,
+        approved: payload.approved,
+      });
+    };
+
+    const onMemberRoleUpdated = (payload: {
+      conversationId?: string;
+      userId?: string;
+      role?: string;
+    }) => {
+      const id = payload.conversationId;
+      const userId = payload.userId;
+      const role = payload.role;
+      if (!id || !userId || !role) return;
+      dispatchGroup({ type: "member_role_updated", conversationId: id, userId, role });
+    };
+
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
     socket.on("connect_error", onConnectError);
@@ -248,6 +361,14 @@ export function ChatRealtimeProvider({
     socket.on("message:delivered", onDelivered);
     socket.on("message:seen", onSeen);
     socket.on("message:reaction_updated", onReaction);
+    socket.on("group:updated", onGroupUpdated);
+    socket.on("group:members_added", onMembersAdded);
+    socket.on("group:members_removed", onMembersRemoved);
+    socket.on("group:dissolved", onGroupDissolved);
+    socket.on("group.created", onGroupCreatedDot);
+    socket.on("group.join_request_created", onJoinRequestCreated);
+    socket.on("group.join_request_decided", onJoinRequestDecided);
+    socket.on("group.member_role_updated", onMemberRoleUpdated);
     socket.on("error", onSocketError);
 
     if (socket.connected) {
@@ -267,6 +388,14 @@ export function ChatRealtimeProvider({
       socket.off("message:delivered", onDelivered);
       socket.off("message:seen", onSeen);
       socket.off("message:reaction_updated", onReaction);
+      socket.off("group:updated", onGroupUpdated);
+      socket.off("group:members_added", onMembersAdded);
+      socket.off("group:members_removed", onMembersRemoved);
+      socket.off("group:dissolved", onGroupDissolved);
+      socket.off("group.created", onGroupCreatedDot);
+      socket.off("group.join_request_created", onJoinRequestCreated);
+      socket.off("group.join_request_decided", onJoinRequestDecided);
+      socket.off("group.member_role_updated", onMemberRoleUpdated);
       socket.off("error", onSocketError);
       socket.disconnect();
       socketRef.current = null;
@@ -286,6 +415,13 @@ export function ChatRealtimeProvider({
       if (roomsRef.current.get(conversationId) === handlers) {
         roomsRef.current.delete(conversationId);
       }
+    };
+  }, []);
+
+  const subscribeGroupRoom = useCallback((listener: (ev: GroupRoomEvent) => void) => {
+    groupListenersRef.current.add(listener);
+    return () => {
+      groupListenersRef.current.delete(listener);
     };
   }, []);
 
@@ -315,6 +451,7 @@ export function ChatRealtimeProvider({
           viewerUserId: "",
           apiBaseUrl: "",
           registerRoom: () => () => {},
+          subscribeGroupRoom: () => () => {},
           startTyping: () => {},
           stopTyping: () => {},
           emitSeen: () => {},
@@ -330,6 +467,7 @@ export function ChatRealtimeProvider({
       viewerUserId: session.viewerUserId,
       apiBaseUrl: session.apiBaseUrl,
       registerRoom,
+      subscribeGroupRoom,
       startTyping,
       stopTyping,
       emitSeen,
@@ -341,6 +479,7 @@ export function ChatRealtimeProvider({
     connectionError,
     socketConnected,
     registerRoom,
+    subscribeGroupRoom,
     startTyping,
     stopTyping,
     emitSeen,

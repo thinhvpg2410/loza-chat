@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ConversationMemberRole,
+  ConversationMemberStatus,
   ConversationType,
   MessageType,
 } from '@prisma/client';
@@ -91,6 +92,12 @@ export class MyMembershipOpenApiDto {
     nullable: true,
   })
   role!: ConversationMemberRole | null;
+
+  @ApiProperty({
+    enum: ConversationMemberStatus,
+    enumName: 'ConversationMemberStatus',
+  })
+  status!: ConversationMemberStatus;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   lastReadMessageId!: string | null;

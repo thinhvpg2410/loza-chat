@@ -33,6 +33,37 @@ export type ChatRealtimeHandlers = {
   onMessageSeen?: (payload: ReceiptBroadcastPayload) => void;
 };
 
+/** Normalized group room events (server dùng `message:new` / `message:updated` cho tin nhắn). */
+export type GroupRoomEvent =
+  | { type: "group_updated"; conversationId: string }
+  | { type: "members_added"; conversationId: string; userIds: string[] }
+  | { type: "members_removed"; conversationId: string; userId: string }
+  | { type: "group_dissolved"; conversationId: string }
+  | { type: "group_created"; conversationId: string; title?: string }
+  | { type: "join_request_created"; conversationId: string; userId: string }
+  | { type: "join_request_decided"; conversationId: string; userId: string; approved: boolean }
+  | { type: "member_role_updated"; conversationId: string; userId: string; role: string };
+
+const groupRoomListeners = new Set<(ev: GroupRoomEvent) => void>();
+
+export function subscribeGroupRoomEvents(listener: (ev: GroupRoomEvent) => void): () => void {
+  groupRoomListeners.add(listener);
+  return () => {
+    groupRoomListeners.delete(listener);
+  };
+}
+
+function dispatchGroupRoomEvent(ev: GroupRoomEvent) {
+  useChatStore.getState().scheduleConversationsListRefresh();
+  for (const fn of groupRoomListeners) {
+    try {
+      fn(ev);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 const EV_MESSAGE_NEW = "message:new";
 const EV_MESSAGE_UPDATED = "message:updated";
 const EV_TYPING_UPDATE = "typing:update";
@@ -154,6 +185,92 @@ export function connectChatSocket(accessToken?: string): () => void {
     }
   });
 
+  socket.on("group:updated", (body: unknown) => {
+    if (!body || typeof body !== "object") return;
+    const cid = (body as { conversationId?: string }).conversationId;
+    if (typeof cid === "string" && cid.length) {
+      dispatchGroupRoomEvent({ type: "group_updated", conversationId: cid });
+    }
+  });
+  socket.on("group:members_added", (body: unknown) => {
+    if (!body || typeof body !== "object") return;
+    const raw = body as { conversationId?: string; userIds?: string[] };
+    const cid = raw.conversationId;
+    const userIds = raw.userIds;
+    if (typeof cid === "string" && cid.length && Array.isArray(userIds)) {
+      dispatchGroupRoomEvent({ type: "members_added", conversationId: cid, userIds });
+    }
+  });
+  socket.on("group:members_removed", (body: unknown) => {
+    if (!body || typeof body !== "object") return;
+    const raw = body as { conversationId?: string; userId?: string };
+    const cid = raw.conversationId;
+    const userId = raw.userId;
+    if (typeof cid === "string" && cid.length && typeof userId === "string") {
+      dispatchGroupRoomEvent({ type: "members_removed", conversationId: cid, userId });
+    }
+  });
+  socket.on("group:dissolved", (body: unknown) => {
+    if (!body || typeof body !== "object") return;
+    const cid = (body as { conversationId?: string }).conversationId;
+    if (typeof cid === "string" && cid.length) {
+      useChatStore.getState().notifyGroupDissolved(cid);
+      dispatchGroupRoomEvent({ type: "group_dissolved", conversationId: cid });
+    }
+  });
+
+  socket.on("group.created", (body: unknown) => {
+    if (!body || typeof body !== "object") return;
+    const raw = body as { conversationId?: string; title?: string };
+    const cid = raw.conversationId;
+    if (typeof cid === "string" && cid.length) {
+      dispatchGroupRoomEvent({
+        type: "group_created",
+        conversationId: cid,
+        ...(typeof raw.title === "string" ? { title: raw.title } : {}),
+      });
+    }
+  });
+  socket.on("group.join_request_created", (body: unknown) => {
+    if (!body || typeof body !== "object") return;
+    const raw = body as { conversationId?: string; userId?: string };
+    if (typeof raw.conversationId === "string" && typeof raw.userId === "string") {
+      dispatchGroupRoomEvent({
+        type: "join_request_created",
+        conversationId: raw.conversationId,
+        userId: raw.userId,
+      });
+    }
+  });
+  socket.on("group.join_request_decided", (body: unknown) => {
+    if (!body || typeof body !== "object") return;
+    const raw = body as { conversationId?: string; userId?: string; approved?: boolean };
+    if (
+      typeof raw.conversationId === "string" &&
+      typeof raw.userId === "string" &&
+      typeof raw.approved === "boolean"
+    ) {
+      dispatchGroupRoomEvent({
+        type: "join_request_decided",
+        conversationId: raw.conversationId,
+        userId: raw.userId,
+        approved: raw.approved,
+      });
+    }
+  });
+  socket.on("group.member_role_updated", (body: unknown) => {
+    if (!body || typeof body !== "object") return;
+    const raw = body as { conversationId?: string; userId?: string; role?: string };
+    if (typeof raw.conversationId === "string" && typeof raw.userId === "string" && typeof raw.role === "string") {
+      dispatchGroupRoomEvent({
+        type: "member_role_updated",
+        conversationId: raw.conversationId,
+        userId: raw.userId,
+        role: raw.role,
+      });
+    }
+  });
+
   return () => {
     stopHeartbeatLoop();
     socket?.off("connect");
@@ -164,6 +281,14 @@ export function connectChatSocket(accessToken?: string): () => void {
     socket?.off(EV_REACTION_UPDATED);
     socket?.off(EV_MESSAGE_DELIVERED);
     socket?.off(EV_MESSAGE_SEEN);
+    socket?.off("group:updated");
+    socket?.off("group:members_added");
+    socket?.off("group:members_removed");
+    socket?.off("group:dissolved");
+    socket?.off("group.created");
+    socket?.off("group.join_request_created");
+    socket?.off("group.join_request_decided");
+    socket?.off("group.member_role_updated");
     socket?.disconnect();
     socket = null;
   };

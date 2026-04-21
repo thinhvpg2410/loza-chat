@@ -25,6 +25,17 @@ enum ConversationMemberRole {
   member
 }
 
+enum ConversationMemberStatus {
+  pending
+  active
+}
+
+enum GroupJoinRequestStatus {
+  pending
+  approved
+  rejected
+}
+
 enum MessageType {
   text
   image
@@ -91,6 +102,9 @@ model User {
   attachmentsUploaded      Attachment[]
   recentStickers           UserRecentSticker[]
   messageReactions         MessageReaction[]
+  groupJoinRequests        GroupJoinRequest[]    @relation("GroupJoinRequestApplicant")
+  groupJoinRequestsResolved GroupJoinRequest[]   @relation("GroupJoinRequestResolvedBy")
+  messageHides             MessageUserHidden[]
 
   @@map("users")
 }
@@ -243,12 +257,16 @@ model Conversation {
   type            ConversationType
   title           String?
   avatarUrl       String?          @map("avatar_url")
+  /// Group-only JSON settings: onlyAdminsCanPost, joinApprovalRequired, onlyAdminsCanAddMembers, onlyAdminsCanRemoveMembers
+  groupSettingsJson Json?          @map("group_settings_json")
   createdById     String?          @map("created_by_id")
   createdAt       DateTime         @default(now()) @map("created_at")
   updatedAt       DateTime         @updatedAt @map("updated_at")
   lastMessageId   String?          @unique @map("last_message_id")
   directUserOneId String?          @map("direct_user_one_id")
   directUserTwoId String?          @map("direct_user_two_id")
+  /// Group-only: set when the group is dissolved (soft). Members are removed in app layer; conversation row kept for audit.
+  dissolvedAt     DateTime?        @map("dissolved_at")
 
   createdBy     User?                @relation("ConversationCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   directUserOne User?                @relation("DirectConversationsUserOne", fields: [directUserOneId], references: [id], onDelete: Restrict)
@@ -257,6 +275,7 @@ model Conversation {
   members       ConversationMember[]
   messages      Message[]
   attachments   Attachment[]
+  groupJoinRequests GroupJoinRequest[]
 
   @@index([updatedAt(sort: Desc)])
   /// Direct threads: at most one row per (directUserOneId, directUserTwoId); enforced by partial unique index `conversations_direct_pair_uidx` in migrations.
@@ -268,6 +287,7 @@ model ConversationMember {
   conversationId         String                  @map("conversation_id")
   userId                 String                  @map("user_id")
   role                   ConversationMemberRole? @map("role")
+  status                 ConversationMemberStatus @default(active) @map("status")
   joinedAt               DateTime                @default(now()) @map("joined_at")
   lastReadMessageId      String?                 @map("last_read_message_id")
   lastDeliveredMessageId String?                 @map("last_delivered_message_id")
@@ -282,6 +302,24 @@ model ConversationMember {
   @@unique([conversationId, userId])
   @@index([userId])
   @@map("conversation_members")
+}
+
+/// User-initiated join when `joinApprovalRequired` is enabled (no `conversation_members` row until approved).
+model GroupJoinRequest {
+  id               String                 @id @default(uuid())
+  conversationId   String                 @map("conversation_id")
+  userId           String                 @map("user_id")
+  status           GroupJoinRequestStatus @default(pending)
+  createdAt        DateTime               @default(now()) @map("created_at")
+  resolvedAt       DateTime?              @map("resolved_at")
+  resolvedByUserId String?                @map("resolved_by_user_id")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation("GroupJoinRequestApplicant", fields: [userId], references: [id], onDelete: Cascade)
+  resolvedBy   User?        @relation("GroupJoinRequestResolvedBy", fields: [resolvedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, status])
+  @@map("group_join_requests")
 }
 
 /// Tracks a client-direct upload to object storage. Bytes never touch NestJS.
@@ -439,9 +477,25 @@ model Message {
   lastReadByMembers      ConversationMember[] @relation("MemberLastRead")
   lastDeliveredByMembers ConversationMember[] @relation("MemberLastDelivered")
   attachments            Attachment[]
+  hiddenByUsers          MessageUserHidden[]
 
   @@unique([conversationId, senderId, clientMessageId])
   @@index([conversationId, createdAt(sort: Desc), id(sort: Desc)])
   @@index([stickerId])
   @@map("messages")
+}
+
+/// Per-user hide in timeline (does not delete the message for others). Distinct from global recall/delete (`messages.deleted_at`).
+model MessageUserHidden {
+  id        String   @id @default(uuid())
+  messageId String   @map("message_id")
+  userId    String   @map("user_id")
+  hiddenAt  DateTime @default(now()) @map("hidden_at")
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([userId])
+  @@map("message_user_hidden")
 }

@@ -22,16 +22,33 @@ function roleLabel(role: GroupMemberRole): string {
 type GroupMemberRowProps = {
   id: string;
   name: string;
-  avatarUrl: string;
+  avatarUrl?: string | null;
   role: GroupMemberRole;
+  /** Hide actions for the signed-in member row */
+  isSelf?: boolean;
   /** Owner cannot be removed from UI */
   canManage?: boolean;
+  /** When set, ellipsis opens this instead of the default “remove only” alert (e.g. API role actions). */
+  onManageMember?: (memberId: string) => void;
   onMenuPress?: (memberId: string) => void;
 };
 
-export function GroupMemberRow({ id, name, avatarUrl, role, canManage = true, onMenuPress }: GroupMemberRowProps) {
+export function GroupMemberRow({
+  id,
+  name,
+  avatarUrl,
+  role,
+  isSelf = false,
+  canManage = true,
+  onManageMember,
+  onMenuPress,
+}: GroupMemberRowProps) {
   const openMenu = () => {
-    if (!canManage || role === "owner") return;
+    if (isSelf || !canManage || role === "owner") return;
+    if (onManageMember) {
+      onManageMember(id);
+      return;
+    }
     Alert.alert(name, undefined, [
       {
         text: "Xóa khỏi nhóm",
@@ -55,7 +72,13 @@ export function GroupMemberRow({ id, name, avatarUrl, role, canManage = true, on
         },
       ]}
     >
-      <Image source={{ uri: avatarUrl }} style={styles.avatar} contentFit="cover" transition={100} />
+      {avatarUrl ? (
+        <Image source={{ uri: avatarUrl }} style={styles.avatar} contentFit="cover" transition={100} />
+      ) : (
+        <View style={[styles.avatar, styles.avatarPh]}>
+          <Ionicons name="person" size={18} color={colors.textMuted} />
+        </View>
+      )}
       <View style={styles.body}>
         <AppText variant="headline" numberOfLines={1} style={styles.name}>
           {name}
@@ -66,7 +89,7 @@ export function GroupMemberRow({ id, name, avatarUrl, role, canManage = true, on
           </AppText>
         </View>
       </View>
-      {canManage && role !== "owner" ? (
+      {!isSelf && canManage && role !== "owner" ? (
         <Pressable accessibilityLabel="Thêm tùy chọn" hitSlop={8} onPress={openMenu} style={({ pressed }) => ({ opacity: pressed ? 0.65 : 1, padding: spacing.xs })}>
           <Ionicons name="ellipsis-horizontal" size={20} color={colors.textMuted} />
         </Pressable>
@@ -91,6 +114,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
     backgroundColor: colors.surfaceSecondary,
     marginRight: 10,
+  },
+  avatarPh: {
+    alignItems: "center",
+    justifyContent: "center",
   },
   body: {
     flex: 1,

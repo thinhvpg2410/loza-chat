@@ -75,6 +75,8 @@ export type GroupMember = {
   role: GroupMemberRole;
   online?: boolean;
   avatarUrl?: string;
+  /** When true, hide per-member moderation actions for the current user. */
+  isSelf?: boolean;
 };
 
 export type GroupSummary = {

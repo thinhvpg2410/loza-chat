@@ -7,6 +7,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  AppState,
+  type AppStateStatus,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -54,10 +56,12 @@ import {
   type ApiMessageView,
   type ApiMessageWithReceipt,
 } from "@/services/conversations/conversationsApi";
+import { fetchGroupDetailApi, type GroupDetailDto } from "@/services/groups/groupsApi";
 import {
   addMessageReactionApi,
   deleteMessageApi,
   forwardMessageApi,
+  hideMessageForSelfApi,
   recallMessageApi,
   removeMessageReactionApi,
   sendMessageWithAttachmentsApi,
@@ -71,6 +75,7 @@ import {
   emitTypingStop,
   isChatSocketConfigured,
   setChatRealtimeHandlers,
+  subscribeGroupRoomEvents,
 } from "@/services/socket/socket";
 import { uploadLocalFileToAttachment } from "@/services/uploads/directUpload";
 import { buildDocumentPreviewEmbedUrl, isDocumentPreviewable } from "@/lib/document-preview-url";
@@ -176,6 +181,17 @@ export default function ChatRoomScreen() {
   const isGroup = listRow?.kind === "group" || peerMeta?.kind === "group";
   const memberCount = listRow?.memberCount ?? peerMeta?.memberCount ?? 0;
 
+  const lastGroupDissolved = useChatStore((s) => s.lastGroupDissolved);
+  const lastDissolveHandledSeq = useRef(0);
+  useEffect(() => {
+    if (USE_API_MOCK) return;
+    if (!id) return;
+    if (!lastGroupDissolved || lastGroupDissolved.conversationId !== id) return;
+    if (lastGroupDissolved.seq <= lastDissolveHandledSeq.current) return;
+    lastDissolveHandledSeq.current = lastGroupDissolved.seq;
+    router.back();
+  }, [lastGroupDissolved, id, router]);
+
   const displayName = listRow?.name ?? peerMeta?.name ?? title;
   const displayAvatar = peerAvatar ?? listRow?.avatarUrl ?? peerMeta?.avatarUrl;
 
@@ -212,6 +228,84 @@ export default function ChatRoomScreen() {
     });
   }, [displayAvatar, displayName, id, isGroup, router]);
 
+  const [groupDetail, setGroupDetail] = useState<GroupDetailDto | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const loadingOlderRef = useRef(false);
+
+  const refreshGroupDetail = useCallback(() => {
+    if (USE_API_MOCK || !isGroup || !id) {
+      setGroupDetail(null);
+      return;
+    }
+    void fetchGroupDetailApi(id)
+      .then((r) => {
+        setGroupDetail(r.group);
+      })
+      .catch(() => {
+        setGroupDetail(null);
+      });
+  }, [id, isGroup]);
+
+  useEffect(() => {
+    refreshGroupDetail();
+  }, [refreshGroupDetail]);
+
+  useEffect(() => {
+    if (USE_API_MOCK || !isGroup || !id) return () => {};
+    const unsub = subscribeGroupRoomEvents((ev) => {
+      if (ev.conversationId !== id) return;
+      if (ev.type === "group_dissolved") {
+        setGroupDetail(null);
+        return;
+      }
+      refreshGroupDetail();
+    });
+    return unsub;
+  }, [id, isGroup, refreshGroupDetail]);
+
+  useEffect(() => {
+    if (USE_API_MOCK || !isGroup || !id) return () => {};
+    const onChange = (state: AppStateStatus) => {
+      if (state !== "active") return;
+      refreshGroupDetail();
+    };
+    const sub = AppState.addEventListener("change", onChange);
+    return () => sub.remove();
+  }, [id, isGroup, refreshGroupDetail]);
+
+  const groupSendGuard = useMemo(() => {
+    if (USE_API_MOCK || !isGroup) return { canSend: true, banner: null as string | null };
+    if (!groupDetail) return { canSend: true, banner: null };
+    if (groupDetail.myStatus === "pending") {
+      return { canSend: false, banner: "Bạn đang chờ trưởng nhóm hoặc phó nhóm duyệt vào nhóm." };
+    }
+    if (groupDetail.settings.onlyAdminsCanPost && groupDetail.myRole === "member") {
+      return { canSend: false, banner: "Chỉ trưởng nhóm và phó nhóm được gửi tin trong nhóm này." };
+    }
+    return { canSend: true, banner: null };
+  }, [isGroup, groupDetail]);
+
+  const canSendInThread = USE_API_MOCK
+    ? directSendGuard.canSend
+    : isGroup
+      ? groupSendGuard.canSend
+      : directSendGuard.canSend;
+
+  const alertCannotSend = useCallback(() => {
+    if (isGroup) {
+      Alert.alert(
+        "Không thể gửi",
+        groupSendGuard.banner ?? "Bạn không thể gửi tin nhắn trong cuộc trò chuyện này.",
+      );
+      return;
+    }
+    Alert.alert(
+      "Không thể gửi",
+      directSendGuard.bannerKind === "blocked_by_me" ? "Bạn đã chặn người này." : "Bạn đã bị chặn.",
+    );
+  }, [directSendGuard.bannerKind, groupSendGuard.banner, isGroup]);
+
   const [messages, setMessages] = useState<ChatRoomMessage[]>(() =>
     USE_API_MOCK ? getMockThreadMessages(id) : [],
   );
@@ -220,7 +314,8 @@ export default function ChatRoomScreen() {
   const [sendBusy, setSendBusy] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(!USE_API_MOCK);
   const [messagesError, setMessagesError] = useState<string | null>(null);
-  const [peerTyping, setPeerTyping] = useState(false);
+  const [typingPeerCount, setTypingPeerCount] = useState(0);
+  const typingPeersRef = useRef<Map<string, boolean>>(new Map());
 
   const [viewerUri, setViewerUri] = useState<string | null>(null);
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -245,6 +340,9 @@ export default function ChatRoomScreen() {
   messagesRef.current = messages;
 
   useEffect(() => {
+    typingPeersRef.current.clear();
+    setTypingPeerCount(0);
+    setNextCursor(null);
     if (USE_API_MOCK) {
       setMessages(getMockThreadMessages(id));
       setReplyingTo(null);
@@ -262,7 +360,8 @@ export default function ChatRoomScreen() {
     setMessagesLoading(true);
     setMessagesError(null);
     try {
-      const { messages: rows } = await fetchConversationMessagesPage(id, { limit: 50 });
+      const { messages: rows, nextCursor: nc } = await fetchConversationMessagesPage(id, { limit: 50 });
+      setNextCursor(nc);
       setMessages(mapApiMessagesToChatRoomList(rows, viewerId, displayName));
       try {
         const readRes = await markConversationReadApi(id);
@@ -277,6 +376,26 @@ export default function ChatRoomScreen() {
       setMessagesLoading(false);
     }
   }, [displayName, fetchConversations, id, viewerId]);
+
+  const loadOlderMessages = useCallback(async () => {
+    if (USE_API_MOCK || !id || !nextCursor || loadingOlderRef.current) return;
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    try {
+      const { messages: rows, nextCursor: nc } = await fetchConversationMessagesPage(id, {
+        cursor: nextCursor,
+        limit: 50,
+      });
+      const mapped = mapApiMessagesToChatRoomList(rows, viewerId, displayName);
+      setMessages((prev) => mergeMessagesById(prev, mapped));
+      setNextCursor(nc);
+    } catch {
+      /* ignore */
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  }, [displayName, id, nextCursor, viewerId]);
 
   useEffect(() => {
     if (USE_API_MOCK) return;
@@ -298,7 +417,8 @@ export default function ChatRoomScreen() {
 
       void fetchConversations();
 
-      setPeerTyping(false);
+      typingPeersRef.current.clear();
+      setTypingPeerCount(0);
       emitConversationJoin(id);
 
       setChatRealtimeHandlers({
@@ -333,7 +453,10 @@ export default function ChatRoomScreen() {
         onTypingUpdate: (p) => {
           if (p.conversationId !== id) return;
           if (p.userId === viewerId) return;
-          setPeerTyping(p.isTyping);
+          const m = typingPeersRef.current;
+          if (p.isTyping) m.set(p.userId, true);
+          else m.delete(p.userId);
+          setTypingPeerCount([...m.keys()].filter((uid) => uid !== viewerId).length);
         },
         onReactionUpdated: (p) => {
           if (p.conversationId !== id) return;
@@ -373,7 +496,7 @@ export default function ChatRoomScreen() {
 
   useEffect(() => {
     if (USE_API_MOCK || !isChatSocketConfigured() || !id) return;
-    if (!isGroup && !directSendGuard.canSend) {
+    if (!canSendInThread) {
       emitTypingStop(id);
       return;
     }
@@ -399,7 +522,7 @@ export default function ChatRoomScreen() {
       }
       clearInterval(typingKeepAlive);
     };
-  }, [draft, directSendGuard.canSend, id, isGroup]);
+  }, [draft, canSendInThread, id]);
 
   const openImageViewer = useCallback((uri: string) => {
     setViewerUri(uri);
@@ -442,6 +565,13 @@ export default function ChatRoomScreen() {
     if (!actionTarget) return [];
     const own = actionTarget.senderRole === "me";
     const removed = Boolean(actionTarget.isRemoved);
+    const modRecall =
+      !USE_API_MOCK &&
+      isGroup &&
+      groupDetail &&
+      Boolean(groupDetail.settings.moderatorsCanRecallMessages) &&
+      (groupDetail.myRole === "owner" || groupDetail.myRole === "admin") &&
+      !own;
     const items: MessageActionItem[] = [];
     if (!removed) {
       items.push({ id: "reply", label: "Trả lời", icon: "arrow-undo-outline" });
@@ -449,19 +579,24 @@ export default function ChatRoomScreen() {
       items.push({ id: "react", label: "Cảm xúc", icon: "happy-outline" });
       items.push({ id: "forward", label: "Chuyển tiếp", icon: "arrow-redo-outline" });
     }
+    if (!removed && !USE_API_MOCK) {
+      items.push({ id: "hide_self", label: "Ẩn phía tôi", icon: "eye-off-outline" });
+    }
     if (own && !removed) {
       items.push({ id: "recall", label: "Thu hồi", icon: "return-up-back-outline", danger: true });
       items.push({ id: "delete", label: "Xóa", icon: "trash-outline", danger: true });
+    } else if (modRecall && !removed) {
+      items.push({ id: "recall", label: "Thu hồi (quản trị)", icon: "return-up-back-outline", danger: true });
     }
     return items;
-  }, [actionTarget]);
+  }, [actionTarget, groupDetail, isGroup]);
 
   const forwardTargets = useMemo(
     () =>
       conversations
-        .filter((c) => c.kind === "direct")
+        .filter((c) => c.id !== id)
         .map((c) => ({ id: c.id, name: c.name, avatarUrl: c.avatarUrl })),
-    [conversations],
+    [conversations, id],
   );
 
   const applyReaction = useCallback(async (messageId: string, emoji: string) => {
@@ -561,16 +696,51 @@ export default function ChatRoomScreen() {
           );
           return;
         }
-        try {
-          const { message } = await recallMessageApi(msg.id);
-          const row = asReceiptView(message, viewerId);
-          setMessages((prev) =>
-            mergeMessagesById(prev, mapApiMessagesToChatRoomList([row], viewerId, displayName)),
-          );
-          void fetchConversations();
-        } catch (e) {
-          Alert.alert("Thu hồi tin nhắn", getApiErrorMessage(e));
+        const runRecall = () => {
+          void (async () => {
+            try {
+              const { message } = await recallMessageApi(msg.id);
+              const row = asReceiptView(message, viewerId);
+              setMessages((prev) =>
+                mergeMessagesById(prev, mapApiMessagesToChatRoomList([row], viewerId, displayName)),
+              );
+              void fetchConversations();
+            } catch (e) {
+              Alert.alert("Thu hồi tin nhắn", getApiErrorMessage(e));
+            }
+          })();
+        };
+        if (msg.senderRole !== "me") {
+          Alert.alert("Thu hồi tin nhắn", "Thu hồi tin của thành viên này cho mọi người trong nhóm?", [
+            { text: "Hủy", style: "cancel" },
+            { text: "Thu hồi", style: "destructive", onPress: runRecall },
+          ]);
+          return;
         }
+        Alert.alert("Thu hồi tin nhắn", "Mọi người sẽ thấy tin đã được thu hồi.", [
+          { text: "Hủy", style: "cancel" },
+          { text: "Thu hồi", style: "destructive", onPress: runRecall },
+        ]);
+      } else if (actionId === "hide_self") {
+        if (USE_API_MOCK) return;
+        Alert.alert("Ẩn tin nhắn", "Tin sẽ không còn hiển thị trên thiết bị này.", [
+          { text: "Hủy", style: "cancel" },
+          {
+            text: "Ẩn",
+            style: "destructive",
+            onPress: () => {
+              void (async () => {
+                try {
+                  await hideMessageForSelfApi(msg.id);
+                  setMessages((prev) => prev.filter((m) => m.id !== msg.id));
+                  void fetchConversations();
+                } catch (e) {
+                  Alert.alert("Ẩn tin nhắn", getApiErrorMessage(e));
+                }
+              })();
+            },
+          },
+        ]);
       } else if (actionId === "delete") {
         if (USE_API_MOCK) {
           setMessages((prev) =>
@@ -594,16 +764,24 @@ export default function ChatRoomScreen() {
           );
           return;
         }
-        try {
-          const { message } = await deleteMessageApi(msg.id);
-          const row = asReceiptView(message, viewerId);
-          setMessages((prev) =>
-            mergeMessagesById(prev, mapApiMessagesToChatRoomList([row], viewerId, displayName)),
-          );
-          void fetchConversations();
-        } catch (e) {
-          Alert.alert("Xóa tin nhắn", getApiErrorMessage(e));
-        }
+        const runDelete = () => {
+          void (async () => {
+            try {
+              const { message } = await deleteMessageApi(msg.id);
+              const row = asReceiptView(message, viewerId);
+              setMessages((prev) =>
+                mergeMessagesById(prev, mapApiMessagesToChatRoomList([row], viewerId, displayName)),
+              );
+              void fetchConversations();
+            } catch (e) {
+              Alert.alert("Xóa tin nhắn", getApiErrorMessage(e));
+            }
+          })();
+        };
+        Alert.alert("Xóa tin nhắn", "Tin sẽ bị xóa với mọi người trong cuộc trò chuyện.", [
+          { text: "Hủy", style: "cancel" },
+          { text: "Xóa", style: "destructive", onPress: runDelete },
+        ]);
       } else if (actionId === "forward") {
         setForwardOpen(true);
       }
@@ -643,13 +821,8 @@ export default function ChatRoomScreen() {
   }, []);
 
   const pickPhoto = useCallback(async () => {
-    if (!USE_API_MOCK && !isGroup && !directSendGuard.canSend) {
-      Alert.alert(
-        "Không thể gửi",
-        directSendGuard.bannerKind === "blocked_by_me"
-          ? "Bạn đã chặn người này."
-          : "Bạn đã bị chặn.",
-      );
+    if (!USE_API_MOCK && !canSendInThread) {
+      alertCannotSend();
       return;
     }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -708,25 +881,19 @@ export default function ChatRoomScreen() {
       Alert.alert("Gửi ảnh", getApiErrorMessage(e));
     }
   }, [
+    alertCannotSend,
     appendOutgoing,
-    directSendGuard.bannerKind,
-    directSendGuard.canSend,
+    canSendInThread,
     displayName,
     fetchConversations,
     id,
-    isGroup,
     replyingTo?.id,
     viewerId,
   ]);
 
   const pickFile = useCallback(async () => {
-    if (!USE_API_MOCK && !isGroup && !directSendGuard.canSend) {
-      Alert.alert(
-        "Không thể gửi",
-        directSendGuard.bannerKind === "blocked_by_me"
-          ? "Bạn đã chặn người này."
-          : "Bạn đã bị chặn.",
-      );
+    if (!USE_API_MOCK && !canSendInThread) {
+      alertCannotSend();
       return;
     }
     if (USE_API_MOCK) {
@@ -770,26 +937,20 @@ export default function ChatRoomScreen() {
       Alert.alert("Gửi tệp", getApiErrorMessage(e));
     }
   }, [
+    alertCannotSend,
     appendOutgoing,
-    directSendGuard.bannerKind,
-    directSendGuard.canSend,
+    canSendInThread,
     displayName,
     fetchConversations,
     id,
-    isGroup,
     replyingTo?.id,
     viewerId,
   ]);
 
   const onAttachmentPick = useCallback(
     (kind: AttachmentKind) => {
-      if (!USE_API_MOCK && !isGroup && !directSendGuard.canSend) {
-        Alert.alert(
-          "Không thể gửi",
-          directSendGuard.bannerKind === "blocked_by_me"
-            ? "Bạn đã chặn người này."
-            : "Bạn đã bị chặn.",
-        );
+      if (!USE_API_MOCK && !canSendInThread) {
+        alertCannotSend();
         return;
       }
       if (kind === "photo") {
@@ -802,7 +963,7 @@ export default function ChatRoomScreen() {
         Alert.alert("Camera", "Placeholder — tích hợp camera sau.");
       }
     },
-    [directSendGuard.bannerKind, directSendGuard.canSend, isGroup, pickFile, pickPhoto],
+    [alertCannotSend, canSendInThread, pickFile, pickPhoto],
   );
 
   const onStickerPick = useCallback(
@@ -848,13 +1009,8 @@ export default function ChatRoomScreen() {
     }
 
     if (!viewerId) return;
-    if (!isGroup && !directSendGuard.canSend) {
-      Alert.alert(
-        "Không thể gửi",
-        directSendGuard.bannerKind === "blocked_by_me"
-          ? "Bạn đã chặn người này. Không thể gửi tin nhắn."
-          : "Bạn đã bị chặn. Không thể gửi tin nhắn.",
-      );
+    if (!canSendInThread) {
+      alertCannotSend();
       return;
     }
     const replyToMessageId = replyingTo?.id;
@@ -886,19 +1042,18 @@ export default function ChatRoomScreen() {
       setSendBusy(false);
     }
   }, [
-    directSendGuard.bannerKind,
-    directSendGuard.canSend,
+    alertCannotSend,
+    canSendInThread,
     draft,
     displayName,
     fetchConversations,
     id,
-    isGroup,
     replyingTo,
     sendBusy,
     viewerId,
   ]);
 
-  const showTypingRow = !USE_API_MOCK && peerTyping && !isGroup;
+  const showTypingRow = !USE_API_MOCK && typingPeerCount > 0;
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: colors.chatRoomBackground }}>
@@ -965,11 +1120,21 @@ export default function ChatRoomScreen() {
                 </AppText>
               </View>
             ) : null}
+            {!USE_API_MOCK && isGroup && groupSendGuard.banner ? (
+              <View style={{ marginHorizontal: 12, marginBottom: 6, padding: 10, borderRadius: 8, backgroundColor: "#e0f2fe" }}>
+                <AppText variant="caption" style={{ color: "#075985", textAlign: "center" }}>
+                  {groupSendGuard.banner}
+                </AppText>
+              </View>
+            ) : null}
             <MessageList
               threadKey={id}
               messages={messages}
               peerAvatarUrl={displayAvatar}
               peerName={displayName}
+              hasOlderMessages={Boolean(nextCursor)}
+              loadingOlder={loadingOlder}
+              onNearTopLoadOlder={() => void loadOlderMessages()}
               onMessagePress={onMessagePress}
               onMessageLongPress={onMessageLongPress}
               onImagePress={openImageViewer}
@@ -987,7 +1152,16 @@ export default function ChatRoomScreen() {
               paddingVertical: 6,
             }}
           >
-            <TypingIndicator visible label={`${displayName} đang nhập…`} />
+            <TypingIndicator
+              visible
+              label={
+                isGroup
+                  ? typingPeerCount > 1
+                    ? `${typingPeerCount} người đang nhập…`
+                    : "Đang soạn tin nhắn…"
+                  : `${displayName} đang nhập…`
+              }
+            />
           </View>
         ) : null}
         <MessageInputBar
@@ -995,7 +1169,7 @@ export default function ChatRoomScreen() {
           onChangeText={setDraft}
           onSend={() => void send()}
           bottomInset={insets.bottom}
-          disabled={!USE_API_MOCK && !isGroup && !directSendGuard.canSend}
+          disabled={!USE_API_MOCK && !canSendInThread}
           replyingTo={replyingTo}
           onCancelReply={() => setReplyingTo(null)}
           onOpenAttachment={() => setAttachmentOpen(true)}

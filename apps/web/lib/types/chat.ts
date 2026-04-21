@@ -15,6 +15,8 @@ export type Conversation = {
   lastSeenLabel?: string;
   /** API threads: `direct` or `group` from list/detail. */
   chatType?: "direct" | "group";
+  /** Group: active member count from API. */
+  memberCount?: number;
   /** Direct: other participant id (for deep links / receipts). */
   directPeerId?: string;
   /** Direct: viewer ↔ peer; drives block / stranger banners and send guard. */

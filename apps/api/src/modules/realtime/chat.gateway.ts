@@ -51,6 +51,7 @@ import { WsPayloadValidationError, parseWsPayload } from './ws-payload.util';
  * - `message:updated` — `{ message }` after recall/delete actions mutate a message.
  * - `typing:update` — `{ conversationId, userId, isTyping }`.
  * - `message:delivered` / `message:seen` — receipt payloads from {@link MessageReceiptsService}.
+ * - `group:updated` / `group:members_added` / `group:members_removed` / `group:dissolved` — group roster/metadata (last one: owner deleted the conversation).
  * - `error` — validation or HTTP-shaped failures for the triggering event.
  */
 @SkipThrottle()
@@ -90,6 +91,12 @@ export class ChatGateway
     this.groupEventsSub = this.groupDomainEvents.events$.subscribe((ev) => {
       const room = conversationRoomId(ev.conversationId);
       switch (ev.type) {
+        case 'group.created':
+          this.server.to(room).emit('group.created', {
+            conversationId: ev.conversationId,
+            title: ev.title,
+          });
+          break;
         case 'group.updated':
           this.server.to(room).emit('group:updated', {
             conversationId: ev.conversationId,
@@ -108,10 +115,29 @@ export class ChatGateway
             userId: ev.userId,
           });
           break;
-        case 'group.system_message':
-          this.server.to(room).emit('conversation:system_message', {
+        case 'group.dissolved':
+          this.server.to(room).emit('group:dissolved', {
             conversationId: ev.conversationId,
-            messageId: ev.messageId,
+          });
+          break;
+        case 'group.join_request_created':
+          this.server.to(room).emit('group.join_request_created', {
+            conversationId: ev.conversationId,
+            userId: ev.userId,
+          });
+          break;
+        case 'group.join_request_decided':
+          this.server.to(room).emit('group.join_request_decided', {
+            conversationId: ev.conversationId,
+            userId: ev.userId,
+            approved: ev.approved,
+          });
+          break;
+        case 'group.member_role_updated':
+          this.server.to(room).emit('group.member_role_updated', {
+            conversationId: ev.conversationId,
+            userId: ev.userId,
+            role: ev.role,
           });
           break;
         default: {
@@ -232,7 +258,7 @@ export class ChatGateway
     try {
       const user = this.requireUser(client);
       const dto = parseWsPayload(ConversationJoinDto, body);
-      await this.membership.requireMember(user.id, dto.conversationId);
+      await this.membership.requireActiveMember(user.id, dto.conversationId);
       const room = conversationRoomId(dto.conversationId);
       await client.join(room);
       const data = client.data as ChatSocketData;
@@ -326,7 +352,7 @@ export class ChatGateway
       this.flushTypingStale();
       const user = this.requireUser(client);
       const dto = parseWsPayload(TypingSocketDto, body);
-      await this.membership.requireMember(user.id, dto.conversationId);
+      await this.membership.requireActiveMember(user.id, dto.conversationId);
       /** Always broadcast so peers can refresh TTL (typing UI), not only on first key. */
       this.typing.startTyping(dto.conversationId, user.id);
       this.server
@@ -352,7 +378,7 @@ export class ChatGateway
       this.flushTypingStale();
       const user = this.requireUser(client);
       const dto = parseWsPayload(TypingSocketDto, body);
-      await this.membership.requireMember(user.id, dto.conversationId);
+      await this.membership.requireActiveMember(user.id, dto.conversationId);
       const stopped = this.typing.stopTyping(dto.conversationId, user.id);
       if (stopped) {
         this.server

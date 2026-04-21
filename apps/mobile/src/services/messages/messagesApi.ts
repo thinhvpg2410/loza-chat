@@ -81,3 +81,7 @@ export async function forwardMessageApi(payload: {
   );
   return data;
 }
+
+export async function hideMessageForSelfApi(messageId: string): Promise<void> {
+  await apiClient.post(`/messages/${messageId}/hide-self`, {});
+}

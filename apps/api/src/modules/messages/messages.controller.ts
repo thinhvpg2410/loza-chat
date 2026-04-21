@@ -86,7 +86,8 @@ export class MessagesController {
 
   @Post(':id/recall')
   @ApiOperation({
-    summary: 'Recall (unsend) your message for everyone in the conversation',
+    summary:
+      'Recall a message for everyone (sender, or group owner/admin when moderatorsCanRecallMessages is enabled)',
   })
   @ApiCreatedResponse({ type: MessageActionResultOpenApiDto })
   @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
@@ -97,6 +98,27 @@ export class MessagesController {
     @Param('id', new ParseUUIDPipe({ version: '4' })) messageId: string,
   ) {
     return this.messagesService.recallMessage(userId, messageId);
+  }
+
+  @Post(':id/hide-self')
+  @ApiOperation({
+    summary:
+      'Hide a message only for yourself (others still see it; distinct from global delete)',
+  })
+  @ApiCreatedResponse({
+    schema: {
+      type: 'object',
+      properties: { ok: { type: 'boolean', example: true } },
+    },
+  })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 403, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 404, type: ApiErrorEnvelopeDto })
+  async hideForSelf(
+    @GetUser('id') userId: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) messageId: string,
+  ) {
+    return this.messagesService.hideMessageForSelf(userId, messageId);
   }
 
   @Delete(':id')

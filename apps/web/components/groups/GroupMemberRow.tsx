@@ -3,23 +3,40 @@ import { Avatar } from "@/components/common/Avatar";
 import { ActionMenu, type ActionMenuItem } from "@/components/common/ActionMenu";
 
 function roleLabel(role: GroupMember["role"]): string {
-  if (role === "owner") return "Chủ nhóm";
+  if (role === "owner") return "Trưởng nhóm";
   if (role === "admin") return "Phó nhóm";
   return "Thành viên";
 }
 
 type GroupMemberRowProps = {
   member: GroupMember;
+  /** Show kick / role menu (caller decides policy). */
+  showModerationMenu?: boolean;
+  /** Owner-only: promote/demote deputy. */
+  showRoleMenu?: boolean;
   onPromote?: (memberId: string) => void;
   onDemote?: (memberId: string) => void;
   onRemove?: (memberId: string) => void;
 };
 
-export function GroupMemberRow({ member, onPromote, onDemote, onRemove }: GroupMemberRowProps) {
+export function GroupMemberRow({
+  member,
+  showModerationMenu = true,
+  showRoleMenu = true,
+  onPromote,
+  onDemote,
+  onRemove,
+}: GroupMemberRowProps) {
   const items: ActionMenuItem[] = [
-    { id: "promote", label: "Thăng cấp", onSelect: () => onPromote?.(member.id) },
-    { id: "demote", label: "Hạ cấp", onSelect: () => onDemote?.(member.id) },
-    { id: "remove", label: "Xóa khỏi nhóm", danger: true, onSelect: () => onRemove?.(member.id) },
+    ...(showRoleMenu
+      ? [
+          { id: "promote", label: "Thăng phó nhóm", onSelect: () => onPromote?.(member.id) },
+          { id: "demote", label: "Thu hồi phó", onSelect: () => onDemote?.(member.id) },
+        ]
+      : []),
+    ...(onRemove
+      ? [{ id: "remove", label: "Xóa khỏi nhóm", danger: true, onSelect: () => onRemove(member.id) }]
+      : []),
   ];
 
   return (
@@ -43,7 +60,7 @@ export function GroupMemberRow({ member, onPromote, onDemote, onRemove }: GroupM
           @{member.username}
         </div>
       </div>
-      {member.userId === "me" ? null : (
+      {member.isSelf || member.userId === "me" || !showModerationMenu || items.length === 0 ? null : (
         <ActionMenu items={items} ariaLabel="Quản lý thành viên" compact />
       )}
     </div>

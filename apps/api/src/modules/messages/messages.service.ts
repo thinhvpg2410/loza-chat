@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  ConversationMemberRole,
   ConversationType,
   MessageType,
   Prisma,
@@ -31,6 +32,9 @@ import { toStickerPublicDto } from '../stickers/mappers/sticker-public.mapper';
 import { StickersService } from '../stickers/stickers.service';
 import { ConversationMembershipService } from '../conversations/conversation-membership.service';
 import { ConversationsService } from '../conversations/conversations.service';
+import { GroupPermissionsService } from '../groups/group-permissions.service';
+import { GroupPostPolicyService } from '../groups/group-post-policy.service';
+import { parseGroupSettings } from '../groups/group-settings.util';
 import { UploadRulesService } from '../uploads/upload-rules.service';
 import { isAllowedReaction } from './constants/reaction-allowlist';
 import { MessageDomainEventsService } from './message-domain-events.service';
@@ -52,6 +56,8 @@ type MessageWithRelations = Message & {
 
 type MessageDeletionMode = 'recalled' | 'deleted';
 
+type ForwardedMessageMeta = { forwardedFromMessageId: string };
+
 @Injectable()
 export class MessagesService {
   constructor(
@@ -59,11 +65,43 @@ export class MessagesService {
     private readonly membership: ConversationMembershipService,
     @Inject(forwardRef(() => ConversationsService))
     private readonly conversations: ConversationsService,
+    private readonly groupPostPolicy: GroupPostPolicyService,
+    private readonly groupPermissions: GroupPermissionsService,
     private readonly uploadRules: UploadRulesService,
     private readonly stickers: StickersService,
     private readonly domainEvents: MessageDomainEventsService,
     private readonly config: ConfigService<AppConfiguration, true>,
   ) {}
+
+  /**
+   * Used when group system messages are created outside this service (still persisted in `messages`).
+   */
+  async broadcastPersistedMessage(
+    conversationId: string,
+    messageId: string,
+  ): Promise<void> {
+    const row = await this.prisma.message.findFirst({
+      where: { id: messageId, conversationId },
+      include: {
+        sender: true,
+        attachments: { orderBy: { sortOrder: 'asc' } },
+        sticker: { include: { pack: true } },
+      },
+    });
+    if (!row) {
+      return;
+    }
+    const reactionMap = await this.buildReactionSummariesForMessages(
+      row.senderId,
+      [row.id],
+    );
+    const message = this.toMessageView(row, reactionMap.get(row.id));
+    this.domainEvents.emit({
+      type: 'message.created',
+      conversationId,
+      message,
+    });
+  }
 
   private parseDeletionMode(
     metadata: Prisma.JsonValue | null,
@@ -99,16 +137,31 @@ export class MessagesService {
     return base as Prisma.InputJsonValue;
   }
 
+  private forwardedMetadataJson(
+    forwardMeta?: ForwardedMessageMeta,
+  ): Prisma.InputJsonValue | undefined {
+    if (!forwardMeta?.forwardedFromMessageId) {
+      return undefined;
+    }
+    return {
+      forwardedFrom: {
+        messageId: forwardMeta.forwardedFromMessageId,
+      },
+    } as Prisma.InputJsonValue;
+  }
+
   async sendTextMessage(
     senderId: string,
     dto: SendMessageDto,
+    forwardMeta?: ForwardedMessageMeta,
   ): Promise<{
     message: MessageView;
   }> {
     await this.conversations.assertMaySendDirectMessage(senderId, dto.conversationId);
+    await this.groupPostPolicy.assertUserMaySendMessage(senderId, dto.conversationId);
 
     const result = await this.prisma.$transaction(async (tx) => {
-      await this.membership.requireMemberTx(tx, senderId, dto.conversationId);
+      await this.membership.requireActiveMemberTx(tx, senderId, dto.conversationId);
 
       if (dto.replyToMessageId) {
         const parent = await tx.message.findFirst({
@@ -145,6 +198,7 @@ export class MessagesService {
       }
 
       try {
+        const metadataJson = this.forwardedMetadataJson(forwardMeta);
         const created = await tx.message.create({
           data: {
             conversationId: dto.conversationId,
@@ -153,6 +207,7 @@ export class MessagesService {
             type: MessageType.text,
             content: dto.content,
             replyToMessageId: dto.replyToMessageId ?? null,
+            ...(metadataJson ? { metadataJson } : {}),
           },
           include: {
             sender: true,
@@ -208,12 +263,14 @@ export class MessagesService {
   async sendStickerMessage(
     senderId: string,
     dto: SendStickerMessageDto,
+    forwardMeta?: ForwardedMessageMeta,
   ): Promise<{ message: MessageView }> {
     await this.stickers.requireSendableSticker(dto.stickerId);
     await this.conversations.assertMaySendDirectMessage(senderId, dto.conversationId);
+    await this.groupPostPolicy.assertUserMaySendMessage(senderId, dto.conversationId);
 
     const result = await this.prisma.$transaction(async (tx) => {
-      await this.membership.requireMemberTx(tx, senderId, dto.conversationId);
+      await this.membership.requireActiveMemberTx(tx, senderId, dto.conversationId);
 
       if (dto.replyToMessageId) {
         const parent = await tx.message.findFirst({
@@ -250,6 +307,7 @@ export class MessagesService {
       }
 
       try {
+        const metadataJson = this.forwardedMetadataJson(forwardMeta);
         const created = await tx.message.create({
           data: {
             conversationId: dto.conversationId,
@@ -259,6 +317,7 @@ export class MessagesService {
             content: null,
             stickerId: dto.stickerId,
             replyToMessageId: dto.replyToMessageId ?? null,
+            ...(metadataJson ? { metadataJson } : {}),
           },
           include: {
             sender: true,
@@ -333,6 +392,7 @@ export class MessagesService {
   async sendMessageWithAttachments(
     senderId: string,
     dto: SendMessageWithAttachmentsDto,
+    forwardMeta?: ForwardedMessageMeta,
   ): Promise<{ message: MessageView }> {
     this.uploadRules.assertAttachmentIdsForMessageType(
       dto.type,
@@ -343,9 +403,10 @@ export class MessagesService {
       dto.content !== undefined && dto.content.length > 0 ? dto.content : null;
 
     await this.conversations.assertMaySendDirectMessage(senderId, dto.conversationId);
+    await this.groupPostPolicy.assertUserMaySendMessage(senderId, dto.conversationId);
 
     const result = await this.prisma.$transaction(async (tx) => {
-      await this.membership.requireMemberTx(tx, senderId, dto.conversationId);
+      await this.membership.requireActiveMemberTx(tx, senderId, dto.conversationId);
 
       if (dto.replyToMessageId) {
         const parent = await tx.message.findFirst({
@@ -410,6 +471,7 @@ export class MessagesService {
       );
 
       try {
+        const metadataJson = this.forwardedMetadataJson(forwardMeta);
         const created = await tx.message.create({
           data: {
             conversationId: dto.conversationId,
@@ -418,6 +480,7 @@ export class MessagesService {
             type: dto.type,
             content,
             replyToMessageId: dto.replyToMessageId ?? null,
+            ...(metadataJson ? { metadataJson } : {}),
           },
           include: {
             sender: true,
@@ -504,6 +567,41 @@ export class MessagesService {
     return this.softDeleteMessage(actorId, messageId, 'deleted');
   }
 
+  /**
+   * Hides a message only for the current user (others still see it). Distinct from
+   * {@link deleteMessage} which soft-deletes for everyone in the thread.
+   */
+  async hideMessageForSelf(
+    actorId: string,
+    messageId: string,
+  ): Promise<{ ok: true }> {
+    const message = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      select: { id: true, conversationId: true },
+    });
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+    await this.membership.requireActiveMember(actorId, message.conversationId);
+    try {
+      await this.prisma.messageUserHidden.create({
+        data: {
+          messageId: message.id,
+          userId: actorId,
+        },
+      });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        return { ok: true };
+      }
+      throw err;
+    }
+    return { ok: true };
+  }
+
   async forwardMessage(
     actorId: string,
     sourceMessageId: string,
@@ -521,7 +619,7 @@ export class MessagesService {
     if (!source) {
       throw new NotFoundException('Message not found');
     }
-    await this.membership.requireMember(actorId, source.conversationId);
+    await this.membership.requireActiveMember(actorId, source.conversationId);
 
     if (source.deletedAt) {
       throw new BadRequestException('Cannot forward a recalled/deleted message');
@@ -531,36 +629,48 @@ export class MessagesService {
       where: { id: targetConversationId },
       select: { id: true, type: true },
     });
-    if (!targetConversation || targetConversation.type !== ConversationType.direct) {
-      throw new BadRequestException('Target conversation must be a direct conversation');
+    if (!targetConversation) {
+      throw new NotFoundException('Target conversation not found');
     }
 
     if (source.type === MessageType.system) {
       throw new BadRequestException('System messages cannot be forwarded');
     }
 
+    const forwardMeta: ForwardedMessageMeta = {
+      forwardedFromMessageId: sourceMessageId,
+    };
+
     if (source.type === MessageType.text) {
-      return this.sendTextMessage(actorId, {
-        conversationId: targetConversationId,
-        clientMessageId,
-        content: source.content ?? '',
-      });
+      return this.sendTextMessage(
+        actorId,
+        {
+          conversationId: targetConversationId,
+          clientMessageId,
+          content: source.content ?? '',
+        },
+        forwardMeta,
+      );
     }
 
     if (source.type === MessageType.sticker) {
       if (!source.stickerId) {
         throw new BadRequestException('Source sticker message is invalid');
       }
-      return this.sendStickerMessage(actorId, {
-        conversationId: targetConversationId,
-        clientMessageId,
-        stickerId: source.stickerId,
-      });
+      return this.sendStickerMessage(
+        actorId,
+        {
+          conversationId: targetConversationId,
+          clientMessageId,
+          stickerId: source.stickerId,
+        },
+        forwardMeta,
+      );
     }
 
     if (source.attachments.length > 0) {
       const clonedAttachmentIds = await this.prisma.$transaction(async (tx) => {
-        await this.membership.requireMemberTx(tx, actorId, targetConversationId);
+        await this.membership.requireActiveMemberTx(tx, actorId, targetConversationId);
 
         const created: string[] = [];
         for (const att of source.attachments) {
@@ -586,24 +696,32 @@ export class MessagesService {
         return created;
       });
 
-      return this.sendMessageWithAttachments(actorId, {
-        conversationId: targetConversationId,
-        clientMessageId,
-        type: source.type,
-        content: source.content ?? undefined,
-        attachmentIds: clonedAttachmentIds,
-      });
+      return this.sendMessageWithAttachments(
+        actorId,
+        {
+          conversationId: targetConversationId,
+          clientMessageId,
+          type: source.type,
+          content: source.content ?? undefined,
+          attachmentIds: clonedAttachmentIds,
+        },
+        forwardMeta,
+      );
     }
 
     if (!source.content || source.content.trim().length === 0) {
       throw new BadRequestException('Source message has no forwardable payload');
     }
 
-    return this.sendTextMessage(actorId, {
-      conversationId: targetConversationId,
-      clientMessageId,
-      content: source.content,
-    });
+    return this.sendTextMessage(
+      actorId,
+      {
+        conversationId: targetConversationId,
+        clientMessageId,
+        content: source.content,
+      },
+      forwardMeta,
+    );
   }
 
   private async softDeleteMessage(
@@ -624,9 +742,60 @@ export class MessagesService {
         throw new NotFoundException('Message not found');
       }
 
-      await this.membership.requireMemberTx(tx, actorId, message.conversationId);
+      await this.membership.requireActiveMemberTx(tx, actorId, message.conversationId);
+
+      let allowModeratorRecall = false;
       if (message.senderId !== actorId) {
-        throw new ForbiddenException('Only the sender can perform this action');
+        if (mode === 'recalled') {
+          const conv = await tx.conversation.findUnique({
+            where: { id: message.conversationId },
+            select: { type: true, groupSettingsJson: true },
+          });
+          if (conv?.type === ConversationType.group) {
+            const settings = parseGroupSettings(conv.groupSettingsJson);
+            if (settings.moderatorsCanRecallMessages) {
+              const actorMember = await tx.conversationMember.findUnique({
+                where: {
+                  conversationId_userId: {
+                    conversationId: message.conversationId,
+                    userId: actorId,
+                  },
+                },
+              });
+              const actorRole = this.groupPermissions.normalizeRole(
+                actorMember?.role ?? null,
+              );
+              if (
+                actorRole === ConversationMemberRole.owner ||
+                actorRole === ConversationMemberRole.admin
+              ) {
+                const senderMember = await tx.conversationMember.findUnique({
+                  where: {
+                    conversationId_userId: {
+                      conversationId: message.conversationId,
+                      userId: message.senderId,
+                    },
+                  },
+                });
+                const senderRole = this.groupPermissions.normalizeRole(
+                  senderMember?.role ?? null,
+                );
+                if (senderRole === ConversationMemberRole.owner) {
+                  throw new ForbiddenException(
+                    "Group leaders' messages cannot be recalled by moderators",
+                  );
+                }
+                if (message.type === MessageType.system) {
+                  throw new BadRequestException('System messages cannot be recalled');
+                }
+                allowModeratorRecall = true;
+              }
+            }
+          }
+        }
+        if (!allowModeratorRecall) {
+          throw new ForbiddenException('Only the sender can perform this action');
+        }
       }
 
       if (message.deletedAt) {
@@ -677,7 +846,7 @@ export class MessagesService {
     messages: MessageWithReceiptStateView[];
     nextCursor: string | null;
   }> {
-    await this.membership.requireMember(viewerId, conversationId);
+    await this.membership.requireActiveMember(viewerId, conversationId);
 
     const limit = MessageHistoryQueryDto.resolveLimit(query.limit);
     const cursorPayload = query.cursor
@@ -686,6 +855,7 @@ export class MessagesService {
 
     const where: Prisma.MessageWhereInput = {
       conversationId,
+      hiddenByUsers: { none: { userId: viewerId } },
       ...(cursorPayload
         ? {
             OR: [
@@ -794,7 +964,7 @@ export class MessagesService {
     if (!message) {
       throw new NotFoundException('Message not found');
     }
-    await this.membership.requireMember(viewerId, message.conversationId);
+    await this.membership.requireActiveMember(viewerId, message.conversationId);
     const summary = await this.fetchReactionSummaryForMessage(
       viewerId,
       messageId,
@@ -821,7 +991,7 @@ export class MessagesService {
     if (!message) {
       throw new NotFoundException('Message not found');
     }
-    await this.membership.requireMember(userId, message.conversationId);
+    await this.membership.requireActiveMember(userId, message.conversationId);
 
     const existing = await this.prisma.messageReaction.findUnique({
       where: {
@@ -873,7 +1043,7 @@ export class MessagesService {
     if (!message) {
       throw new NotFoundException('Message not found');
     }
-    await this.membership.requireMember(userId, message.conversationId);
+    await this.membership.requireActiveMember(userId, message.conversationId);
 
     const existing = await this.prisma.messageReaction.findUnique({
       where: {

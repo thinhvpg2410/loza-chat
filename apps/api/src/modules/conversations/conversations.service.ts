@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import {
   ConversationMemberRole,
+  ConversationMemberStatus,
   ConversationType,
   Prisma,
   type User,
@@ -192,14 +193,33 @@ export class ConversationsService {
     const memberships = await this.prisma.conversationMember.findMany({
       where: {
         userId,
-        ...(type !== undefined ? { conversation: { type } } : {}),
+        conversation: {
+          ...(type !== undefined ? { type } : {}),
+          OR: [
+            { type: ConversationType.direct },
+            {
+              type: ConversationType.group,
+              dissolvedAt: null,
+            },
+          ],
+        },
+        OR: [
+          { conversation: { type: ConversationType.direct } },
+          { status: ConversationMemberStatus.active },
+        ],
       },
       orderBy: { conversation: { updatedAt: 'desc' } },
       include: {
         conversation: {
           include: {
             lastMessage: true,
-            _count: { select: { members: true } },
+            _count: {
+              select: {
+                members: {
+                  where: { status: ConversationMemberStatus.active },
+                },
+              },
+            },
           },
         },
       },
@@ -310,11 +330,24 @@ export class ConversationsService {
       where: { id: conversationId },
       include: {
         members: { include: { user: true } },
-        _count: { select: { members: true } },
+        _count: {
+          select: {
+            members: {
+              where: { status: ConversationMemberStatus.active },
+            },
+          },
+        },
       },
     });
 
     if (!conversation) {
+      throw new NotFoundException('Conversation not found');
+    }
+
+    if (
+      conversation.type === ConversationType.group &&
+      conversation.dissolvedAt
+    ) {
       throw new NotFoundException('Conversation not found');
     }
 
@@ -353,6 +386,7 @@ export class ConversationsService {
       myMembership: {
         joinedAt: member.joinedAt,
         role: member.role,
+        status: member.status,
         lastReadMessageId: member.lastReadMessageId,
         lastDeliveredMessageId: member.lastDeliveredMessageId,
         mutedUntil: member.mutedUntil,

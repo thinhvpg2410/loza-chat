@@ -2,12 +2,16 @@ import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ForbiddenException,
+  forwardRef,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import {
   ConversationMemberRole,
+  ConversationMemberStatus,
   ConversationType,
+  GroupJoinRequestStatus,
   MessageType,
   Prisma,
   type Message,
@@ -16,13 +20,19 @@ import {
 import { toPublicUserProfile } from '../../common/types/public-user-profile';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ConversationMembershipService } from '../conversations/conversation-membership.service';
+import { MessagesService } from '../messages/messages.service';
 import { FriendsService } from '../friends/friends.service';
 import { GroupDomainEventsService } from './group-domain-events.service';
 import { GroupPermissionsService } from './group-permissions.service';
 import type { AddGroupMembersDto } from './dto/add-group-members.dto';
 import type { CreateGroupDto } from './dto/create-group.dto';
+import type { TransferGroupOwnershipDto } from './dto/transfer-group-ownership.dto';
 import type { UpdateGroupDto } from './dto/update-group.dto';
+import type { UpdateGroupMemberRoleDto } from './dto/update-group-member-role.dto';
+import type { UpdateGroupSettingsDto } from './dto/update-group-settings.dto';
+import { parseGroupSettings, mergeGroupSettingsPatch } from './group-settings.util';
 import type { GroupDetailView, GroupMemberView } from './types/group-detail.view';
+import type { GroupSettingsView } from './types/group-settings.view';
 
 type Tx = Prisma.TransactionClient;
 
@@ -34,6 +44,8 @@ export class GroupsService {
     private readonly membership: ConversationMembershipService,
     private readonly permissions: GroupPermissionsService,
     private readonly domainEvents: GroupDomainEventsService,
+    @Inject(forwardRef(() => MessagesService))
+    private readonly messages: MessagesService,
   ) {}
 
   async createGroup(
@@ -48,6 +60,12 @@ export class GroupsService {
     const uniqueMemberIds = [
       ...new Set(dto.memberIds.filter((id) => id !== creatorId)),
     ];
+
+    if (uniqueMemberIds.length < 1) {
+      throw new BadRequestException(
+        'A group must have at least two people (you plus at least one other member)',
+      );
+    }
 
     await this.assertTargetsInvitable(creatorId, uniqueMemberIds);
 
@@ -64,10 +82,12 @@ export class GroupsService {
                 {
                   userId: creatorId,
                   role: ConversationMemberRole.owner,
+                  status: ConversationMemberStatus.active,
                 },
                 ...uniqueMemberIds.map((userId) => ({
                   userId,
                   role: ConversationMemberRole.member,
+                  status: ConversationMemberStatus.active,
                 })),
               ],
             },
@@ -77,10 +97,9 @@ export class GroupsService {
         const creator = await tx.user.findUniqueOrThrow({
           where: { id: creatorId },
         });
-        const addedUsers =
-          uniqueMemberIds.length > 0
-            ? await tx.user.findMany({ where: { id: { in: uniqueMemberIds } } })
-            : [];
+        const addedUsers = await tx.user.findMany({
+          where: { id: { in: uniqueMemberIds } },
+        });
 
         const content = this.buildGroupCreatedContent(
           creator.displayName,
@@ -103,8 +122,13 @@ export class GroupsService {
       },
     );
 
-    this.emitSystemMessage(conversationId, systemMessageId);
+    await this.publishSystemMessages(conversationId, [systemMessageId]);
 
+    this.domainEvents.emit({
+      type: 'group.created',
+      conversationId,
+      title: titleTrim,
+    });
     this.domainEvents.emit({
       type: 'group.updated',
       conversationId,
@@ -141,7 +165,113 @@ export class GroupsService {
       throw new ForbiddenException('Not a member of this group');
     }
 
-    return this.toGroupDetailView(conv, this.permissions.normalizeRole(me.role));
+    const settings = this.settingsViewFromConv(conv.groupSettingsJson);
+    const myRole = this.permissions.normalizeRole(me.role);
+    const viewerCanModerate =
+      myRole === ConversationMemberRole.owner ||
+      myRole === ConversationMemberRole.admin;
+
+    const activeMembers = conv.members.filter(
+      (m) => m.status === ConversationMemberStatus.active,
+    );
+    const pendingMembersAll = conv.members.filter(
+      (m) => m.status === ConversationMemberStatus.pending,
+    );
+
+    if (me.status === ConversationMemberStatus.pending) {
+      return {
+        conversationId: conv.id,
+        title: conv.title,
+        avatarUrl: conv.avatarUrl,
+        createdById: conv.createdById,
+        createdAt: conv.createdAt,
+        updatedAt: conv.updatedAt,
+        myRole,
+        myStatus: me.status,
+        settings,
+        members: [],
+        pendingMembers: [],
+      };
+    }
+
+    const members: GroupMemberView[] = activeMembers.map((m) =>
+      this.toMemberView(m),
+    );
+
+    const pendingMembers: GroupMemberView[] = viewerCanModerate
+      ? pendingMembersAll.map((m) => this.toMemberView(m))
+      : [];
+
+    return {
+      conversationId: conv.id,
+      title: conv.title,
+      avatarUrl: conv.avatarUrl,
+      createdById: conv.createdById,
+      createdAt: conv.createdAt,
+      updatedAt: conv.updatedAt,
+      myRole,
+      myStatus: me.status,
+      settings,
+      members,
+      pendingMembers,
+    };
+  }
+
+  async updateGroupSettings(
+    actorId: string,
+    conversationId: string,
+    dto: UpdateGroupSettingsDto,
+  ): Promise<{ group: GroupDetailView }> {
+    const member = await this.membership.requireActiveMember(actorId, conversationId);
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+    });
+    if (!conv) {
+      throw new NotFoundException('Group not found');
+    }
+    this.permissions.assertGroupConversation(conv.type);
+    this.permissions.assertCanUpdateGroupSettings(member.role);
+
+    const patch: Partial<{
+      onlyAdminsCanPost: boolean;
+      joinApprovalRequired: boolean;
+      onlyAdminsCanAddMembers: boolean;
+      onlyAdminsCanRemoveMembers: boolean;
+      moderatorsCanRecallMessages: boolean;
+    }> = {};
+    if (dto.onlyAdminsCanPost !== undefined) {
+      patch.onlyAdminsCanPost = dto.onlyAdminsCanPost;
+    }
+    if (dto.joinApprovalRequired !== undefined) {
+      patch.joinApprovalRequired = dto.joinApprovalRequired;
+    }
+    if (dto.onlyAdminsCanAddMembers !== undefined) {
+      patch.onlyAdminsCanAddMembers = dto.onlyAdminsCanAddMembers;
+    }
+    if (dto.onlyAdminsCanRemoveMembers !== undefined) {
+      patch.onlyAdminsCanRemoveMembers = dto.onlyAdminsCanRemoveMembers;
+    }
+    if (dto.moderatorsCanRecallMessages !== undefined) {
+      patch.moderatorsCanRecallMessages = dto.moderatorsCanRecallMessages;
+    }
+    if (Object.keys(patch).length === 0) {
+      throw new BadRequestException('No settings provided');
+    }
+
+    const merged = mergeGroupSettingsPatch(conv.groupSettingsJson, patch);
+
+    await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: { groupSettingsJson: merged },
+    });
+
+    this.domainEvents.emit({
+      type: 'group.updated',
+      conversationId,
+      payload: {},
+    });
+
+    return { group: await this.getGroupDetailForMember(actorId, conversationId) };
   }
 
   async updateGroup(
@@ -153,7 +283,7 @@ export class GroupsService {
       throw new BadRequestException('Provide title and/or avatarUrl');
     }
 
-    const member = await this.membership.requireMember(actorId, conversationId);
+    const member = await this.membership.requireActiveMember(actorId, conversationId);
 
     const conv = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
@@ -228,9 +358,7 @@ export class GroupsService {
       }
     });
 
-    for (const mid of newSystemMessageIds) {
-      this.emitSystemMessage(conversationId, mid);
-    }
+    await this.publishSystemMessages(conversationId, newSystemMessageIds);
 
     this.domainEvents.emit({
       type: 'group.updated',
@@ -250,7 +378,7 @@ export class GroupsService {
     conversationId: string,
     dto: AddGroupMembersDto,
   ): Promise<{ group: GroupDetailView }> {
-    const member = await this.membership.requireMember(actorId, conversationId);
+    const member = await this.membership.requireActiveMember(actorId, conversationId);
 
     const conv = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
@@ -260,60 +388,371 @@ export class GroupsService {
       throw new NotFoundException('Group not found');
     }
     this.permissions.assertGroupConversation(conv.type);
-    this.permissions.assertCanManageGroupContent(member.role);
 
-    const existing = new Set(conv.members.map((m) => m.userId));
+    const settings = parseGroupSettings(conv.groupSettingsJson);
+    this.permissions.assertMayAddMembers(member.role, settings);
+
+    const activeUserIds = new Set(
+      conv.members
+        .filter((m) => m.status === ConversationMemberStatus.active)
+        .map((m) => m.userId),
+    );
+    const pendingByUser = new Map(
+      conv.members
+        .filter((m) => m.status === ConversationMemberStatus.pending)
+        .map((m) => [m.userId, m]),
+    );
+
     const uniqueIncoming = [...new Set(dto.memberIds)];
-    const toAdd = uniqueIncoming.filter((id) => !existing.has(id));
+    const toInvite = uniqueIncoming.filter(
+      (id) => !activeUserIds.has(id) && !pendingByUser.has(id),
+    );
 
-    if (toAdd.length === 0) {
+    if (toInvite.length === 0) {
       const group = await this.getGroupDetailForMember(actorId, conversationId);
       return { group };
     }
 
-    await this.assertTargetsInvitable(actorId, toAdd);
+    await this.assertTargetsInvitable(actorId, toInvite);
+
+    const status = settings.joinApprovalRequired
+      ? ConversationMemberStatus.pending
+      : ConversationMemberStatus.active;
+
+    let systemMessageId: string | null = null;
+    const activatedUserIds: string[] = [];
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.conversationMember.createMany({
+        data: toInvite.map((userId) => ({
+          conversationId,
+          userId,
+          role: ConversationMemberRole.member,
+          status,
+        })),
+      });
+
+      if (status === ConversationMemberStatus.active) {
+        activatedUserIds.push(...toInvite);
+        const actorName = await this.displayName(tx, actorId);
+        const addedUsers = await tx.user.findMany({ where: { id: { in: toInvite } } });
+        const names = addedUsers.map((u) => u.displayName).filter(Boolean);
+        const content = `${actorName} added ${this.joinDisplayNames(names)}`;
+
+        const msg = await this.appendSystemMessage(tx, {
+          conversationId,
+          actorId,
+          content,
+          metadata: {
+            kind: 'members_added',
+            actorId,
+            addedUserIds: toInvite,
+          },
+        });
+        systemMessageId = msg.id;
+      }
+    });
+
+    if (systemMessageId) {
+      await this.publishSystemMessages(conversationId, [systemMessageId]);
+    }
+
+    if (activatedUserIds.length > 0) {
+      this.domainEvents.emit({
+        type: 'group.member_added',
+        conversationId,
+        userIds: activatedUserIds,
+      });
+    }
+
+    this.domainEvents.emit({
+      type: 'group.updated',
+      conversationId,
+      payload: {},
+    });
+
+    const group = await this.getGroupDetailForMember(actorId, conversationId);
+    return { group };
+  }
+
+  async approveMember(
+    actorId: string,
+    conversationId: string,
+    targetUserId: string,
+  ): Promise<{ group: GroupDetailView }> {
+    const actorMember = await this.membership.requireActiveMember(actorId, conversationId);
+    const actorRole = this.permissions.normalizeRole(actorMember.role);
+    if (
+      actorRole !== ConversationMemberRole.owner &&
+      actorRole !== ConversationMemberRole.admin
+    ) {
+      throw new ForbiddenException('Insufficient permissions');
+    }
+
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: { members: true },
+    });
+    if (!conv) {
+      throw new NotFoundException('Group not found');
+    }
+    this.permissions.assertGroupConversation(conv.type);
+
+    const target = conv.members.find((m) => m.userId === targetUserId);
+    if (!target) {
+      throw new NotFoundException('User is not in this group');
+    }
+    if (target.status !== ConversationMemberStatus.pending) {
+      throw new BadRequestException('User is not pending approval');
+    }
 
     let systemMessageId: string | null = null;
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.conversationMember.createMany({
-        data: toAdd.map((userId) => ({
-          conversationId,
-          userId,
-          role: ConversationMemberRole.member,
-        })),
+      await tx.conversationMember.update({
+        where: {
+          conversationId_userId: { conversationId, userId: targetUserId },
+        },
+        data: { status: ConversationMemberStatus.active },
       });
 
       const actorName = await this.displayName(tx, actorId);
-      const addedUsers = await tx.user.findMany({ where: { id: { in: toAdd } } });
-      const names = addedUsers.map((u) => u.displayName).filter(Boolean);
-      const content = `${actorName} added ${this.joinDisplayNames(names)}`;
-
+      const targetName = await this.displayName(tx, targetUserId);
+      const content = `${actorName} approved ${targetName} to join the group`;
       const msg = await this.appendSystemMessage(tx, {
         conversationId,
         actorId,
         content,
         metadata: {
-          kind: 'members_added',
-          actorId,
-          addedUserIds: toAdd,
+          kind: 'member_approved',
+          approvedUserId: targetUserId,
         },
       });
       systemMessageId = msg.id;
     });
 
     if (systemMessageId) {
-      this.emitSystemMessage(conversationId, systemMessageId);
+      await this.publishSystemMessages(conversationId, [systemMessageId]);
     }
 
     this.domainEvents.emit({
       type: 'group.member_added',
       conversationId,
-      userIds: toAdd,
+      userIds: [targetUserId],
+    });
+    this.domainEvents.emit({
+      type: 'group.updated',
+      conversationId,
+      payload: {},
     });
 
-    const group = await this.getGroupDetailForMember(actorId, conversationId);
-    return { group };
+    return { group: await this.getGroupDetailForMember(actorId, conversationId) };
+  }
+
+  async rejectMember(
+    actorId: string,
+    conversationId: string,
+    targetUserId: string,
+  ): Promise<{ group: GroupDetailView }> {
+    const actorMember = await this.membership.requireActiveMember(actorId, conversationId);
+    const actorRole = this.permissions.normalizeRole(actorMember.role);
+    if (
+      actorRole !== ConversationMemberRole.owner &&
+      actorRole !== ConversationMemberRole.admin
+    ) {
+      throw new ForbiddenException('Insufficient permissions');
+    }
+
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: { members: true },
+    });
+    if (!conv) {
+      throw new NotFoundException('Group not found');
+    }
+    this.permissions.assertGroupConversation(conv.type);
+
+    const target = conv.members.find((m) => m.userId === targetUserId);
+    if (!target) {
+      throw new NotFoundException('User is not in this group');
+    }
+    if (target.status !== ConversationMemberStatus.pending) {
+      throw new BadRequestException('User is not pending approval');
+    }
+
+    await this.prisma.conversationMember.delete({
+      where: {
+        conversationId_userId: { conversationId, userId: targetUserId },
+      },
+    });
+
+    this.domainEvents.emit({
+      type: 'group.member_removed',
+      conversationId,
+      userId: targetUserId,
+    });
+    this.domainEvents.emit({
+      type: 'group.updated',
+      conversationId,
+      payload: {},
+    });
+
+    return { group: await this.getGroupDetailForMember(actorId, conversationId) };
+  }
+
+  async updateMemberRole(
+    actorId: string,
+    conversationId: string,
+    targetUserId: string,
+    dto: UpdateGroupMemberRoleDto,
+  ): Promise<{ group: GroupDetailView }> {
+    const actorMember = await this.membership.requireActiveMember(actorId, conversationId);
+    this.permissions.assertOwnerMayAssignRoles(actorMember.role);
+
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: { members: true },
+    });
+    if (!conv) {
+      throw new NotFoundException('Group not found');
+    }
+    this.permissions.assertGroupConversation(conv.type);
+
+    const target = conv.members.find((m) => m.userId === targetUserId);
+    if (!target) {
+      throw new NotFoundException('User is not in this group');
+    }
+    if (target.status !== ConversationMemberStatus.active) {
+      throw new BadRequestException('Can only change roles for active members');
+    }
+    if (this.permissions.normalizeRole(target.role) === ConversationMemberRole.owner) {
+      throw new BadRequestException('Use transfer ownership to change the group owner');
+    }
+
+    const nextRole = dto.role;
+    if (
+      nextRole !== ConversationMemberRole.admin &&
+      nextRole !== ConversationMemberRole.member
+    ) {
+      throw new BadRequestException('Role must be admin or member');
+    }
+
+    await this.prisma.conversationMember.update({
+      where: {
+        conversationId_userId: { conversationId, userId: targetUserId },
+      },
+      data: { role: nextRole },
+    });
+
+    this.domainEvents.emit({
+      type: 'group.member_role_updated',
+      conversationId,
+      userId: targetUserId,
+      role: nextRole,
+    });
+    this.domainEvents.emit({
+      type: 'group.updated',
+      conversationId,
+      payload: {},
+    });
+
+    return { group: await this.getGroupDetailForMember(actorId, conversationId) };
+  }
+
+  async transferOwnership(
+    actorId: string,
+    conversationId: string,
+    dto: TransferGroupOwnershipDto,
+  ): Promise<{ group: GroupDetailView }> {
+    const actorMember = await this.membership.requireActiveMember(actorId, conversationId);
+    if (this.permissions.normalizeRole(actorMember.role) !== ConversationMemberRole.owner) {
+      throw new ForbiddenException('Only the group owner can transfer ownership');
+    }
+
+    if (dto.newOwnerUserId === actorId) {
+      throw new BadRequestException('You are already the owner');
+    }
+
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: { members: true },
+    });
+    if (!conv) {
+      throw new NotFoundException('Group not found');
+    }
+    this.permissions.assertGroupConversation(conv.type);
+
+    const target = conv.members.find((m) => m.userId === dto.newOwnerUserId);
+    if (!target || target.status !== ConversationMemberStatus.active) {
+      throw new NotFoundException('New owner must be an active member');
+    }
+
+    const messageIds: string[] = [];
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.conversationMember.update({
+        where: {
+          conversationId_userId: { conversationId, userId: actorId },
+        },
+        data: { role: ConversationMemberRole.admin },
+      });
+      await tx.conversationMember.update({
+        where: {
+          conversationId_userId: {
+            conversationId,
+            userId: dto.newOwnerUserId,
+          },
+        },
+        data: { role: ConversationMemberRole.owner },
+      });
+
+      const fromName = await this.displayName(tx, actorId);
+      const toName = await this.displayName(tx, dto.newOwnerUserId);
+      const transferContent = `${fromName} transferred ownership to ${toName}`;
+      const transferMsg = await this.appendSystemMessage(tx, {
+        conversationId,
+        actorId,
+        content: transferContent,
+        metadata: {
+          kind: 'ownership_transferred',
+          fromUserId: actorId,
+          toUserId: dto.newOwnerUserId,
+        },
+      });
+      messageIds.push(transferMsg.id);
+    });
+
+    await this.publishSystemMessages(conversationId, messageIds);
+
+    this.domainEvents.emit({
+      type: 'group.updated',
+      conversationId,
+      payload: {},
+    });
+
+    return { group: await this.getGroupDetailForMember(actorId, conversationId) };
+  }
+
+  async dissolveGroup(
+    actorId: string,
+    conversationId: string,
+  ): Promise<{ dissolved: true }> {
+    const member = await this.membership.requireActiveMember(actorId, conversationId);
+    if (this.permissions.normalizeRole(member.role) !== ConversationMemberRole.owner) {
+      throw new ForbiddenException('Only the group owner can dissolve the group');
+    }
+
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+    });
+    if (!conv) {
+      throw new NotFoundException('Group not found');
+    }
+    this.permissions.assertGroupConversation(conv.type);
+
+    await this.softDissolveGroupConversation(conversationId);
+
+    return { dissolved: true };
   }
 
   async removeMember(
@@ -325,7 +764,7 @@ export class GroupsService {
       throw new ForbiddenException('Use POST /groups/:id/leave to leave the group');
     }
 
-    const actorMember = await this.membership.requireMember(actorId, conversationId);
+    const actorMember = await this.membership.requireActiveMember(actorId, conversationId);
 
     const conv = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
@@ -335,11 +774,35 @@ export class GroupsService {
       throw new NotFoundException('Group not found');
     }
     this.permissions.assertGroupConversation(conv.type);
-    this.permissions.assertCanManageGroupContent(actorMember.role);
+
+    const settings = parseGroupSettings(conv.groupSettingsJson);
+    this.permissions.assertMayRemoveMembers(actorMember.role, settings);
 
     const target = conv.members.find((m) => m.userId === targetUserId);
     if (!target) {
       throw new NotFoundException('User is not in this group');
+    }
+
+    if (target.status === ConversationMemberStatus.pending) {
+      await this.prisma.conversationMember.delete({
+        where: {
+          conversationId_userId: {
+            conversationId,
+            userId: targetUserId,
+          },
+        },
+      });
+      this.domainEvents.emit({
+        type: 'group.member_removed',
+        conversationId,
+        userId: targetUserId,
+      });
+      this.domainEvents.emit({
+        type: 'group.updated',
+        conversationId,
+        payload: {},
+      });
+      return { group: await this.getGroupDetailForMember(actorId, conversationId) };
     }
 
     this.permissions.assertActorCanRemoveMember(actorMember.role, target.role);
@@ -374,7 +837,7 @@ export class GroupsService {
     });
 
     if (systemMessageId) {
-      this.emitSystemMessage(conversationId, systemMessageId);
+      await this.publishSystemMessages(conversationId, [systemMessageId]);
     }
 
     this.domainEvents.emit({
@@ -402,17 +865,33 @@ export class GroupsService {
     }
     this.permissions.assertGroupConversation(conv.type);
 
+    if (member.status === ConversationMemberStatus.pending) {
+      await this.prisma.conversationMember.delete({
+        where: {
+          conversationId_userId: { conversationId, userId: actorId },
+        },
+      });
+      this.domainEvents.emit({
+        type: 'group.member_removed',
+        conversationId,
+        userId: actorId,
+      });
+      return { left: true };
+    }
+
     const actorRole = this.permissions.normalizeRole(member.role);
-    const others = conv.members.filter((m) => m.userId !== actorId);
+    const othersActive = conv.members.filter(
+      (m) =>
+        m.userId !== actorId && m.status === ConversationMemberStatus.active,
+    );
 
     if (actorRole === ConversationMemberRole.owner) {
-      if (others.length === 0) {
-        throw new BadRequestException(
-          'You are the only member; delete the conversation from the client or contact support',
-        );
+      if (othersActive.length === 0) {
+        await this.softDissolveGroupConversation(conversationId);
+        return { left: true };
       }
 
-      const successor = this.pickOwnershipSuccessor(others);
+      const successor = this.pickOwnershipSuccessor(othersActive);
 
       const ownerLeaveMessageIds: string[] = [];
 
@@ -458,9 +937,7 @@ export class GroupsService {
         ownerLeaveMessageIds.push(leftMsg.id);
       });
 
-      for (const mid of ownerLeaveMessageIds) {
-        this.emitSystemMessage(conversationId, mid);
-      }
+      await this.publishSystemMessages(conversationId, ownerLeaveMessageIds);
 
       this.domainEvents.emit({
         type: 'group.member_removed',
@@ -497,7 +974,7 @@ export class GroupsService {
     });
 
     if (systemMessageId) {
-      this.emitSystemMessage(conversationId, systemMessageId);
+      await this.publishSystemMessages(conversationId, [systemMessageId]);
     }
 
     this.domainEvents.emit({
@@ -507,6 +984,350 @@ export class GroupsService {
     });
 
     return { left: true };
+  }
+
+  /**
+   * User-initiated join when `joinApprovalRequired` is on (no membership row until approved).
+   */
+  async createSelfJoinRequest(
+    applicantId: string,
+    conversationId: string,
+  ): Promise<{ created: true }> {
+    await this.membership.assertGroupConversationNotDissolved(conversationId);
+
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: { members: true },
+    });
+    if (!conv) {
+      throw new NotFoundException('Group not found');
+    }
+    this.permissions.assertGroupConversation(conv.type);
+
+    const settings = parseGroupSettings(conv.groupSettingsJson);
+    if (!settings.joinApprovalRequired) {
+      throw new BadRequestException(
+        'This group does not require join approval; ask a member to add you instead',
+      );
+    }
+
+    const alreadyMember = conv.members.some(
+      (m) =>
+        m.userId === applicantId &&
+        m.status === ConversationMemberStatus.active,
+    );
+    if (alreadyMember) {
+      throw new BadRequestException('You are already an active member of this group');
+    }
+
+    const invitedPending = conv.members.some(
+      (m) =>
+        m.userId === applicantId &&
+        m.status === ConversationMemberStatus.pending,
+    );
+    if (invitedPending) {
+      throw new BadRequestException(
+        'You already have a pending invitation for this group; wait for approval',
+      );
+    }
+
+    const pendingSelf = await this.prisma.groupJoinRequest.findFirst({
+      where: {
+        conversationId,
+        userId: applicantId,
+        status: GroupJoinRequestStatus.pending,
+      },
+    });
+    if (pendingSelf) {
+      throw new BadRequestException('You already have a pending join request');
+    }
+
+    await this.assertApplicantFriendsWithActiveMember(applicantId, conversationId);
+
+    try {
+      await this.prisma.groupJoinRequest.create({
+        data: {
+          conversationId,
+          userId: applicantId,
+          status: GroupJoinRequestStatus.pending,
+        },
+      });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new BadRequestException('You already have a pending join request');
+      }
+      throw err;
+    }
+
+    this.domainEvents.emit({
+      type: 'group.join_request_created',
+      conversationId,
+      userId: applicantId,
+    });
+    this.domainEvents.emit({
+      type: 'group.updated',
+      conversationId,
+      payload: {},
+    });
+
+    return { created: true };
+  }
+
+  async listJoinQueue(
+    viewerId: string,
+    conversationId: string,
+  ): Promise<{
+    items: Array<{
+      kind: 'self_request' | 'invite_pending';
+      userId: string;
+      createdAt: Date;
+    }>;
+  }> {
+    const actorMember = await this.membership.requireActiveMember(
+      viewerId,
+      conversationId,
+    );
+    const actorRole = this.permissions.normalizeRole(actorMember.role);
+    if (
+      actorRole !== ConversationMemberRole.owner &&
+      actorRole !== ConversationMemberRole.admin
+    ) {
+      throw new ForbiddenException('Insufficient permissions');
+    }
+
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: { members: true },
+    });
+    if (!conv) {
+      throw new NotFoundException('Group not found');
+    }
+    this.permissions.assertGroupConversation(conv.type);
+
+    const selfRows = await this.prisma.groupJoinRequest.findMany({
+      where: {
+        conversationId,
+        status: GroupJoinRequestStatus.pending,
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+
+    const invitePending = conv.members.filter(
+      (m) => m.status === ConversationMemberStatus.pending,
+    );
+
+    const items: Array<{
+      kind: 'self_request' | 'invite_pending';
+      userId: string;
+      createdAt: Date;
+    }> = [
+      ...selfRows.map((r) => ({
+        kind: 'self_request' as const,
+        userId: r.userId,
+        createdAt: r.createdAt,
+      })),
+      ...invitePending.map((m) => ({
+        kind: 'invite_pending' as const,
+        userId: m.userId,
+        createdAt: m.joinedAt,
+      })),
+    ];
+
+    items.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    return { items };
+  }
+
+  async approveJoinRequest(
+    actorId: string,
+    conversationId: string,
+    applicantUserId: string,
+  ): Promise<{ group: GroupDetailView }> {
+    const actorMember = await this.membership.requireActiveMember(
+      actorId,
+      conversationId,
+    );
+    const actorRole = this.permissions.normalizeRole(actorMember.role);
+    if (
+      actorRole !== ConversationMemberRole.owner &&
+      actorRole !== ConversationMemberRole.admin
+    ) {
+      throw new ForbiddenException('Insufficient permissions');
+    }
+
+    const req = await this.prisma.groupJoinRequest.findFirst({
+      where: {
+        conversationId,
+        userId: applicantUserId,
+        status: GroupJoinRequestStatus.pending,
+      },
+    });
+    if (!req) {
+      throw new NotFoundException('No pending self-join request for this user');
+    }
+
+    let systemMessageId: string | null = null;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.groupJoinRequest.update({
+        where: { id: req.id },
+        data: {
+          status: GroupJoinRequestStatus.approved,
+          resolvedAt: new Date(),
+          resolvedByUserId: actorId,
+        },
+      });
+
+      await tx.conversationMember.create({
+        data: {
+          conversationId,
+          userId: applicantUserId,
+          role: ConversationMemberRole.member,
+          status: ConversationMemberStatus.active,
+        },
+      });
+
+      const actorName = await this.displayName(tx, actorId);
+      const targetName = await this.displayName(tx, applicantUserId);
+      const content = `${actorName} approved ${targetName} to join the group`;
+      const msg = await this.appendSystemMessage(tx, {
+        conversationId,
+        actorId,
+        content,
+        metadata: {
+          kind: 'member_approved',
+          approvedUserId: applicantUserId,
+          source: 'self_join_request',
+        },
+      });
+      systemMessageId = msg.id;
+    });
+
+    if (systemMessageId) {
+      await this.publishSystemMessages(conversationId, [systemMessageId]);
+    }
+
+    this.domainEvents.emit({
+      type: 'group.join_request_decided',
+      conversationId,
+      userId: applicantUserId,
+      approved: true,
+    });
+    this.domainEvents.emit({
+      type: 'group.member_added',
+      conversationId,
+      userIds: [applicantUserId],
+    });
+    this.domainEvents.emit({
+      type: 'group.updated',
+      conversationId,
+      payload: {},
+    });
+
+    return { group: await this.getGroupDetailForMember(actorId, conversationId) };
+  }
+
+  async rejectJoinRequest(
+    actorId: string,
+    conversationId: string,
+    applicantUserId: string,
+  ): Promise<{ ok: true }> {
+    const actorMember = await this.membership.requireActiveMember(
+      actorId,
+      conversationId,
+    );
+    const actorRole = this.permissions.normalizeRole(actorMember.role);
+    if (
+      actorRole !== ConversationMemberRole.owner &&
+      actorRole !== ConversationMemberRole.admin
+    ) {
+      throw new ForbiddenException('Insufficient permissions');
+    }
+
+    const req = await this.prisma.groupJoinRequest.findFirst({
+      where: {
+        conversationId,
+        userId: applicantUserId,
+        status: GroupJoinRequestStatus.pending,
+      },
+    });
+    if (!req) {
+      throw new NotFoundException('No pending self-join request for this user');
+    }
+
+    await this.prisma.groupJoinRequest.update({
+      where: { id: req.id },
+      data: {
+        status: GroupJoinRequestStatus.rejected,
+        resolvedAt: new Date(),
+        resolvedByUserId: actorId,
+      },
+    });
+
+    this.domainEvents.emit({
+      type: 'group.join_request_decided',
+      conversationId,
+      userId: applicantUserId,
+      approved: false,
+    });
+    this.domainEvents.emit({
+      type: 'group.updated',
+      conversationId,
+      payload: {},
+    });
+
+    return { ok: true };
+  }
+
+  private async softDissolveGroupConversation(
+    conversationId: string,
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.conversation.update({
+        where: { id: conversationId },
+        data: { dissolvedAt: new Date() },
+      });
+      await tx.conversationMember.deleteMany({ where: { conversationId } });
+      await tx.groupJoinRequest.deleteMany({ where: { conversationId } });
+    });
+
+    this.domainEvents.emit({
+      type: 'group.dissolved',
+      conversationId,
+    });
+  }
+
+  private async assertApplicantFriendsWithActiveMember(
+    applicantId: string,
+    conversationId: string,
+  ): Promise<void> {
+    const activeIds = (
+      await this.prisma.conversationMember.findMany({
+        where: {
+          conversationId,
+          status: ConversationMemberStatus.active,
+        },
+        select: { userId: true },
+      })
+    ).map((m) => m.userId);
+
+    const targets = activeIds.filter((id) => id !== applicantId);
+    if (targets.length === 0) {
+      throw new BadRequestException('This group has no active members to vouch for you');
+    }
+
+    for (const tid of targets) {
+      const rel = await this.friends.getRelationshipStatus(applicantId, tid);
+      if (rel === 'friend') {
+        return;
+      }
+    }
+
+    throw new ForbiddenException(
+      'You must be friends with at least one active member to request joining this group',
+    );
   }
 
   private pickOwnershipSuccessor(
@@ -522,12 +1343,42 @@ export class GroupsService {
     return sorted[0]!;
   }
 
-  private emitSystemMessage(conversationId: string, messageId: string): void {
-    this.domainEvents.emit({
-      type: 'group.system_message',
-      conversationId,
-      messageId,
-    });
+  private async publishSystemMessages(
+    conversationId: string,
+    messageIds: string[],
+  ): Promise<void> {
+    for (const id of messageIds) {
+      await this.messages.broadcastPersistedMessage(conversationId, id);
+    }
+  }
+
+  private settingsViewFromConv(
+    raw: Prisma.JsonValue | null | undefined,
+  ): GroupSettingsView {
+    const s = parseGroupSettings(raw);
+    return {
+      onlyAdminsCanPost: s.onlyAdminsCanPost,
+      joinApprovalRequired: s.joinApprovalRequired,
+      onlyAdminsCanAddMembers: s.onlyAdminsCanAddMembers,
+      onlyAdminsCanRemoveMembers: s.onlyAdminsCanRemoveMembers,
+      moderatorsCanRecallMessages: s.moderatorsCanRecallMessages,
+    };
+  }
+
+  private toMemberView(m: {
+    userId: string;
+    role: ConversationMemberRole | null;
+    status: ConversationMemberStatus;
+    joinedAt: Date;
+    user: User;
+  }): GroupMemberView {
+    return {
+      userId: m.userId,
+      role: this.permissions.normalizeRole(m.role),
+      status: m.status,
+      joinedAt: m.joinedAt,
+      user: toPublicUserProfile(m.user),
+    };
   }
 
   private async assertTargetsInvitable(
@@ -604,36 +1455,5 @@ export class GroupsService {
     });
 
     return msg;
-  }
-
-  private toGroupDetailView(
-    conv: {
-      id: string;
-      title: string | null;
-      avatarUrl: string | null;
-      createdById: string | null;
-      createdAt: Date;
-      updatedAt: Date;
-      members: { userId: string; role: ConversationMemberRole | null; joinedAt: Date; user: User }[];
-    },
-    myRole: ConversationMemberRole,
-  ): GroupDetailView {
-    const members: GroupMemberView[] = conv.members.map((m) => ({
-      userId: m.userId,
-      role: this.permissions.normalizeRole(m.role),
-      joinedAt: m.joinedAt,
-      user: toPublicUserProfile(m.user),
-    }));
-
-    return {
-      conversationId: conv.id,
-      title: conv.title,
-      avatarUrl: conv.avatarUrl,
-      createdById: conv.createdById,
-      createdAt: conv.createdAt,
-      updatedAt: conv.updatedAt,
-      myRole,
-      members,
-    };
   }
 }

@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from "react";
 import {
+  ActivityIndicator,
   FlatList,
   Platform,
   StyleSheet,
@@ -11,7 +12,7 @@ import {
 
 import { buildMessageFeed } from "@features/chat-room";
 import type { ChatRoomMessage, MessageFeedItem } from "@features/chat-room/types";
-import { spacing } from "@theme";
+import { colors, spacing } from "@theme";
 
 import { MessageGroup } from "./MessageGroup";
 import { TimestampSeparator } from "./TimestampSeparator";
@@ -24,6 +25,11 @@ type MessageListProps = {
   threadKey?: string;
   peerAvatarUrl?: string;
   peerName?: string;
+  /** Kéo lên đầu danh sách để tải tin cũ hơn (pagination). */
+  onNearTopLoadOlder?: () => void;
+  /** Còn trang cũ để tải (cursor từ API). */
+  hasOlderMessages?: boolean;
+  loadingOlder?: boolean;
   onMessagePress?: (message: ChatRoomMessage) => void;
   onMessageLongPress?: (message: ChatRoomMessage) => void;
   onImagePress?: (uri: string) => void;
@@ -31,7 +37,19 @@ type MessageListProps = {
 };
 
 export const MessageList = forwardRef<FlatList<MessageFeedItem>, MessageListProps>(function MessageList(
-  { messages, threadKey, peerAvatarUrl, peerName, onMessagePress, onMessageLongPress, onImagePress, onReactionEmoji },
+  {
+    messages,
+    threadKey,
+    peerAvatarUrl,
+    peerName,
+    onNearTopLoadOlder,
+    hasOlderMessages,
+    loadingOlder,
+    onMessagePress,
+    onMessageLongPress,
+    onImagePress,
+    onReactionEmoji,
+  },
   ref,
 ) {
   const listRef = useRef<FlatList<MessageFeedItem>>(null);
@@ -44,6 +62,7 @@ export const MessageList = forwardRef<FlatList<MessageFeedItem>, MessageListProp
   const nearBottomRef = useRef(true);
   const prevLengthRef = useRef(0);
   const contentHeightRef = useRef(0);
+  const loadOlderCooldownRef = useRef<number>(0);
 
   const feed = useMemo(() => buildMessageFeed(messages), [messages]);
   const reactionSignature = useMemo(
@@ -80,11 +99,25 @@ export const MessageList = forwardRef<FlatList<MessageFeedItem>, MessageListProp
 
   const keyExtractor = useCallback((item: MessageFeedItem) => item.key, []);
 
-  const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
-    const distanceFromEnd = contentSize.height - layoutMeasurement.height - contentOffset.y;
-    nearBottomRef.current = distanceFromEnd < NEAR_END_THRESHOLD_PX;
-  }, []);
+  const onScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+      const distanceFromEnd = contentSize.height - layoutMeasurement.height - contentOffset.y;
+      nearBottomRef.current = distanceFromEnd < NEAR_END_THRESHOLD_PX;
+
+      if (
+        onNearTopLoadOlder &&
+        hasOlderMessages &&
+        !loadingOlder &&
+        contentOffset.y <= 72 &&
+        Date.now() - loadOlderCooldownRef.current > 700
+      ) {
+        loadOlderCooldownRef.current = Date.now();
+        onNearTopLoadOlder();
+      }
+    },
+    [hasOlderMessages, loadingOlder, onNearTopLoadOlder],
+  );
 
   const onContentSizeChange = useCallback((_w: number, h: number) => {
     if (!nearBottomRef.current) {
@@ -141,6 +174,13 @@ export const MessageList = forwardRef<FlatList<MessageFeedItem>, MessageListProp
       onScroll={onScroll}
       scrollEventThrottle={16}
       onContentSizeChange={onContentSizeChange}
+      ListHeaderComponent={
+        loadingOlder ? (
+          <View style={styles.headerLoading}>
+            <ActivityIndicator size="small" color={colors.textMuted} />
+          </View>
+        ) : null
+      }
       ListFooterComponent={<View style={styles.footerPad} />}
     />
   );
@@ -158,5 +198,9 @@ const styles = StyleSheet.create({
   },
   footerPad: {
     height: 2,
+  },
+  headerLoading: {
+    paddingVertical: spacing.sm,
+    alignItems: "center",
   },
 });
