@@ -35,9 +35,15 @@ type MessageListProps = {
   onMessageLongPress?: (message: ChatRoomMessage) => void;
   onImagePress?: (uri: string) => void;
   onReactionEmoji?: (messageId: string, emoji: string) => void;
+  onSwipeReply?: (message: ChatRoomMessage) => void;
+  autoLoadMedia?: boolean;
 };
 
-export const MessageList = forwardRef<FlatList<MessageFeedItem>, MessageListProps>(function MessageList(
+export type MessageListHandle = {
+  scrollToMessage: (messageId: string) => void;
+};
+
+export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
   {
     messages,
     threadKey,
@@ -50,11 +56,27 @@ export const MessageList = forwardRef<FlatList<MessageFeedItem>, MessageListProp
     onMessageLongPress,
     onImagePress,
     onReactionEmoji,
+    onSwipeReply,
+    autoLoadMedia = true,
   },
   ref,
 ) {
   const listRef = useRef<FlatList<MessageFeedItem>>(null);
-  useImperativeHandle(ref, () => listRef.current!, []);
+  useImperativeHandle(
+    ref,
+    () => ({
+      scrollToMessage: (messageId: string) => {
+        const index = feed.findIndex(
+          (item) =>
+            item.kind === "group" &&
+            item.messages.some((msg) => msg.id === messageId),
+        );
+        if (index < 0) return;
+        listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.4 });
+      },
+    }),
+    [feed],
+  );
 
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
@@ -99,10 +121,12 @@ export const MessageList = forwardRef<FlatList<MessageFeedItem>, MessageListProp
           onMessageLongPress={onMessageLongPress}
           onImagePress={onImagePress}
           onReactionEmoji={onReactionEmoji}
+          onSwipeReply={onSwipeReply}
+          autoLoadMedia={autoLoadMedia}
         />
       );
     },
-    [peerAvatarUrl, peerName, onMessagePress, onMessageLongPress, onImagePress, onReactionEmoji],
+    [peerAvatarUrl, peerName, onMessagePress, onMessageLongPress, onImagePress, onReactionEmoji, onSwipeReply, autoLoadMedia],
   );
 
   const keyExtractor = useCallback((item: MessageFeedItem) => item.key, []);
@@ -190,6 +214,9 @@ export const MessageList = forwardRef<FlatList<MessageFeedItem>, MessageListProp
         ) : null
       }
       ListFooterComponent={<View style={styles.footerPad} />}
+      onScrollToIndexFailed={() => {
+        listRef.current?.scrollToEnd({ animated: true });
+      }}
     />
   );
 });

@@ -14,6 +14,8 @@ export type MessageContentProps = {
   onPress: () => void;
   onLongPress: () => void;
   onImagePress: (uri: string) => void;
+  onSwipeReply?: () => void;
+  autoLoadMedia?: boolean;
 };
 
 function UnpackedMessageContent({
@@ -23,6 +25,8 @@ function UnpackedMessageContent({
   onPress,
   onLongPress,
   onImagePress,
+  onSwipeReply,
+  autoLoadMedia = true,
 }: MessageContentProps) {
   switch (message.kind) {
     case "text":
@@ -34,6 +38,7 @@ function UnpackedMessageContent({
           replyTo={message.replyTo}
           onPress={onPress}
           onLongPress={onLongPress}
+          onSwipeReply={onSwipeReply}
         />
       );
     case "image":
@@ -47,6 +52,7 @@ function UnpackedMessageContent({
           replyTo={message.replyTo}
           onPress={() => message.imageUrl && onImagePress(message.imageUrl)}
           onLongPress={onLongPress}
+          autoLoad={autoLoadMedia}
         />
       );
     case "file":

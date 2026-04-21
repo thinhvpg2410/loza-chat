@@ -1,7 +1,10 @@
 import { useFocusEffect } from "@react-navigation/native";
 import * as Clipboard from "expo-clipboard";
 import * as DocumentPicker from "expo-document-picker";
+import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
+import * as Network from "expo-network";
 import * as WebBrowser from "expo-web-browser";
 import { Audio } from "expo-av";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -32,6 +35,7 @@ import {
   type MessageActionItem,
   MessageInputBar,
   MessageList,
+  type MessageListHandle,
   type MockSticker,
   ReactionPickerSheet,
   StickerPickerSheet,
@@ -81,6 +85,7 @@ import {
 } from "@/services/socket/socket";
 import { uploadLocalFileToAttachment } from "@/services/uploads/directUpload";
 import { trackClientError } from "@/services/telemetry/telemetry";
+import { appStorage } from "@/storage/appStorage";
 import { buildDocumentPreviewEmbedUrl, isDocumentPreviewable } from "@/lib/document-preview-url";
 import { useAuthStore } from "@/store/authStore";
 import { useChatStore } from "@/store/chatStore";
@@ -147,6 +152,8 @@ function asReceiptView(msg: ApiMessageView, viewerId: string): ApiMessageWithRec
   };
 }
 
+const CHAT_PREF_REDUCE_AUTO_DOWNLOAD_ON_CELLULAR = "chat.reduce_auto_download_on_cellular";
+
 function mergeMessagesById(prev: ChatRoomMessage[], incoming: ChatRoomMessage[]): ChatRoomMessage[] {
   const byId = new Map<string, ChatRoomMessage>();
   for (const m of prev) {
@@ -172,6 +179,7 @@ export default function ChatRoomScreen() {
     title?: string;
     peerAvatar?: string;
     peerId?: string;
+    messageId?: string;
   }>();
 
   const rawId = params.id;
@@ -183,6 +191,7 @@ export default function ChatRoomScreen() {
   const peerAvatar = decodeParam(params.peerAvatar);
   const paramPeerId = decodeParam(params.peerId) ?? "";
   const directPeerId = paramPeerId || (listRow?.kind === "direct" ? listRow.directPeerId : undefined) || "";
+  const focusMessageId = decodeParam(params.messageId);
 
   const peerMeta = useMemo(() => MOCK_CONVERSATIONS.find((c) => c.id === id), [id]);
   const isGroup = listRow?.kind === "group" || peerMeta?.kind === "group";
@@ -360,6 +369,9 @@ export default function ChatRoomScreen() {
   const [stickerOpen, setStickerOpen] = useState(false);
   const [voiceRecording, setVoiceRecording] = useState(false);
   const [voiceRecordingDurationSec, setVoiceRecordingDurationSec] = useState(0);
+  const [voiceDraftNotice, setVoiceDraftNotice] = useState<string | null>(null);
+  const [reduceAutoDownloadOnCellular, setReduceAutoDownloadOnCellular] = useState(true);
+  const [isCellularConnection, setIsCellularConnection] = useState(false);
   const voiceRecordingRef = useRef<Audio.Recording | null>(null);
   const voiceTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -369,20 +381,100 @@ export default function ChatRoomScreen() {
   const offlineQueueRef = useRef<
     Array<{ localId: string; body: string; replyToMessageId?: string; attempts: number }>
   >([]);
+  const messageListRef = useRef<MessageListHandle | null>(null);
+
+  const stopVoiceRecording = useCallback(
+    async (opts?: { discard?: boolean; showDraftNotice?: boolean }) => {
+      const recording = voiceRecordingRef.current;
+      if (!recording) return null;
+      const discard = opts?.discard ?? false;
+      const showDraftNotice = opts?.showDraftNotice ?? false;
+      try {
+        await recording.stopAndUnloadAsync();
+        const uri = recording.getURI();
+        voiceRecordingRef.current = null;
+        setVoiceRecording(false);
+        setVoiceRecordingDurationSec(0);
+        if (voiceTimerRef.current) {
+          clearInterval(voiceTimerRef.current);
+          voiceTimerRef.current = null;
+        }
+        if (discard || !uri) return null;
+        if (showDraftNotice) {
+          setVoiceDraftNotice("Ghi âm đã tự dừng khi app chạy nền. Bạn có thể gửi lại.");
+        }
+        return uri;
+      } catch {
+        voiceRecordingRef.current = null;
+        setVoiceRecording(false);
+        setVoiceRecordingDurationSec(0);
+        if (voiceTimerRef.current) {
+          clearInterval(voiceTimerRef.current);
+          voiceTimerRef.current = null;
+        }
+        return null;
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     return () => {
-      const recording = voiceRecordingRef.current;
-      if (recording) {
-        void recording.stopAndUnloadAsync().catch(() => undefined);
-      }
+      void stopVoiceRecording({ discard: true });
       voiceRecordingRef.current = null;
       if (voiceTimerRef.current) {
         clearInterval(voiceTimerRef.current);
         voiceTimerRef.current = null;
       }
     };
+  }, [stopVoiceRecording]);
+
+  useEffect(() => {
+    let mounted = true;
+    void appStorage
+      .getItem(CHAT_PREF_REDUCE_AUTO_DOWNLOAD_ON_CELLULAR)
+      .then((v) => {
+        if (!mounted) return;
+        setReduceAutoDownloadOnCellular(v !== "0");
+      })
+      .catch(() => undefined);
+    return () => {
+      mounted = false;
+    };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const syncNetwork = async () => {
+      try {
+        const state = await Network.getNetworkStateAsync();
+        if (!cancelled) {
+          setIsCellularConnection(state.type === Network.NetworkStateType.CELLULAR);
+        }
+      } catch {
+        if (!cancelled) setIsCellularConnection(false);
+      }
+    };
+    void syncNetwork();
+    const appSub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        void syncNetwork();
+      }
+    });
+    return () => {
+      cancelled = true;
+      appSub.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") return;
+      if (!voiceRecording) return;
+      void stopVoiceRecording({ showDraftNotice: true });
+    });
+    return () => sub.remove();
+  }, [stopVoiceRecording, voiceRecording]);
 
   useEffect(() => {
     const unsub = subscribeSocketConnectionStatus((state, detail) => {
@@ -612,6 +704,7 @@ export default function ChatRoomScreen() {
 
   const onMessageLongPress = useCallback((m: ChatRoomMessage) => {
     if (m.kind === "groupEvent") return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setActionTarget(m);
   }, []);
 
@@ -721,11 +814,14 @@ export default function ChatRoomScreen() {
       if (!msg) return;
 
       if (actionId === "reply") {
+        void Haptics.selectionAsync();
         setReplyingTo(toReplyRef(msg, displayName));
       } else if (actionId === "copy") {
+        void Haptics.selectionAsync();
         const text = copyableText(msg);
         if (text.length) await Clipboard.setStringAsync(text);
       } else if (actionId === "react") {
+        void Haptics.selectionAsync();
         setReactionTargetId(msg.id);
       } else if (actionId === "recall") {
         if (USE_API_MOCK) {
@@ -885,8 +981,9 @@ export default function ChatRoomScreen() {
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.85,
+      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      quality: 0.7,
+      videoMaxDuration: 120,
     });
     if (result.canceled) return;
     const asset = result.assets[0];
@@ -910,20 +1007,29 @@ export default function ChatRoomScreen() {
 
     if (!viewerId) return;
     try {
-      const mime = asset.mimeType ?? "image/jpeg";
-      const name = asset.fileName ?? "photo.jpg";
+      const isVideo = (asset.type ?? "").toLowerCase() === "video";
+      const optimizedUri = isVideo
+        ? asset.uri
+        : (
+            await ImageManipulator.manipulateAsync(asset.uri, [{ resize: { width: 1280 } }], {
+              compress: 0.72,
+              format: ImageManipulator.SaveFormat.JPEG,
+            })
+          ).uri;
+      const mime = isVideo ? asset.mimeType ?? "video/mp4" : "image/jpeg";
+      const name = asset.fileName ?? (isVideo ? "video.mp4" : "photo.jpg");
       const att = await uploadLocalFileToAttachment({
-        fileUri: uri,
+        fileUri: optimizedUri,
         fileName: name,
         mimeType: mime,
-        uploadType: "image",
+        uploadType: isVideo ? "video" : "image",
         width: asset.width,
         height: asset.height,
       });
       const { message } = await sendMessageWithAttachmentsApi({
         conversationId: id,
         clientMessageId: newClientMessageId(),
-        type: "image",
+        type: isVideo ? "video" : "image",
         attachmentIds: [att.id],
         replyToMessageId: replyingTo?.id,
       });
@@ -1008,27 +1114,17 @@ export default function ChatRoomScreen() {
         return;
       }
       if (kind === "photo") {
+        void Haptics.selectionAsync();
         void pickPhoto();
       } else if (kind === "file") {
+        void Haptics.selectionAsync();
         void pickFile();
       } else if (kind === "voice") {
+        void Haptics.selectionAsync();
         void (async () => {
           if (voiceRecording) {
-            const recording = voiceRecordingRef.current;
-            if (!recording) {
-              setVoiceRecording(false);
-              return;
-            }
             try {
-              await recording.stopAndUnloadAsync();
-              const uri = recording.getURI();
-              voiceRecordingRef.current = null;
-              setVoiceRecording(false);
-              setVoiceRecordingDurationSec(0);
-              if (voiceTimerRef.current) {
-                clearInterval(voiceTimerRef.current);
-                voiceTimerRef.current = null;
-              }
+              const uri = await stopVoiceRecording();
               if (!uri) {
                 Alert.alert("Ghi âm", "Không đọc được file ghi âm.");
                 return;
@@ -1107,18 +1203,8 @@ export default function ChatRoomScreen() {
   }, [onAttachmentPick]);
 
   const cancelVoiceRecording = useCallback(() => {
-    const recording = voiceRecordingRef.current;
-    if (recording) {
-      void recording.stopAndUnloadAsync().catch(() => undefined);
-    }
-    voiceRecordingRef.current = null;
-    setVoiceRecording(false);
-    setVoiceRecordingDurationSec(0);
-    if (voiceTimerRef.current) {
-      clearInterval(voiceTimerRef.current);
-      voiceTimerRef.current = null;
-    }
-  }, []);
+    void stopVoiceRecording({ discard: true });
+  }, [stopVoiceRecording]);
 
   const onStickerPick = useCallback(
     (sticker: MockSticker) => {
@@ -1230,6 +1316,7 @@ export default function ChatRoomScreen() {
     }
     const replyToMessageId = replyingTo?.id;
     setSendBusy(true);
+    void Haptics.selectionAsync();
     setDraft("");
     setReplyingTo(null);
     try {
@@ -1278,6 +1365,13 @@ export default function ChatRoomScreen() {
   ]);
 
   const showTypingRow = !USE_API_MOCK && typingPeerCount > 0;
+  const allowAutoDownloadMedia = !(reduceAutoDownloadOnCellular && isCellularConnection);
+
+  useEffect(() => {
+    if (!focusMessageId) return;
+    if (!messages.some((m) => m.id === focusMessageId)) return;
+    messageListRef.current?.scrollToMessage(focusMessageId);
+  }, [focusMessageId, messages]);
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: colors.chatRoomBackground }}>
@@ -1360,7 +1454,29 @@ export default function ChatRoomScreen() {
                 </AppText>
               </View>
             ) : null}
+            {!USE_API_MOCK ? (
+              <Pressable
+                style={{ marginHorizontal: 12, marginBottom: 6, padding: 8, borderRadius: 8, backgroundColor: "#f3f4f6" }}
+                onPress={() => {
+                  const next = !reduceAutoDownloadOnCellular;
+                  setReduceAutoDownloadOnCellular(next);
+                  void appStorage.setItem(CHAT_PREF_REDUCE_AUTO_DOWNLOAD_ON_CELLULAR, next ? "1" : "0");
+                }}
+              >
+                <AppText variant="caption" style={{ textAlign: "center", color: "#374151" }}>
+                  Tiết kiệm data 4G: {reduceAutoDownloadOnCellular ? "Bật" : "Tắt"}
+                </AppText>
+              </Pressable>
+            ) : null}
+            {voiceDraftNotice ? (
+              <View style={{ marginHorizontal: 12, marginBottom: 6, padding: 10, borderRadius: 8, backgroundColor: "#eff6ff" }}>
+                <AppText variant="caption" style={{ color: "#1d4ed8", textAlign: "center" }}>
+                  {voiceDraftNotice}
+                </AppText>
+              </View>
+            ) : null}
             <MessageList
+              ref={messageListRef}
               threadKey={id}
               messages={messages}
               peerAvatarUrl={displayAvatar}
@@ -1372,6 +1488,12 @@ export default function ChatRoomScreen() {
               onMessageLongPress={onMessageLongPress}
               onImagePress={openImageViewer}
               onReactionEmoji={onReactionEmoji}
+              onSwipeReply={(m) => {
+                if (m.kind === "groupEvent") return;
+                void Haptics.selectionAsync();
+                setReplyingTo(toReplyRef(m, displayName));
+              }}
+              autoLoadMedia={allowAutoDownloadMedia}
             />
           </>
         )}
