@@ -15,16 +15,24 @@ import {
   View,
 } from "react-native";
 
-import { GroupMemberPickerModal, GroupMemberRow, GroupSharedMediaPlaceholder } from "@components/group";
+import {
+  GroupMemberPickerModal,
+  GroupMemberRow,
+  GroupOnOffBadge,
+  GroupPendingTag,
+  GroupRoleBadge,
+  GroupSharedMediaPlaceholder,
+  GroupYesNoBadge,
+} from "@components/group";
 import type { PickableMember } from "@components/group";
 import { AppTabScreen, ShellHeader } from "@components/shell";
+import { AppInput } from "@ui/AppInput";
 import { AppText } from "@ui/AppText";
 import { USE_API_MOCK } from "@/constants/env";
 import { MOCK_FRIENDS } from "@/constants/mockData";
 import {
   buildGroupPermissionFlags,
   getGroupDetail,
-  roleDisplayLabel,
   type GroupMember,
   type GroupMemberRole,
 } from "@features/group";
@@ -115,6 +123,9 @@ export default function GroupInfoScreen() {
   const [transferPick, setTransferPick] = useState<string | null>(null);
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [titleBusy, setTitleBusy] = useState(false);
 
   const permissions = useMemo(
     () => (apiDetail && viewerId ? buildGroupPermissionFlags(apiDetail, viewerId) : null),
@@ -517,8 +528,37 @@ export default function GroupInfoScreen() {
     Alert.alert("Tìm trong nhóm", "Kết nối tìm kiếm khi có API.");
   }, []);
 
+  const openRenameGroup = useCallback(() => {
+    if (USE_API_MOCK || !permissions?.canRenameGroup) return;
+    setRenameDraft(title);
+    setRenameOpen(true);
+  }, [USE_API_MOCK, permissions?.canRenameGroup, title]);
+
+  const applyRenameGroup = useCallback(async () => {
+    if (USE_API_MOCK || !id) return;
+    const next = renameDraft.trim();
+    if (!next) {
+      Alert.alert("Đổi tên nhóm", "Tên không được để trống.");
+      return;
+    }
+    if (next === (apiDetail?.title ?? "").trim()) {
+      setRenameOpen(false);
+      return;
+    }
+    setTitleBusy(true);
+    try {
+      const { group } = await patchGroupProfileApi({ conversationId: id, title: next });
+      setApiDetail(group);
+      setRenameOpen(false);
+    } catch (e) {
+      Alert.alert("Đổi tên nhóm", getApiErrorMessage(e));
+    } finally {
+      setTitleBusy(false);
+    }
+  }, [USE_API_MOCK, apiDetail?.title, id, renameDraft]);
+
   const changeGroupAvatar = useCallback(async () => {
-    if (USE_API_MOCK || !id || apiDetail?.myRole !== "owner") return;
+    if (USE_API_MOCK || !id || !permissions?.canEditGroupAvatar) return;
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       Alert.alert("Quyền truy cập", "Cần quyền thư viện ảnh.");
@@ -552,7 +592,7 @@ export default function GroupInfoScreen() {
     } finally {
       setAvatarBusy(false);
     }
-  }, [USE_API_MOCK, apiDetail?.myRole, id, refreshApiDetail]);
+  }, [USE_API_MOCK, id, permissions?.canEditGroupAvatar, refreshApiDetail]);
 
   const showAddControl = USE_API_MOCK || canAddMembersApi;
 
@@ -620,7 +660,7 @@ export default function GroupInfoScreen() {
         <View style={styles.hero}>
           <Pressable
             onPress={() => void changeGroupAvatar()}
-            disabled={USE_API_MOCK || apiDetail?.myRole !== "owner" || avatarBusy}
+            disabled={USE_API_MOCK || !permissions?.canEditGroupAvatar || avatarBusy}
             style={({ pressed }) => ({ opacity: pressed ? 0.88 : 1 })}
           >
             {avatarUrl ? (
@@ -630,16 +670,30 @@ export default function GroupInfoScreen() {
                 <Ionicons name="people" size={28} color={colors.primary} />
               </View>
             )}
-            {!USE_API_MOCK && apiDetail?.myRole === "owner" ? (
+            {!USE_API_MOCK && permissions?.canEditGroupAvatar ? (
               <AppText variant="micro" color="primary" style={{ marginTop: 4, textAlign: "center" }}>
                 Chạm để đổi ảnh
               </AppText>
             ) : null}
           </Pressable>
           {avatarBusy ? <ActivityIndicator style={{ marginTop: 8 }} color={colors.primary} /> : null}
-          <AppText variant="headline" style={styles.groupName} numberOfLines={2}>
-            {title}
-          </AppText>
+          <Pressable
+            onPress={openRenameGroup}
+            disabled={USE_API_MOCK || !permissions?.canRenameGroup}
+            style={({ pressed }) => ({
+              opacity: USE_API_MOCK || !permissions?.canRenameGroup ? 1 : pressed ? 0.85 : 1,
+              marginTop: spacing.sm,
+            })}
+          >
+            <AppText variant="headline" style={styles.groupName} numberOfLines={2}>
+              {title}
+            </AppText>
+          </Pressable>
+          {!USE_API_MOCK && permissions?.canRenameGroup ? (
+            <AppText variant="micro" color="primary" style={{ marginTop: 4, textAlign: "center" }}>
+              Chạm tên để đổi
+            </AppText>
+          ) : null}
           <AppText variant="caption" color="textMuted">
             {members.length} thành viên
           </AppText>
@@ -676,9 +730,7 @@ export default function GroupInfoScreen() {
             <AppText variant="caption" color="textSecondary" style={styles.identityLabel}>
               Vai trò của bạn
             </AppText>
-            <AppText variant="headline" style={{ fontWeight: "700" }}>
-              {roleDisplayLabel(apiDetail.myRole)}
-            </AppText>
+            <GroupRoleBadge role={asGroupMemberRole(apiDetail.myRole)} />
             {permissions?.onlyLeaderDeputyCanChat &&
             permissions.isMemberOnly &&
             apiDetail.myStatus === "active" ? (
@@ -691,24 +743,36 @@ export default function GroupInfoScreen() {
                 <AppText variant="caption" color="textSecondary" style={styles.sectionTitle}>
                   Quyền nhóm
                 </AppText>
-                <AppText variant="micro" color="textMuted" style={styles.permReadLine}>
-                  • Chỉ trưởng/phó gửi tin: {apiDetail.settings.onlyAdminsCanPost ? "Bật" : "Tắt"}
-                </AppText>
-                <AppText variant="micro" color="textMuted" style={styles.permReadLine}>
-                  • Duyệt khi vào nhóm: {apiDetail.settings.joinApprovalRequired ? "Bật" : "Tắt"}
-                </AppText>
-                <AppText variant="micro" color="textMuted" style={styles.permReadLine}>
-                  • Trưởng/phó thu hồi tin của TV:{" "}
-                  {apiDetail.settings.moderatorsCanRecallMessages ? "Bật" : "Tắt"}
-                </AppText>
-                <AppText variant="micro" color="textMuted" style={styles.permReadLine}>
-                  • Chỉ trưởng/phó thêm thành viên:{" "}
-                  {apiDetail.settings.onlyAdminsCanAddMembers ? "Bật" : "Tắt"}
-                </AppText>
-                <AppText variant="micro" color="textMuted" style={styles.permReadLine}>
-                  • Chỉ trưởng/phó xóa thành viên:{" "}
-                  {apiDetail.settings.onlyAdminsCanRemoveMembers ? "Bật" : "Tắt"}
-                </AppText>
+                <View style={styles.permReadRow}>
+                  <AppText variant="micro" color="textMuted" style={styles.permReadLabel}>
+                    Chỉ trưởng/phó gửi tin
+                  </AppText>
+                  <GroupOnOffBadge on={apiDetail.settings.onlyAdminsCanPost} />
+                </View>
+                <View style={styles.permReadRow}>
+                  <AppText variant="micro" color="textMuted" style={styles.permReadLabel}>
+                    Duyệt khi vào nhóm
+                  </AppText>
+                  <GroupOnOffBadge on={apiDetail.settings.joinApprovalRequired} />
+                </View>
+                <View style={styles.permReadRow}>
+                  <AppText variant="micro" color="textMuted" style={styles.permReadLabel}>
+                    Trưởng/phó thu hồi tin TV
+                  </AppText>
+                  <GroupOnOffBadge on={Boolean(apiDetail.settings.moderatorsCanRecallMessages)} />
+                </View>
+                <View style={styles.permReadRow}>
+                  <AppText variant="micro" color="textMuted" style={styles.permReadLabel}>
+                    Chỉ trưởng/phó thêm TV
+                  </AppText>
+                  <GroupOnOffBadge on={Boolean(apiDetail.settings.onlyAdminsCanAddMembers)} />
+                </View>
+                <View style={styles.permReadRow}>
+                  <AppText variant="micro" color="textMuted" style={styles.permReadLabel}>
+                    Chỉ trưởng/phó xóa TV
+                  </AppText>
+                  <GroupOnOffBadge on={Boolean(apiDetail.settings.onlyAdminsCanRemoveMembers)} />
+                </View>
               </View>
             ) : null}
             {permissions && apiDetail.myStatus === "active" && !permissions.canChangeSettings ? (
@@ -716,18 +780,30 @@ export default function GroupInfoScreen() {
                 <AppText variant="caption" color="textSecondary" style={styles.sectionTitle}>
                   Quyền thao tác của bạn
                 </AppText>
-                <AppText variant="micro" color="textMuted" style={styles.permReadLine}>
-                  • {permissions.canAddMembers ? "Có thể" : "Không thể"} mời thêm thành viên
-                </AppText>
-                <AppText variant="micro" color="textMuted" style={styles.permReadLine}>
-                  • {permissions.canRemoveMembers ? "Có thể" : "Không thể"} xóa thành viên (theo quy định nhóm)
-                </AppText>
-                <AppText variant="micro" color="textMuted" style={styles.permReadLine}>
-                  • {permissions.canModerateMembers ? "Có thể" : "Không thể"} duyệt hàng chờ / thành viên chờ
-                </AppText>
-                <AppText variant="micro" color="textMuted" style={styles.permReadLine}>
-                  • {permissions.canChangeSettings ? "Có thể" : "Không thể"} chỉnh cài đặt quyền nhóm
-                </AppText>
+                <View style={styles.permReadRow}>
+                  <AppText variant="micro" color="textMuted" style={styles.permReadLabel}>
+                    Mời thêm thành viên
+                  </AppText>
+                  <GroupYesNoBadge yes={permissions.canAddMembers} />
+                </View>
+                <View style={styles.permReadRow}>
+                  <AppText variant="micro" color="textMuted" style={styles.permReadLabel}>
+                    Xóa thành viên
+                  </AppText>
+                  <GroupYesNoBadge yes={permissions.canRemoveMembers} />
+                </View>
+                <View style={styles.permReadRow}>
+                  <AppText variant="micro" color="textMuted" style={styles.permReadLabel}>
+                    Duyệt hàng chờ / TV chờ
+                  </AppText>
+                  <GroupYesNoBadge yes={permissions.canModerateMembers} />
+                </View>
+                <View style={styles.permReadRow}>
+                  <AppText variant="micro" color="textMuted" style={styles.permReadLabel}>
+                    Sửa cài đặt quyền nhóm
+                  </AppText>
+                  <GroupYesNoBadge yes={permissions.canChangeSettings} />
+                </View>
               </View>
             ) : null}
           </View>
@@ -802,7 +878,7 @@ export default function GroupInfoScreen() {
         {!USE_API_MOCK && permissions?.canChangeSettings && apiDetail ? (
           <View style={styles.settingsBox}>
             <AppText variant="caption" color="textSecondary" style={styles.sectionTitle}>
-              Cài đặt quyền (trưởng nhóm)
+              Cài đặt quyền (trưởng / phó)
             </AppText>
             <View style={styles.switchRow}>
               <AppText variant="subhead" style={{ flex: 1 }}>
@@ -905,9 +981,12 @@ export default function GroupInfoScreen() {
             {pendingDtos.map((p) => (
               <View key={p.userId} style={styles.pendingRow}>
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <AppText variant="subhead" numberOfLines={1} style={{ fontWeight: "600" }}>
-                    {p.user.displayName}
-                  </AppText>
+                  <View style={styles.pendingNameRow}>
+                    <AppText variant="subhead" numberOfLines={1} style={styles.pendingName}>
+                      {p.user.displayName}
+                    </AppText>
+                    <GroupPendingTag style={styles.pendingTag} />
+                  </View>
                   <AppText variant="micro" color="textMuted">
                     @{p.user.username ?? p.userId}
                   </AppText>
@@ -1042,6 +1121,63 @@ export default function GroupInfoScreen() {
         </View>
       </Modal>
 
+      <Modal
+        visible={renameOpen}
+        animationType="fade"
+        transparent
+        onRequestClose={() => {
+          if (!titleBusy) setRenameOpen(false);
+        }}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <AppText variant="headline" style={{ fontWeight: "700" }}>
+              Đổi tên nhóm
+            </AppText>
+            <AppInput
+              label="Tên nhóm"
+              value={renameDraft}
+              onChangeText={setRenameDraft}
+              maxLength={120}
+              editable={!titleBusy}
+              containerStyle={{ marginTop: spacing.md }}
+            />
+            {titleBusy ? (
+              <ActivityIndicator style={{ marginTop: spacing.sm }} color={colors.primary} />
+            ) : null}
+            <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.md }}>
+              <Pressable
+                disabled={titleBusy}
+                onPress={() => setRenameOpen(false)}
+                style={({ pressed }) => [
+                  styles.modalBtnGhost,
+                  pressed && { opacity: 0.85 },
+                  titleBusy && { opacity: 0.5 },
+                ]}
+              >
+                <AppText variant="subhead" style={{ fontWeight: "600" }}>
+                  Hủy
+                </AppText>
+              </Pressable>
+              <Pressable
+                disabled={titleBusy || !renameDraft.trim()}
+                onPress={() => void applyRenameGroup()}
+                style={({ pressed }) => [
+                  styles.modalBtnPrimary,
+                  {
+                    opacity: !renameDraft.trim() || titleBusy ? 0.45 : pressed ? 0.88 : 1,
+                  },
+                ]}
+              >
+                <AppText variant="subhead" style={{ fontWeight: "700", color: colors.textInverse }}>
+                  Lưu
+                </AppText>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <GroupMemberPickerModal
         visible={addOpen}
         title="Thêm thành viên"
@@ -1086,7 +1222,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryMuted,
   },
   groupName: {
-    marginTop: spacing.sm,
     fontWeight: "600",
     textAlign: "center",
   },
@@ -1200,10 +1335,31 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
-    gap: 4,
+    gap: 6,
   },
-  permReadLine: {
+  permReadRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: 2,
+  },
+  permReadLabel: {
+    flex: 1,
+    fontWeight: "600",
     lineHeight: 18,
+  },
+  pendingNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  pendingName: {
+    fontWeight: "600",
+    flexShrink: 1,
+  },
+  pendingTag: {
+    marginTop: 0,
   },
   queueLink: {
     flexDirection: "row",

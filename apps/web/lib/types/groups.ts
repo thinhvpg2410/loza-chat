@@ -49,8 +49,8 @@ export function buildGroupPermissionFlags(
 
   const canModerateMembers = isLeader || isDeputy;
   const canEditGroupProfile = canModerateMembers;
-  const canEditAvatar = isLeader;
-  const canChangeSettings = isLeader;
+  const canEditAvatar = isLeader || isDeputy;
+  const canChangeSettings = isLeader || isDeputy;
   const canDissolve = isLeader;
   const onlyAdminsAdd = Boolean(s?.onlyAdminsCanAddMembers);
   const onlyAdminsRemove = Boolean(s?.onlyAdminsCanRemoveMembers);

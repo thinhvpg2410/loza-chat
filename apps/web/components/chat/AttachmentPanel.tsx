@@ -1,8 +1,8 @@
 "use client";
 
-import { IconDocument, IconImage, IconGrid } from "@/components/chat/icons";
+import { IconDocument, IconImage, IconGrid, IconMic } from "@/components/chat/icons";
 
-export type AttachmentAction = "image" | "file" | "sticker";
+export type AttachmentAction = "image" | "file" | "sticker" | "voice";
 
 type AttachmentPanelProps = {
   open: boolean;
@@ -13,6 +13,7 @@ type AttachmentPanelProps = {
 const items: { action: AttachmentAction; label: string; icon: typeof IconImage }[] = [
   { action: "image", label: "Ảnh", icon: IconImage },
   { action: "file", label: "Tệp", icon: IconDocument },
+  { action: "voice", label: "Ghi âm", icon: IconMic },
   { action: "sticker", label: "Sticker", icon: IconGrid },
 ];
 

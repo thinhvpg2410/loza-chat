@@ -33,6 +33,8 @@ export type ReplyPreviewRef = {
   messageId: string;
   snippet: string;
   isOwn: boolean;
+  /** Quoted message is from someone else: show this instead of a generic label. */
+  peerSenderName?: string;
 };
 
 type MessageCommon = {

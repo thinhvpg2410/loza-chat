@@ -193,11 +193,25 @@ function withReply(
   const snippet = parentMsg
     ? snippetFromMessage(parentMsg)
     : parentRaw?.content?.trim() || "Tin nhắn";
-  const isOwn = parentRaw?.sentByViewer ?? false;
+  const isOwn = parentRaw
+    ? Boolean(parentRaw.sentByViewer)
+    : (parentMsg?.isOwn ?? false);
+  let peerSenderName: string | undefined;
+  if (!isOwn) {
+    if (parentMsg && parentMsg.kind !== "system") {
+      const n = (parentMsg.senderDisplayName ?? "").trim();
+      if (n) peerSenderName = n;
+    }
+    if (!peerSenderName && parentRaw?.sender) {
+      const n = (parentRaw.sender.displayName ?? "").trim();
+      if (n) peerSenderName = n;
+    }
+  }
   const replyTo: ReplyPreviewRef = {
     messageId: row.replyToMessageId,
     snippet,
     isOwn,
+    ...(peerSenderName ? { peerSenderName } : {}),
   };
   if (msg.kind === "system") return msg;
   return { ...msg, replyTo };
@@ -218,6 +232,30 @@ function snippetFromMessage(m: Message): string {
     default:
       return "";
   }
+}
+
+/**
+ * When a message was mapped alone (send response / socket), `replyTo` may miss the parent row.
+ * Merge quote snippet + peer display name from messages already in the thread.
+ */
+export function enrichMessageReplyFromThread(msg: Message, thread: Message[]): Message {
+  if (msg.kind === "system" || !msg.replyTo) return msg;
+  const parent = thread.find((m) => m.id === msg.replyTo.messageId);
+  if (!parent || parent.kind === "system") return msg;
+  const snippet = snippetFromMessage(parent);
+  const isOwn = parent.isOwn;
+  const peerSenderName = !isOwn
+    ? (parent.senderDisplayName ?? "").trim() || undefined
+    : undefined;
+  return {
+    ...msg,
+    replyTo: {
+      messageId: msg.replyTo.messageId,
+      snippet,
+      isOwn,
+      ...(peerSenderName ? { peerSenderName } : {}),
+    },
+  };
 }
 
 /** Maps API history page to UI messages (chronological). */

@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 
+import { GroupJoinQueueKindBadge } from "@components/group";
 import { AppTabScreen, ShellHeader } from "@components/shell";
 import { AppAvatar } from "@ui/AppAvatar";
 import { AppText } from "@ui/AppText";
@@ -213,7 +214,6 @@ export default function GroupJoinRequestsScreen() {
           }
           renderItem={({ item }) => {
             const name = nameByUserId[item.userId] ?? item.userId.slice(0, 8);
-            const label = item.kind === "self_request" ? "Xin vào nhóm" : "Được mời (chờ)";
             const busy = busyUserId === item.userId;
             return (
               <View style={styles.row}>
@@ -222,9 +222,7 @@ export default function GroupJoinRequestsScreen() {
                   <AppText variant="subhead" numberOfLines={1} style={{ fontWeight: "600" }}>
                     {name}
                   </AppText>
-                  <AppText variant="micro" color="textMuted">
-                    {label}
-                  </AppText>
+                  <GroupJoinQueueKindBadge kind={item.kind} />
                 </View>
                 {canModerate ? (
                   <View style={{ flexDirection: "row", gap: 8 }}>

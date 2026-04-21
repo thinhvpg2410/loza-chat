@@ -201,6 +201,9 @@ function MockChatPanel({ conversation }: { conversation: Conversation | null }) 
           messageId: replyTarget.message.id,
           snippet: messageSnippet(replyTarget.message),
           isOwn: replyTarget.message.isOwn,
+          peerSenderName: replyTarget.message.isOwn
+            ? undefined
+            : (replyTarget.message.senderDisplayName ?? "").trim() || undefined,
         }
       : null;
 

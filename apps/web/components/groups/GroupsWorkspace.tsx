@@ -8,6 +8,7 @@ import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { SearchInput } from "@/components/common/SearchInput";
 import { AddMemberModal } from "@/components/groups/AddMemberModal";
 import { CreateGroupModal, type CreateGroupPayload } from "@/components/groups/CreateGroupModal";
+import { EditGroupProfileModal } from "@/components/groups/EditGroupProfileModal";
 import { GroupInfoPanel } from "@/components/groups/GroupInfoPanel";
 import { GroupListRow } from "@/components/groups/GroupListRow";
 import { GroupPermissionPanel } from "@/components/groups/GroupPermissionPanel";
@@ -23,6 +24,7 @@ import {
   fetchGroupDetailAction,
   fetchGroupJoinQueueAction,
   leaveGroupAction,
+  patchGroupProfileAction,
   rejectGroupJoinRequestAction,
   rejectGroupMemberAction,
   removeGroupMemberAction,
@@ -97,6 +99,9 @@ export function GroupsWorkspace() {
 
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [settingsErr, setSettingsErr] = useState<string | null>(null);
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
+  const [editProfileBusy, setEditProfileBusy] = useState(false);
+  const [editProfileErr, setEditProfileErr] = useState<string | null>(null);
 
   const permissions = useMemo(() => buildGroupPermissionFlags(detail, viewerId), [detail, viewerId]);
   const canModerateRef = useRef(permissions.canModerateMembers);
@@ -539,9 +544,50 @@ export function GroupsWorkspace() {
               const m = members.find((x) => x.userId === memberId);
               setKickTarget({ id: memberId, name: m?.displayName ?? memberId });
             }}
+            canEditGroupName={Boolean(detail && permissions.canEditGroupProfile && detail.myStatus === "active")}
+            canEditGroupAvatar={Boolean(detail && permissions.canEditAvatar && detail.myStatus === "active")}
+            onEditGroupProfile={
+              detail &&
+              (permissions.canEditGroupProfile || permissions.canEditAvatar) &&
+              detail.myStatus === "active"
+                ? () => {
+                    setEditProfileErr(null);
+                    setEditProfileOpen(true);
+                  }
+                : undefined
+            }
           />
         ) : null}
       </div>
+
+      <EditGroupProfileModal
+        open={editProfileOpen}
+        initialTitle={detail?.title ?? selected?.name ?? ""}
+        initialAvatarUrl={detail?.avatarUrl ?? selected?.avatarUrl}
+        canEditTitle={Boolean(detail && permissions.canEditGroupProfile && detail.myStatus === "active")}
+        canEditAvatar={Boolean(detail && permissions.canEditAvatar && detail.myStatus === "active")}
+        isSubmitting={editProfileBusy}
+        submitError={editProfileErr}
+        onClose={() => {
+          if (editProfileBusy) return;
+          setEditProfileOpen(false);
+          setEditProfileErr(null);
+        }}
+        onSave={async (patch) => {
+          if (!selectedId) return;
+          setEditProfileBusy(true);
+          setEditProfileErr(null);
+          const r = await patchGroupProfileAction({ conversationId: selectedId, ...patch });
+          setEditProfileBusy(false);
+          if (!r.ok) {
+            setEditProfileErr(r.error);
+            return;
+          }
+          setDetail(r.group);
+          setEditProfileOpen(false);
+          void refreshList();
+        }}
+      />
 
       <CreateGroupModal
         key={createGroupKey}

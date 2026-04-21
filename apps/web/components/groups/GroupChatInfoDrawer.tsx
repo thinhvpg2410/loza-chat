@@ -5,6 +5,7 @@ import { IconClose } from "@/components/chat/icons";
 import { Avatar } from "@/components/common/Avatar";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { AddMemberModal } from "@/components/groups/AddMemberModal";
+import { EditGroupProfileModal } from "@/components/groups/EditGroupProfileModal";
 import { GroupInfoPanel } from "@/components/groups/GroupInfoPanel";
 import { GroupPermissionPanel } from "@/components/groups/GroupPermissionPanel";
 import { JoinRequestList } from "@/components/groups/JoinRequestList";
@@ -17,6 +18,7 @@ import {
   dissolveGroupAction,
   fetchGroupJoinQueueAction,
   leaveGroupAction,
+  patchGroupProfileAction,
   rejectGroupJoinRequestAction,
   rejectGroupMemberAction,
   removeGroupMemberAction,
@@ -96,6 +98,9 @@ export function GroupChatInfoDrawer({
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [settingsErr, setSettingsErr] = useState<string | null>(null);
   const [friends, setFriends] = useState<Friend[]>([]);
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
+  const [editProfileBusy, setEditProfileBusy] = useState(false);
+  const [editProfileErr, setEditProfileErr] = useState<string | null>(null);
 
   const permissions = useMemo(
     () => buildGroupPermissionFlags(groupDetail, viewerId),
@@ -436,6 +441,17 @@ export function GroupChatInfoDrawer({
                 const m = members.find((x) => x.userId === memberId);
                 setKickTarget({ id: memberId, name: m?.displayName ?? memberId });
               }}
+              canEditGroupName={permissions.canEditGroupProfile && groupDetail.myStatus === "active"}
+              canEditGroupAvatar={permissions.canEditAvatar && groupDetail.myStatus === "active"}
+              onEditGroupProfile={
+                (permissions.canEditGroupProfile || permissions.canEditAvatar) &&
+                groupDetail.myStatus === "active"
+                  ? () => {
+                      setEditProfileErr(null);
+                      setEditProfileOpen(true);
+                    }
+                  : undefined
+              }
             />
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-3 bg-[var(--zalo-chat-bg)] px-6 py-10">
@@ -448,6 +464,36 @@ export function GroupChatInfoDrawer({
           )}
         </div>
       </div>
+
+      <EditGroupProfileModal
+        open={editProfileOpen}
+        initialTitle={groupDetail?.title ?? conversation.title}
+        initialAvatarUrl={groupDetail?.avatarUrl ?? conversation.avatarUrl}
+        canEditTitle={Boolean(
+          groupDetail && permissions.canEditGroupProfile && groupDetail.myStatus === "active",
+        )}
+        canEditAvatar={Boolean(groupDetail && permissions.canEditAvatar && groupDetail.myStatus === "active")}
+        isSubmitting={editProfileBusy}
+        submitError={editProfileErr}
+        onClose={() => {
+          if (editProfileBusy) return;
+          setEditProfileOpen(false);
+          setEditProfileErr(null);
+        }}
+        onSave={async (patch) => {
+          setEditProfileBusy(true);
+          setEditProfileErr(null);
+          const r = await patchGroupProfileAction({ conversationId, ...patch });
+          setEditProfileBusy(false);
+          if (!r.ok) {
+            setEditProfileErr(r.error);
+            return;
+          }
+          onGroupDetailChange(r.group);
+          setEditProfileOpen(false);
+          void refreshConversationList();
+        }}
+      />
 
       <AddMemberModal
         open={addMemberOpen}

@@ -2,6 +2,7 @@ import { memo, useMemo } from "react";
 import { Pressable, StyleSheet, useWindowDimensions } from "react-native";
 
 import { AppText } from "@ui/AppText";
+import { splitMentionTextParts } from "@features/chat-room/mentionText";
 import type { MessageSenderRole, ReplyReference } from "@features/chat-room/types";
 import { colors, shadows } from "@theme";
 
@@ -33,6 +34,7 @@ function UnpackedMessageBubble({ role, position, text, replyTo, onPress, onLongP
         };
 
   const shadow = role === "peer" ? shadows.hairline : shadows.none;
+  const mentionParts = useMemo(() => splitMentionTextParts(text), [text]);
 
   return (
     <Pressable
@@ -51,7 +53,15 @@ function UnpackedMessageBubble({ role, position, text, replyTo, onPress, onLongP
     >
       {replyTo ? <ReplyInline reply={replyTo} /> : null}
       <AppText variant="body" style={styles.body} numberOfLines={32}>
-        {text}
+        {mentionParts.map((part, idx) => (
+          <AppText
+            key={`mention-part-${idx}`}
+            variant="body"
+            style={part.isMention ? styles.mention : undefined}
+          >
+            {part.text}
+          </AppText>
+        ))}
       </AppText>
     </Pressable>
   );
@@ -69,6 +79,10 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     fontWeight: "400",
     color: colors.text,
+  },
+  mention: {
+    color: colors.primary,
+    fontWeight: "700",
   },
   pressed: {
     opacity: 0.92,

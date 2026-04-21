@@ -67,12 +67,12 @@ export function DocumentPreviewModal({
         </header>
 
         <div className="relative min-h-0 flex-1 bg-[var(--zalo-surface)]">
+          {/* Chrome built-in PDF viewer does not run inside a sandboxed iframe (blocked page). */}
           <iframe
             title={title}
             src={embedUrl}
             className="h-full min-h-[50vh] w-full border-0"
             allow="fullscreen"
-            sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-downloads allow-modals"
           />
         </div>
       </div>

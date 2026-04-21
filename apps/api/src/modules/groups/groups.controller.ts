@@ -158,7 +158,7 @@ export class GroupsController {
   }
 
   @Patch(':id/settings')
-  @ApiOperation({ summary: 'Update group permission settings (owner only)' })
+  @ApiOperation({ summary: 'Update group permission settings (owner or admin)' })
   @ApiParam({
     name: 'id',
     format: 'uuid',

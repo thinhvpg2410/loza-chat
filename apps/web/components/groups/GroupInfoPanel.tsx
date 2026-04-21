@@ -25,6 +25,10 @@ type GroupInfoPanelProps = {
   onPromoteMember?: (memberId: string) => void;
   onDemoteMember?: (memberId: string) => void;
   onRemoveMember?: (memberId: string) => void;
+  /** Trưởng/phó đổi tên và ảnh nhóm (theo API). */
+  canEditGroupName?: boolean;
+  canEditGroupAvatar?: boolean;
+  onEditGroupProfile?: () => void;
 };
 
 const actionBtn =
@@ -48,7 +52,12 @@ export function GroupInfoPanel({
   onPromoteMember,
   onDemoteMember,
   onRemoveMember,
+  canEditGroupName = false,
+  canEditGroupAvatar = false,
+  onEditGroupProfile,
 }: GroupInfoPanelProps) {
+  const showEditProfile =
+    Boolean(onEditGroupProfile) && (canEditGroupName || canEditGroupAvatar);
   return (
     <aside
       className="flex h-full w-full min-w-[280px] max-w-[340px] shrink-0 flex-col border-l border-[var(--zalo-border)] bg-white"
@@ -63,6 +72,15 @@ export function GroupInfoPanel({
           <p className="mt-0.5 text-[11px] font-medium tabular-nums leading-none text-[var(--zalo-text-subtle)]">
             {group.memberCount} thành viên
           </p>
+          {showEditProfile ? (
+            <button
+              type="button"
+              className="mt-2 text-[12px] font-semibold text-[var(--zalo-blue)] transition hover:underline"
+              onClick={onEditGroupProfile}
+            >
+              {canEditGroupAvatar ? "Đổi tên hoặc ảnh nhóm" : "Đổi tên nhóm"}
+            </button>
+          ) : null}
           {onlyLeaderDeputyCanChat !== undefined || joinApprovalRequired !== undefined ? (
             <div className="mt-2 flex flex-wrap justify-center gap-1">
               {onlyLeaderDeputyCanChat ? (

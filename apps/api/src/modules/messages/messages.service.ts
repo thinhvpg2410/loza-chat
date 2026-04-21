@@ -9,6 +9,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import {
   ConversationMemberRole,
+  ConversationMemberStatus,
   ConversationType,
   MessageType,
   Prisma,
@@ -57,6 +58,17 @@ type MessageWithRelations = Message & {
 type MessageDeletionMode = 'recalled' | 'deleted';
 
 type ForwardedMessageMeta = { forwardedFromMessageId: string };
+type MentionMeta = {
+  mentionAll: boolean;
+  mentionUserIds: string[];
+  mentionHandles: string[];
+};
+
+type MentionUserIdentity = {
+  userId: string;
+  username: string | null;
+  displayName: string | null;
+};
 
 @Injectable()
 export class MessagesService {
@@ -150,6 +162,143 @@ export class MessagesService {
     } as Prisma.InputJsonValue;
   }
 
+  private extractMentionHandles(content: string): MentionMeta {
+    const handles = new Set<string>();
+    let mentionAll = false;
+    const mentionPattern = /(^|\s)@([a-zA-Z0-9._-]{1,64})/g;
+    for (const match of content.matchAll(mentionPattern)) {
+      const raw = (match[2] ?? '').trim().toLowerCase();
+      if (!raw) {
+        continue;
+      }
+      if (raw === 'all') {
+        mentionAll = true;
+        continue;
+      }
+      handles.add(raw);
+    }
+    return { mentionAll, mentionUserIds: [], mentionHandles: [...handles] };
+  }
+
+  private buildMentionTokens(identity: MentionUserIdentity): Set<string> {
+    const tokens = new Set<string>();
+    const username = (identity.username ?? '').trim().toLowerCase();
+    if (username) {
+      tokens.add(username);
+    }
+    const displayName = (identity.displayName ?? '').trim().toLowerCase();
+    if (displayName) {
+      const ascii = displayName.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const compact = ascii.replace(/[^a-z0-9]+/g, '');
+      const dot = ascii.replace(/[^a-z0-9]+/g, '.').replace(/^\.+|\.+$/g, '');
+      const underscore = ascii.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+      const hyphen = ascii.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      if (compact) {
+        tokens.add(compact);
+      }
+      if (dot) {
+        tokens.add(dot);
+      }
+      if (underscore) {
+        tokens.add(underscore);
+      }
+      if (hyphen) {
+        tokens.add(hyphen);
+      }
+    }
+    return tokens;
+  }
+
+  private mergeMetadataJson(
+    forwarded: Prisma.InputJsonValue | undefined,
+    mentions: MentionMeta | null,
+  ): Prisma.InputJsonValue | undefined {
+    if (!forwarded && !mentions) {
+      return undefined;
+    }
+    const base =
+      forwarded && typeof forwarded === 'object' && !Array.isArray(forwarded)
+        ? ({ ...(forwarded as Prisma.JsonObject) } as Prisma.JsonObject)
+        : ({} as Prisma.JsonObject);
+    if (mentions) {
+      base.mentions = {
+        mentionAll: mentions.mentionAll,
+        userIds: mentions.mentionUserIds,
+        handles: mentions.mentionHandles,
+      };
+    }
+    return base as Prisma.InputJsonValue;
+  }
+
+  private async resolveMentionsForConversationTx(
+    tx: Prisma.TransactionClient,
+    conversationId: string,
+    senderId: string,
+    content: string | null | undefined,
+  ): Promise<MentionMeta | null> {
+    if (!content?.trim()) {
+      return null;
+    }
+    const parsed = this.extractMentionHandles(content);
+    if (!parsed.mentionAll && parsed.mentionHandles.length === 0) {
+      return null;
+    }
+
+    const conversation = await tx.conversation.findUnique({
+      where: { id: conversationId },
+      select: { type: true },
+    });
+    if (!conversation || conversation.type !== ConversationType.group) {
+      return null;
+    }
+
+    const members = await tx.conversationMember.findMany({
+      where: {
+        conversationId,
+        status: ConversationMemberStatus.active,
+      },
+      select: {
+        userId: true,
+        user: {
+          select: {
+            username: true,
+            displayName: true,
+          },
+        },
+      },
+    });
+
+    const mentionUserIds = new Set<string>();
+    if (parsed.mentionAll) {
+      for (const row of members) {
+        if (row.userId !== senderId) {
+          mentionUserIds.add(row.userId);
+        }
+      }
+    }
+
+    if (parsed.mentionHandles.length > 0) {
+      const normalizedHandles = new Set(parsed.mentionHandles);
+      for (const row of members) {
+        const tokens = this.buildMentionTokens({
+          userId: row.userId,
+          username: row.user.username,
+          displayName: row.user.displayName,
+        });
+        const matched = [...tokens].some((token) => normalizedHandles.has(token));
+        if (matched && row.userId !== senderId) {
+          mentionUserIds.add(row.userId);
+        }
+      }
+    }
+
+    return {
+      mentionAll: parsed.mentionAll,
+      mentionHandles: parsed.mentionHandles,
+      mentionUserIds: [...mentionUserIds],
+    };
+  }
+
   async sendTextMessage(
     senderId: string,
     dto: SendMessageDto,
@@ -198,7 +347,16 @@ export class MessagesService {
       }
 
       try {
-        const metadataJson = this.forwardedMetadataJson(forwardMeta);
+        const mentionMeta = await this.resolveMentionsForConversationTx(
+          tx,
+          dto.conversationId,
+          senderId,
+          dto.content,
+        );
+        const metadataJson = this.mergeMetadataJson(
+          this.forwardedMetadataJson(forwardMeta),
+          mentionMeta,
+        );
         const created = await tx.message.create({
           data: {
             conversationId: dto.conversationId,
@@ -207,7 +365,7 @@ export class MessagesService {
             type: MessageType.text,
             content: dto.content,
             replyToMessageId: dto.replyToMessageId ?? null,
-            ...(metadataJson ? { metadataJson } : {}),
+            ...(metadataJson !== undefined ? { metadataJson } : {}),
           },
           include: {
             sender: true,
@@ -307,7 +465,16 @@ export class MessagesService {
       }
 
       try {
-        const metadataJson = this.forwardedMetadataJson(forwardMeta);
+        const mentionMeta = await this.resolveMentionsForConversationTx(
+          tx,
+          dto.conversationId,
+          senderId,
+          content,
+        );
+        const metadataJson = this.mergeMetadataJson(
+          this.forwardedMetadataJson(forwardMeta),
+          mentionMeta,
+        );
         const created = await tx.message.create({
           data: {
             conversationId: dto.conversationId,
@@ -317,7 +484,7 @@ export class MessagesService {
             content: null,
             stickerId: dto.stickerId,
             replyToMessageId: dto.replyToMessageId ?? null,
-            ...(metadataJson ? { metadataJson } : {}),
+            ...(metadataJson !== undefined ? { metadataJson } : {}),
           },
           include: {
             sender: true,

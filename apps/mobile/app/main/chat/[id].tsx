@@ -3,6 +3,7 @@ import * as Clipboard from "expo-clipboard";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import * as WebBrowser from "expo-web-browser";
+import { Audio } from "expo-av";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -103,6 +104,8 @@ function previewLine(m: ChatRoomMessage): string {
       return m.file?.name ?? "📎 Tệp";
     case "sticker":
       return m.stickerEmoji ?? "🎭 Sticker";
+    case "groupEvent":
+      return m.groupEventBadge ?? "Sự kiện nhóm";
     default:
       return "";
   }
@@ -126,6 +129,8 @@ function copyableText(m: ChatRoomMessage): string {
       return m.imageUrl ?? "";
     case "sticker":
       return m.stickerEmoji ?? "";
+    case "groupEvent":
+      return [m.groupEventBadge, m.groupEventDetail].filter(Boolean).join(" — ");
     default:
       return "";
   }
@@ -291,6 +296,19 @@ export default function ChatRoomScreen() {
     : isGroup
       ? groupSendGuard.canSend
       : directSendGuard.canSend;
+  const mentionCandidates = useMemo(
+    () =>
+      !isGroup || !groupDetail
+        ? []
+        : groupDetail.members
+            .filter((m) => m.user.id !== viewerId)
+            .map((m) => ({
+              userId: m.user.id,
+              displayName: m.user.displayName,
+              username: m.user.username,
+            })),
+    [groupDetail, isGroup, viewerId],
+  );
 
   const alertCannotSend = useCallback(() => {
     if (isGroup) {
@@ -334,10 +352,28 @@ export default function ChatRoomScreen() {
   const [attachmentOpen, setAttachmentOpen] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [stickerOpen, setStickerOpen] = useState(false);
+  const [voiceRecording, setVoiceRecording] = useState(false);
+  const [voiceRecordingDurationSec, setVoiceRecordingDurationSec] = useState(0);
+  const voiceRecordingRef = useRef<Audio.Recording | null>(null);
+  const voiceTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const typingStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagesRef = useRef<ChatRoomMessage[]>(messages);
   messagesRef.current = messages;
+
+  useEffect(() => {
+    return () => {
+      const recording = voiceRecordingRef.current;
+      if (recording) {
+        void recording.stopAndUnloadAsync().catch(() => undefined);
+      }
+      voiceRecordingRef.current = null;
+      if (voiceTimerRef.current) {
+        clearInterval(voiceTimerRef.current);
+        voiceTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     typingPeersRef.current.clear();
@@ -535,6 +571,7 @@ export default function ChatRoomScreen() {
   }, []);
 
   const onMessagePress = useCallback((m: ChatRoomMessage) => {
+    if (m.kind === "groupEvent") return;
     if (m.kind === "image") return;
     if (m.isRemoved) return;
 
@@ -558,11 +595,12 @@ export default function ChatRoomScreen() {
   }, []);
 
   const onMessageLongPress = useCallback((m: ChatRoomMessage) => {
+    if (m.kind === "groupEvent") return;
     setActionTarget(m);
   }, []);
 
   const actionItems = useMemo<MessageActionItem[]>(() => {
-    if (!actionTarget) return [];
+    if (!actionTarget || actionTarget.kind === "groupEvent") return [];
     const own = actionTarget.senderRole === "me";
     const removed = Boolean(actionTarget.isRemoved);
     const modRecall =
@@ -611,7 +649,7 @@ export default function ChatRoomScreen() {
       return;
     }
     const msg = messagesRef.current.find((m) => m.id === messageId);
-    if (!msg) return;
+    if (!msg || msg.kind === "groupEvent") return;
     const effective = msg.reactions ?? [];
     const mine = effective.filter((r) => r.reactedByMe).map((r) => r.emoji);
     const isMine = effective.some((r) => r.emoji === emoji && r.reactedByMe);
@@ -957,14 +995,114 @@ export default function ChatRoomScreen() {
         void pickPhoto();
       } else if (kind === "file") {
         void pickFile();
+      } else if (kind === "voice") {
+        void (async () => {
+          if (voiceRecording) {
+            const recording = voiceRecordingRef.current;
+            if (!recording) {
+              setVoiceRecording(false);
+              return;
+            }
+            try {
+              await recording.stopAndUnloadAsync();
+              const uri = recording.getURI();
+              voiceRecordingRef.current = null;
+              setVoiceRecording(false);
+              setVoiceRecordingDurationSec(0);
+              if (voiceTimerRef.current) {
+                clearInterval(voiceTimerRef.current);
+                voiceTimerRef.current = null;
+              }
+              if (!uri) {
+                Alert.alert("Ghi âm", "Không đọc được file ghi âm.");
+                return;
+              }
+              const att = await uploadLocalFileToAttachment({
+                fileUri: uri,
+                fileName: `voice-${Date.now()}.m4a`,
+                mimeType: "audio/mp4",
+                uploadType: "voice",
+              });
+              const { message } = await sendMessageWithAttachmentsApi({
+                conversationId: id,
+                clientMessageId: newClientMessageId(),
+                type: "voice",
+                attachmentIds: [att.id],
+                replyToMessageId: replyingTo?.id,
+              });
+              setReplyingTo(null);
+              const row = asReceiptView(message, viewerId);
+              setMessages((prev) =>
+                mergeMessagesById(prev, mapApiMessagesToChatRoomList([row], viewerId, displayName)),
+              );
+              void fetchConversations();
+            } catch (e) {
+              Alert.alert("Ghi âm", getApiErrorMessage(e));
+            }
+            return;
+          }
+          try {
+            const perm = await Audio.requestPermissionsAsync();
+            if (!perm.granted) {
+              Alert.alert(
+                "Quyền micro",
+                "Cần cấp quyền micro để ghi âm. Vui lòng bật quyền trong cài đặt ứng dụng.",
+              );
+              return;
+            }
+            await Audio.setAudioModeAsync({
+              allowsRecordingIOS: true,
+              playsInSilentModeIOS: true,
+            });
+            const { recording } = await Audio.Recording.createAsync(
+              Audio.RecordingOptionsPresets.HIGH_QUALITY,
+            );
+            voiceRecordingRef.current = recording;
+            setVoiceRecording(true);
+            setVoiceRecordingDurationSec(0);
+            if (voiceTimerRef.current) {
+              clearInterval(voiceTimerRef.current);
+            }
+            voiceTimerRef.current = setInterval(() => {
+              setVoiceRecordingDurationSec((sec) => sec + 1);
+            }, 1000);
+          } catch (e) {
+            Alert.alert("Ghi âm", getApiErrorMessage(e));
+            setVoiceRecording(false);
+            setVoiceRecordingDurationSec(0);
+            voiceRecordingRef.current = null;
+            if (voiceTimerRef.current) {
+              clearInterval(voiceTimerRef.current);
+              voiceTimerRef.current = null;
+            }
+          }
+        })();
       } else if (kind === "sticker") {
         setStickerOpen(true);
       } else if (kind === "camera") {
         Alert.alert("Camera", "Placeholder — tích hợp camera sau.");
       }
     },
-    [alertCannotSend, canSendInThread, pickFile, pickPhoto],
+    [alertCannotSend, canSendInThread, displayName, fetchConversations, id, pickFile, pickPhoto, replyingTo?.id, viewerId, voiceRecording],
   );
+
+  const toggleVoiceRecording = useCallback(() => {
+    onAttachmentPick("voice");
+  }, [onAttachmentPick]);
+
+  const cancelVoiceRecording = useCallback(() => {
+    const recording = voiceRecordingRef.current;
+    if (recording) {
+      void recording.stopAndUnloadAsync().catch(() => undefined);
+    }
+    voiceRecordingRef.current = null;
+    setVoiceRecording(false);
+    setVoiceRecordingDurationSec(0);
+    if (voiceTimerRef.current) {
+      clearInterval(voiceTimerRef.current);
+      voiceTimerRef.current = null;
+    }
+  }, []);
 
   const onStickerPick = useCallback(
     (sticker: MockSticker) => {
@@ -1174,6 +1312,11 @@ export default function ChatRoomScreen() {
           onCancelReply={() => setReplyingTo(null)}
           onOpenAttachment={() => setAttachmentOpen(true)}
           onOpenEmoji={() => setEmojiOpen(true)}
+          mentionCandidates={mentionCandidates}
+          onToggleVoiceRecording={toggleVoiceRecording}
+          isVoiceRecording={voiceRecording}
+          voiceRecordingDurationSec={voiceRecordingDurationSec}
+          onCancelVoiceRecording={cancelVoiceRecording}
         />
       </KeyboardAvoidingView>
 

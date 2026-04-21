@@ -71,6 +71,8 @@ function UnpackedMessageContent({
           onLongPress={onLongPress}
         />
       );
+    case "groupEvent":
+      return null;
     default:
       return null;
   }

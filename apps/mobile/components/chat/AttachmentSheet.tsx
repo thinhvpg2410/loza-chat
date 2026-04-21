@@ -5,13 +5,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "@ui/AppText";
 import { colors, radius, spacing } from "@theme";
 
-export type AttachmentKind = "photo" | "file" | "sticker" | "camera";
+export type AttachmentKind = "photo" | "file" | "voice" | "sticker" | "camera";
 
 type Row = { id: AttachmentKind; label: string; icon: keyof typeof Ionicons.glyphMap };
 
 const ROWS: Row[] = [
   { id: "photo", label: "Ảnh", icon: "images-outline" },
   { id: "file", label: "Tệp", icon: "document-outline" },
+  { id: "voice", label: "Ghi âm", icon: "mic-outline" },
   { id: "sticker", label: "Sticker", icon: "happy-outline" },
   { id: "camera", label: "Camera (placeholder)", icon: "camera-outline" },
 ];

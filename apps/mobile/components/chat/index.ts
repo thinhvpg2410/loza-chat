@@ -5,6 +5,7 @@ export { UnreadBadge } from "./UnreadBadge";
 
 export { ChatRoomHeader } from "./ChatRoomHeader";
 export { MessageList } from "./MessageList";
+export { ChatGroupEventRow } from "./ChatGroupEventRow";
 export { MessageBubble } from "./MessageBubble";
 export { MessageGroup } from "./MessageGroup";
 export { MessageInputBar } from "./MessageInputBar";

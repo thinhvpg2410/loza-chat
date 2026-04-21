@@ -34,7 +34,11 @@ import {
   mergeReceiptPointerFromSocketPayload,
 } from "@/lib/chat/apply-peer-receipts";
 import type { ApiGroupDetail, ApiMessageWithReceipt } from "@/lib/chat/api-dtos";
-import { mapReactions, mapSingleApiMessage } from "@/lib/chat/map-api-message";
+import {
+  enrichMessageReplyFromThread,
+  mapReactions,
+  mapSingleApiMessage,
+} from "@/lib/chat/map-api-message";
 import { maxMessageTimelineRefIso, type MessageTimelineRef } from "@/lib/chat/message-timeline";
 import { messageSnippet } from "@/lib/message-snippet";
 import { mergeReactionBroadcastCounts } from "@/lib/reaction-utils";
@@ -118,6 +122,7 @@ export function ApiChatPanel({
   const [groupInfoOpen, setGroupInfoOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadingLabel, setUploadingLabel] = useState<string | null>(null);
+  const [voiceRecordingDurationSec, setVoiceRecordingDurationSec] = useState(0);
   const [confirmAction, setConfirmAction] = useState<ConfirmActionState>(null);
   const [messageActionBusy, setMessageActionBusy] = useState(false);
   const [forwardOpen, setForwardOpen] = useState(false);
@@ -139,6 +144,11 @@ export function ApiChatPanel({
   const peerTypingExpireTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const imagePickerRef = useRef<HTMLInputElement>(null);
   const filePickerRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const mediaChunksRef = useRef<Blob[]>([]);
+  const voiceTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [voiceRecording, setVoiceRecording] = useState(false);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -147,6 +157,16 @@ export function ApiChatPanel({
   useEffect(() => {
     reactionOverridesRef.current = reactionOverrides;
   }, [reactionOverrides]);
+
+  useEffect(() => {
+    return () => {
+      mediaRecorderRef.current?.stop();
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+      if (voiceTimerRef.current) {
+        clearInterval(voiceTimerRef.current);
+      }
+    };
+  }, []);
 
   const applyReceipts = useCallback((list: Message[]) => {
     return applyPeerReceiptPointersToMessages(
@@ -333,7 +353,7 @@ export function ApiChatPanel({
         }
         setMessages((prev) => {
           if (prev.some((m) => m.id === row.id)) return prev;
-          const mapped = mapSingleApiMessage(row, apiBase);
+          const mapped = enrichMessageReplyFromThread(mapSingleApiMessage(row, apiBase), prev);
           const next = applyReceipts([...prev, mapped]);
           return next;
         });
@@ -345,7 +365,7 @@ export function ApiChatPanel({
       },
       onMessageUpdated: (row: ApiMessageWithReceipt) => {
         setMessages((prev) => {
-          const mapped = mapSingleApiMessage(row, apiBase);
+          const mapped = enrichMessageReplyFromThread(mapSingleApiMessage(row, apiBase), prev);
           if (!prev.some((m) => m.id === row.id)) return prev;
           return applyReceipts(prev.map((m) => (m.id === row.id ? mapped : m)));
         });
@@ -592,7 +612,8 @@ export function ApiChatPanel({
     setReplyTarget(null);
     setMessages((prev) => {
       if (prev.some((m) => m.id === r.message.id)) return prev;
-      return applyReceipts([...prev, r.message]);
+      const merged = enrichMessageReplyFromThread(r.message, prev);
+      return applyReceipts([...prev, merged]);
     });
     void markConversationReadAction(conversation.id, r.message.id);
     realtimeRef.current?.emitSeen(conversation.id, r.message.id);
@@ -648,7 +669,8 @@ export function ApiChatPanel({
       setReplyTarget(null);
       setMessages((prev) => {
         if (prev.some((m) => m.id === r.message.id)) return prev;
-        return applyReceipts([...prev, r.message]);
+        const merged = enrichMessageReplyFromThread(r.message, prev);
+        return applyReceipts([...prev, merged]);
       });
       void markConversationReadAction(conversation.id, r.message.id);
       realtimeRef.current?.emitSeen(conversation.id, r.message.id);
@@ -658,7 +680,7 @@ export function ApiChatPanel({
   );
 
   const uploadAndSendAttachment = useCallback(
-    async (file: File, mode: "image" | "file") => {
+    async (file: File, mode: "image" | "file" | "voice") => {
       if (!conversation) return;
       if (sending || uploading) return;
       if (conversation.chatType === "direct") {
@@ -675,7 +697,9 @@ export function ApiChatPanel({
 
       setSendError(null);
       setUploading(true);
-      setUploadingLabel(mode === "image" ? "Đang tải ảnh…" : "Đang tải tệp…");
+      setUploadingLabel(
+        mode === "image" ? "Đang tải ảnh…" : mode === "voice" ? "Đang tải ghi âm…" : "Đang tải tệp…",
+      );
 
       try {
         const normalizedMime =
@@ -683,10 +707,14 @@ export function ApiChatPanel({
             ? file.type.trim().toLowerCase()
             : mode === "image"
               ? "image/jpeg"
-              : "application/octet-stream";
+              : mode === "voice"
+                ? "audio/webm"
+                : "application/octet-stream";
         const uploadType: "image" | "file" | "voice" | "video" | "other" =
           mode === "image"
             ? "image"
+            : mode === "voice"
+              ? "voice"
             : normalizedMime.startsWith("video/")
               ? "video"
               : normalizedMime.startsWith("audio/")
@@ -747,7 +775,8 @@ export function ApiChatPanel({
         setReplyTarget(null);
         setMessages((prev) => {
           if (prev.some((m) => m.id === sent.message.id)) return prev;
-          return applyReceipts([...prev, sent.message]);
+          const merged = enrichMessageReplyFromThread(sent.message, prev);
+          return applyReceipts([...prev, merged]);
         });
         void markConversationReadAction(conversation.id, sent.message.id);
         realtimeRef.current?.emitSeen(conversation.id, sent.message.id);
@@ -761,6 +790,104 @@ export function ApiChatPanel({
     },
     [conversation, sending, uploading, replyTarget, applyReceipts, refreshSidebar],
   );
+
+  const toggleVoiceRecording = useCallback(async () => {
+    if (voiceRecording) {
+      const recorder = mediaRecorderRef.current;
+      if (!recorder) {
+        setVoiceRecording(false);
+        return;
+      }
+      recorder.stop();
+      return;
+    }
+    if (!conversation) return;
+    if (typeof window === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setSendError("Trình duyệt không hỗ trợ ghi âm.");
+      return;
+    }
+    if (conversation.chatType === "direct") {
+      const rel = conversation.directPeerRelationshipStatus;
+      if (rel === "blocked_by_me" || rel === "blocked_me") {
+        setSendError("Không thể gửi ghi âm trong cuộc trò chuyện này.");
+        return;
+      }
+    }
+    try {
+      setSendError(null);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      mediaStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+      mediaChunksRef.current = [];
+      recorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data && event.data.size > 0) {
+          mediaChunksRef.current.push(event.data);
+        }
+      };
+      recorder.onstop = () => {
+        const blob = new Blob(mediaChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        mediaChunksRef.current = [];
+        mediaRecorderRef.current = null;
+        mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+        mediaStreamRef.current = null;
+        setVoiceRecording(false);
+        setVoiceRecordingDurationSec(0);
+        if (voiceTimerRef.current) {
+          clearInterval(voiceTimerRef.current);
+          voiceTimerRef.current = null;
+        }
+        if (blob.size > 0) {
+          const ext = (recorder.mimeType || "").includes("ogg") ? "ogg" : "webm";
+          const file = new File([blob], `voice-${Date.now()}.${ext}`, {
+            type: recorder.mimeType || "audio/webm",
+          });
+          void uploadAndSendAttachment(file, "voice");
+        }
+      };
+      recorder.start();
+      setVoiceRecording(true);
+      setVoiceRecordingDurationSec(0);
+      if (voiceTimerRef.current) {
+        clearInterval(voiceTimerRef.current);
+      }
+      voiceTimerRef.current = setInterval(() => {
+        setVoiceRecordingDurationSec((sec) => sec + 1);
+      }, 1000);
+    } catch (e) {
+      setVoiceRecording(false);
+      setSendError(
+        e instanceof Error
+          ? `Không thể bắt đầu ghi âm: ${e.message}`
+          : "Không thể bắt đầu ghi âm. Vui lòng cấp quyền micro cho trình duyệt.",
+      );
+      setVoiceRecordingDurationSec(0);
+      if (voiceTimerRef.current) {
+        clearInterval(voiceTimerRef.current);
+        voiceTimerRef.current = null;
+      }
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+      mediaRecorderRef.current = null;
+    }
+  }, [conversation, uploadAndSendAttachment, voiceRecording]);
+
+  const cancelVoiceRecording = useCallback(() => {
+    mediaChunksRef.current = [];
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== "inactive") {
+      recorder.stop();
+    }
+    mediaRecorderRef.current = null;
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    mediaStreamRef.current = null;
+    setVoiceRecording(false);
+    setVoiceRecordingDurationSec(0);
+    if (voiceTimerRef.current) {
+      clearInterval(voiceTimerRef.current);
+      voiceTimerRef.current = null;
+    }
+  }, []);
 
   const handleImagePicked = useCallback(
     (file: File | null) => {
@@ -786,7 +913,8 @@ export function ApiChatPanel({
     (nextMessage: Message) => {
       setMessages((prev) => {
         if (!prev.some((m) => m.id === nextMessage.id)) return prev;
-        return applyReceipts(prev.map((m) => (m.id === nextMessage.id ? nextMessage : m)));
+        const merged = enrichMessageReplyFromThread(nextMessage, prev);
+        return applyReceipts(prev.map((m) => (m.id === nextMessage.id ? merged : m)));
       });
     },
     [applyReceipts],
@@ -913,6 +1041,9 @@ export function ApiChatPanel({
           messageId: replyTarget.message.id,
           snippet: messageSnippet(replyTarget.message),
           isOwn: replyTarget.message.isOwn,
+          peerSenderName: replyTarget.message.isOwn
+            ? undefined
+            : (replyTarget.message.senderDisplayName ?? "").trim() || undefined,
         }
       : null;
 
@@ -1135,14 +1266,33 @@ export function ApiChatPanel({
               }
               if (action === "file") {
                 filePickerRef.current?.click();
+                return;
+              }
+              if (action === "voice") {
+                void toggleVoiceRecording();
               }
             }}
+            onToggleVoiceRecording={() => void toggleVoiceRecording()}
+            isVoiceRecording={voiceRecording}
+            voiceRecordingDurationSec={voiceRecordingDurationSec}
+            onCancelVoiceRecording={cancelVoiceRecording}
             onPickSticker={(stickerId, emoji) => void sendSticker(stickerId, emoji)}
             onInsertEmoji={(emoji) => {
               setDraft((d) => d + emoji);
               notifyTypingActivity();
             }}
             onComposerBlur={() => flushTypingStop()}
+            mentionCandidates={
+              conversation?.chatType === "group"
+                ? (groupDetail?.members ?? [])
+                    .filter((m) => m.user.id !== realtime?.viewerUserId)
+                    .map((m) => ({
+                      userId: m.user.id,
+                      displayName: m.user.displayName,
+                      username: m.user.username,
+                    }))
+                : []
+            }
           />
           <input
             ref={imagePickerRef}

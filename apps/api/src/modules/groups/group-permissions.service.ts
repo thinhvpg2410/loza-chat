@@ -17,7 +17,6 @@ export class GroupPermissionsService {
     }
   }
 
-  /** Owner and admin can rename the group (legacy); prefer granular asserts below. */
   assertCanManageGroupContent(actorRole: ConversationMemberRole | null): void {
     const r = this.normalizeRole(actorRole);
     if (r !== ConversationMemberRole.owner && r !== ConversationMemberRole.admin) {
@@ -26,8 +25,9 @@ export class GroupPermissionsService {
   }
 
   assertCanUpdateGroupSettings(actorRole: ConversationMemberRole | null): void {
-    if (this.normalizeRole(actorRole) !== ConversationMemberRole.owner) {
-      throw new ForbiddenException('Only the group owner can change group settings');
+    const r = this.normalizeRole(actorRole);
+    if (r !== ConversationMemberRole.owner && r !== ConversationMemberRole.admin) {
+      throw new ForbiddenException('Only the group owner or admins can change group settings');
     }
   }
 
@@ -66,8 +66,9 @@ export class GroupPermissionsService {
   }
 
   assertCanEditAvatar(actorRole: ConversationMemberRole | null): void {
-    if (this.normalizeRole(actorRole) !== ConversationMemberRole.owner) {
-      throw new ForbiddenException('Only the group owner can change the avatar');
+    const r = this.normalizeRole(actorRole);
+    if (r !== ConversationMemberRole.owner && r !== ConversationMemberRole.admin) {
+      throw new ForbiddenException('Only the group owner or admins can change the avatar');
     }
   }
 

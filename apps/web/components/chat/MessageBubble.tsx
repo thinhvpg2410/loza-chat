@@ -7,10 +7,11 @@ import { FileMessage } from "@/components/chat/FileMessage";
 import { ImageMessage } from "@/components/chat/ImageMessage";
 import { MessageActions } from "@/components/chat/MessageActions";
 import { ReactionBar } from "@/components/chat/ReactionBar";
-import { MessageReplyQuote } from "@/components/chat/ReplyPreview";
+import { MessageReplyQuote, type MessageReplyQuoteSurface } from "@/components/chat/ReplyPreview";
 import { StickerMessage } from "@/components/chat/StickerMessage";
 import { buildDocumentPreviewEmbedUrl, isDocumentPreviewable } from "@/lib/document-preview-url";
 import { groupSpacingClass } from "@/lib/message-grouping";
+import { renderMentionText } from "@/lib/chat/render-mention-text";
 import type { Message, MessageGroupPosition, MessageReaction } from "@/lib/types/chat";
 
 type MessageBubbleProps = {
@@ -91,7 +92,8 @@ export function MessageBubble({
     </div>
   );
 
-  const replyQuote = message.replyTo ? <MessageReplyQuote replyTo={message.replyTo} /> : null;
+  const renderReplyQuote = (surface: MessageReplyQuoteSurface) =>
+    message.replyTo ? <MessageReplyQuote replyTo={message.replyTo} surface={surface} /> : null;
 
   const timeClass = isOwn ? "text-right text-white/75" : "text-[var(--zalo-text-muted)]";
   const receipt = ownReceiptLabel(message);
@@ -117,13 +119,18 @@ export function MessageBubble({
                 : "rounded-bl-sm bg-white ring-1 ring-black/[0.06]"
             }`}
           >
-            {replyQuote}
+            {renderReplyQuote(isOwn ? "tinted" : "card")}
             <p
               className={`whitespace-pre-wrap break-words text-[15px] leading-snug ${
                 isOwn ? "text-white" : "text-[var(--zalo-text)]"
               }`}
             >
-              {message.body}
+              {renderMentionText(message.body, {
+                textClassName: isOwn ? "text-white" : "text-[var(--zalo-text)]",
+                mentionClassName: isOwn
+                  ? "rounded bg-white/20 px-0.5 font-semibold text-white"
+                  : "rounded bg-blue-50 px-0.5 font-semibold text-blue-700",
+              })}
             </p>
             <p className={`mt-1 text-[10px] leading-none ${timeClass}`}>{message.sentAt}</p>
             {receiptBlock}
@@ -132,7 +139,7 @@ export function MessageBubble({
       case "image":
         return (
           <div className="flex max-w-[min(100%,320px)] flex-col gap-1">
-            {replyQuote}
+            {renderReplyQuote("plain")}
             <div className={`overflow-hidden rounded-lg ${isOwn ? "rounded-br-sm" : "rounded-bl-sm"}`}>
               <ImageMessage
                 imageUrl={message.imageUrl}
@@ -161,7 +168,7 @@ export function MessageBubble({
           Boolean(onOpenDocument);
         return (
           <div className="flex max-w-[min(100%,320px)] flex-col gap-1">
-            {replyQuote}
+            {renderReplyQuote("plain")}
             {isVideo && fileUrl ? (
               <div
                 className={`overflow-hidden rounded-lg ${
@@ -213,6 +220,7 @@ export function MessageBubble({
       case "sticker":
         return (
           <div className="flex flex-col">
+            {renderReplyQuote("plain")}
             <StickerMessage emoji={message.emoji} imageUrl={message.stickerImageUrl} />
             <p
               className={`mt-1 text-[10px] ${

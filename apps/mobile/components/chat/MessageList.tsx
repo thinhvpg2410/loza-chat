@@ -14,6 +14,7 @@ import { buildMessageFeed } from "@features/chat-room";
 import type { ChatRoomMessage, MessageFeedItem } from "@features/chat-room/types";
 import { colors, spacing } from "@theme";
 
+import { ChatGroupEventRow } from "./ChatGroupEventRow";
 import { MessageGroup } from "./MessageGroup";
 import { TimestampSeparator } from "./TimestampSeparator";
 
@@ -69,6 +70,9 @@ export const MessageList = forwardRef<FlatList<MessageFeedItem>, MessageListProp
     () =>
       messages
         .map((m) => {
+          if (m.kind === "groupEvent") {
+            return `${m.id}:ge:${m.groupEventBadge ?? ""}:${m.groupEventDetail ?? ""}`;
+          }
           const rx = m.reactions?.map((r) => `${r.emoji}:${r.count}:${r.reactedByMe ? 1 : 0}`).join("|") ?? "";
           return `${m.id}:${rx}`;
         })
@@ -80,6 +84,10 @@ export const MessageList = forwardRef<FlatList<MessageFeedItem>, MessageListProp
     ({ item }) => {
       if (item.kind === "separator") {
         return <TimestampSeparator label={item.label} />;
+      }
+      if (item.kind === "groupEvent") {
+        const m = item.message;
+        return <ChatGroupEventRow badge={m.groupEventBadge ?? ""} detail={m.groupEventDetail} />;
       }
       return (
         <MessageGroup

@@ -2,10 +2,16 @@ import { attachmentPublicReadUrl } from "@/services/media/publicMediaUrl";
 import type { ApiMessageWithReceipt } from "@/services/conversations/conversationsApi";
 
 import type { ChatRoomMessage, MessageKind, MessageReaction, OutgoingDeliveryState, ReplyReference } from "./types";
+import { mapGroupSystemMessageToEvent } from "./groupSystemMessageMap";
 
 function previewLineFromApi(m: ApiMessageWithReceipt): string {
   if (m.deletedAt) {
     return m.deletionMode === "recalled" ? "Tin nhắn đã được thu hồi" : "Tin nhắn đã bị xóa";
+  }
+  if (m.type === "system") {
+    const ev = mapGroupSystemMessageToEvent(m);
+    if (ev) return ev.badge;
+    return m.content?.trim() || "Thông báo";
   }
   if (m.content?.trim()) return m.content.trim();
   if (m.type === "image") return "📷 Ảnh";
@@ -13,7 +19,6 @@ function previewLineFromApi(m: ApiMessageWithReceipt): string {
   if (m.type === "sticker") return m.sticker?.code ?? m.sticker?.name ?? "🎭 Sticker";
   if (m.type === "voice") return "🎤 Ghi âm";
   if (m.type === "video") return "🎬 Video";
-  if (m.type === "system") return "Thông báo";
   return "";
 }
 
@@ -34,6 +39,9 @@ function outgoingDelivery(m: ApiMessageWithReceipt): OutgoingDeliveryState | und
 }
 
 function resolveKind(m: ApiMessageWithReceipt): MessageKind {
+  if (m.type === "system" && mapGroupSystemMessageToEvent(m)) {
+    return "groupEvent";
+  }
   switch (m.type) {
     case "text":
     case "system":
@@ -92,6 +100,20 @@ export function mapApiMessageToChatRoom(
       ...base,
       kind: "text",
       body: m.deletionMode === "recalled" ? "Tin nhắn đã được thu hồi" : "Tin nhắn đã bị xóa",
+    };
+  }
+
+  const groupEv = mapGroupSystemMessageToEvent(m);
+  if (groupEv && kind === "groupEvent") {
+    return {
+      ...base,
+      kind: "groupEvent",
+      senderRole: "peer",
+      delivery: undefined,
+      groupEventBadge: groupEv.badge,
+      groupEventDetail: groupEv.detail,
+      reactions: [],
+      replyTo,
     };
   }
 

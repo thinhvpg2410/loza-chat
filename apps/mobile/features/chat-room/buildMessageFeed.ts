@@ -45,6 +45,25 @@ export function buildMessageFeed(messages: ChatRoomMessage[]): MessageFeedItem[]
   for (const msg of sorted) {
     const t = new Date(msg.createdAt);
 
+    if (msg.kind === "groupEvent") {
+      flushGroup();
+      if (lastEmittedTime === null || needsSeparator(lastEmittedTime, t)) {
+        out.push({
+          kind: "separator",
+          key: `sep-${msg.id}`,
+          label: formatSeparatorLabel(lastEmittedTime, t),
+        });
+      }
+      out.push({
+        kind: "groupEvent",
+        key: `evt-${msg.id}`,
+        message: msg,
+      });
+      lastEmittedTime = t;
+      bufferRole = null;
+      continue;
+    }
+
     if (lastEmittedTime === null || needsSeparator(lastEmittedTime, t)) {
       flushGroup();
       out.push({

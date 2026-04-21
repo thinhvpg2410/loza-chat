@@ -13,6 +13,10 @@ export type GroupPermissionFlags = {
   canDissolve: boolean;
   canAddMembers: boolean;
   canRemoveMembers: boolean;
+  /** Trưởng / phó đổi tên nhóm (theo API). */
+  canRenameGroup: boolean;
+  /** Chỉ trưởng nhóm đổi ảnh nhóm. */
+  canEditGroupAvatar: boolean;
 };
 
 export function buildGroupPermissionFlags(
@@ -31,12 +35,15 @@ export function buildGroupPermissionFlags(
   const isPendingSelf = myStatus === "pending";
 
   const canModerateMembers = isLeader || isDeputy;
-  const canChangeSettings = isLeader;
+  const canChangeSettings = isLeader || isDeputy;
   const canDissolve = isLeader;
   const onlyAdminsAdd = Boolean(s.onlyAdminsCanAddMembers);
   const onlyAdminsRemove = Boolean(s.onlyAdminsCanRemoveMembers);
   const canAddMembers = !onlyAdminsAdd || canModerateMembers;
   const canRemoveMembers = !onlyAdminsRemove || canModerateMembers;
+  const active = myStatus === "active";
+  const canRenameGroup = active && (isLeader || isDeputy);
+  const canEditGroupAvatar = active && isLeader;
 
   return {
     viewerId,
@@ -51,6 +58,8 @@ export function buildGroupPermissionFlags(
     canDissolve,
     canAddMembers,
     canRemoveMembers,
+    canRenameGroup,
+    canEditGroupAvatar,
   };
 }
 

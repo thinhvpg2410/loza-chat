@@ -40,7 +40,7 @@ export function GroupPermissionPanel({
   return (
     <section className="mt-2 space-y-2">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--zalo-text-muted)]">
-        Cấu hình quyền (trưởng nhóm)
+        Cấu hình quyền (trưởng / phó)
       </p>
       {error ? (
         <p className="rounded-md bg-red-50 px-2 py-1.5 text-[12px] text-red-700" role="alert">
