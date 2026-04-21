@@ -2,14 +2,17 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiOkResponse,
   ApiOperation,
   ApiResponse,
   ApiTags,
@@ -39,7 +42,7 @@ export class MessagesController {
     summary:
       'Send a message with pre-uploaded attachments (idempotent via clientMessageId)',
   })
-  @ApiCreatedResponse({ type: SendMessageResultOpenApiDto })
+  @ApiOkResponse({ type: SendMessageResultOpenApiDto })
   @ApiResponse({ status: 400, type: ApiErrorEnvelopeDto })
   @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
   @ApiResponse({ status: 403, type: ApiErrorEnvelopeDto })
@@ -82,6 +85,24 @@ export class MessagesController {
   @ApiResponse({ status: 404, type: ApiErrorEnvelopeDto })
   async send(@GetUser('id') userId: string, @Body() dto: SendMessageDto) {
     return this.messagesService.sendTextMessage(userId, dto);
+  }
+
+  @Get('mentions/me')
+  @ApiOperation({
+    summary: 'List messages that mention me (indexed query)',
+  })
+  @ApiCreatedResponse({ type: SendMessageResultOpenApiDto })
+  async listMyMentions(
+    @GetUser('id') userId: string,
+    @Query('conversationId') conversationId?: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.messagesService.listMessagesMentioningUser(userId, {
+      conversationId,
+      cursor,
+      limit: limit ? Number(limit) : undefined,
+    });
   }
 
   @Post(':id/recall')

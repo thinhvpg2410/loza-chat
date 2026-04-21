@@ -8,6 +8,7 @@ import { MessageDomainEventsService } from './message-domain-events.service';
 import { MessageReceiptsService } from './message-receipts.service';
 import { MessageReactionsController } from './message-reactions.controller';
 import { MessagesController } from './messages.controller';
+import { ConversationRateLimitService } from './conversation-rate-limit.service';
 import { MessagesService } from './messages.service';
 
 @Module({
@@ -19,7 +20,12 @@ import { MessagesService } from './messages.service';
     StickersModule,
   ],
   controllers: [MessagesController, MessageReactionsController],
-  providers: [MessagesService, MessageReceiptsService, MessageDomainEventsService],
+  providers: [
+    MessagesService,
+    MessageReceiptsService,
+    MessageDomainEventsService,
+    ConversationRateLimitService,
+  ],
   exports: [MessagesService, MessageReceiptsService, MessageDomainEventsService],
 })
 export class MessagesModule {}

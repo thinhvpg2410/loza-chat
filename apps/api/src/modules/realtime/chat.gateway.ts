@@ -140,6 +140,13 @@ export class ChatGateway
             role: ev.role,
           });
           break;
+        case 'group.ownership_transferred':
+          this.server.to(room).emit('group.ownership_transferred', {
+            conversationId: ev.conversationId,
+            actorUserId: ev.actorUserId,
+            toUserId: ev.toUserId,
+          });
+          break;
         default: {
           const _x: never = ev;
           void _x;

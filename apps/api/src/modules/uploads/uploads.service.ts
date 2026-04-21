@@ -140,11 +140,15 @@ export class UploadsService {
       expectedContentType: session.mimeType,
       expectedSizeBytes: session.fileSize,
     });
+    this.rules.assertMimeAndSize(session.uploadType, session.mimeType, session.fileSize);
 
     const meta = session.metadataJson as
       | { width?: number; height?: number; durationSeconds?: number }
       | null
       | undefined;
+    if (session.uploadType === 'voice') {
+      this.rules.assertVoiceDurationSeconds(meta?.durationSeconds ?? null);
+    }
 
     const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.uploadSession.update({

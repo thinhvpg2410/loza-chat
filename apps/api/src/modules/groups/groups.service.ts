@@ -48,6 +48,32 @@ export class GroupsService {
     private readonly messages: MessagesService,
   ) {}
 
+  private async appendAuditLog(
+    tx: Tx,
+    params: {
+      conversationId: string;
+      actorUserId: string;
+      action: 'member_role_updated' | 'ownership_transferred' | 'group_dissolved';
+      targetUserId?: string;
+      payload?: Prisma.JsonObject;
+    },
+  ): Promise<void> {
+    await tx.$executeRaw`
+      INSERT INTO "group_audit_logs"
+        ("id","conversation_id","actor_user_id","action","target_user_id","payload_json","created_at")
+      VALUES
+        (
+          gen_random_uuid()::text,
+          ${params.conversationId},
+          ${params.actorUserId},
+          ${params.action},
+          ${params.targetUserId ?? null},
+          ${params.payload ? (params.payload as Prisma.JsonObject) : null}::jsonb,
+          NOW()
+        )
+    `;
+  }
+
   async createGroup(
     creatorId: string,
     dto: CreateGroupDto,
@@ -637,16 +663,26 @@ export class GroupsService {
       throw new BadRequestException('Role must be admin or member');
     }
 
-    await this.prisma.conversationMember.update({
-      where: {
-        conversationId_userId: { conversationId, userId: targetUserId },
-      },
-      data: { role: nextRole },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.conversationMember.update({
+        where: {
+          conversationId_userId: { conversationId, userId: targetUserId },
+        },
+        data: { role: nextRole },
+      });
+      await this.appendAuditLog(tx, {
+        conversationId,
+        actorUserId: actorId,
+        action: 'member_role_updated',
+        targetUserId,
+        payload: { role: nextRole },
+      });
     });
 
     this.domainEvents.emit({
       type: 'group.member_role_updated',
       conversationId,
+      actorUserId: actorId,
       userId: targetUserId,
       role: nextRole,
     });
@@ -720,10 +756,23 @@ export class GroupsService {
         },
       });
       messageIds.push(transferMsg.id);
+      await this.appendAuditLog(tx, {
+        conversationId,
+        actorUserId: actorId,
+        action: 'ownership_transferred',
+        targetUserId: dto.newOwnerUserId,
+        payload: { fromUserId: actorId, toUserId: dto.newOwnerUserId },
+      });
     });
 
     await this.publishSystemMessages(conversationId, messageIds);
 
+    this.domainEvents.emit({
+      type: 'group.ownership_transferred',
+      conversationId,
+      actorUserId: actorId,
+      toUserId: dto.newOwnerUserId,
+    });
     this.domainEvents.emit({
       type: 'group.updated',
       conversationId,
@@ -750,7 +799,7 @@ export class GroupsService {
     }
     this.permissions.assertGroupConversation(conv.type);
 
-    await this.softDissolveGroupConversation(conversationId);
+    await this.softDissolveGroupConversation(conversationId, actorId);
 
     return { dissolved: true };
   }
@@ -887,7 +936,7 @@ export class GroupsService {
 
     if (actorRole === ConversationMemberRole.owner) {
       if (othersActive.length === 0) {
-        await this.softDissolveGroupConversation(conversationId);
+        await this.softDissolveGroupConversation(conversationId, actorId);
         return { left: true };
       }
 
@@ -1283,6 +1332,7 @@ export class GroupsService {
 
   private async softDissolveGroupConversation(
     conversationId: string,
+    actorUserId?: string,
   ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       await tx.conversation.update({
@@ -1291,11 +1341,19 @@ export class GroupsService {
       });
       await tx.conversationMember.deleteMany({ where: { conversationId } });
       await tx.groupJoinRequest.deleteMany({ where: { conversationId } });
+      if (actorUserId) {
+        await this.appendAuditLog(tx, {
+          conversationId,
+          actorUserId,
+          action: 'group_dissolved',
+        });
+      }
     });
 
     this.domainEvents.emit({
       type: 'group.dissolved',
       conversationId,
+      actorUserId,
     });
   }
 

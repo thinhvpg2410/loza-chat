@@ -111,6 +111,18 @@ export class UploadRulesService {
       }
     }
   }
+
+  assertVoiceDurationSeconds(durationSeconds: number | null | undefined): void {
+    if (durationSeconds === null || durationSeconds === undefined) {
+      throw new BadRequestException('Voice upload must provide durationSeconds metadata');
+    }
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+      throw new BadRequestException('Voice durationSeconds must be a positive number');
+    }
+    if (durationSeconds > 60 * 10) {
+      throw new BadRequestException('Voice duration exceeds max allowed (600s)');
+    }
+  }
 }
 
 function messageTypeToMediaKind(t: MessageType): MediaKind | null {

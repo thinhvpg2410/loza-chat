@@ -25,6 +25,7 @@ export type GroupDomainEvent =
   | {
       type: 'group.dissolved';
       conversationId: string;
+      actorUserId?: string;
     }
   | {
       type: 'group.join_request_created';
@@ -40,8 +41,15 @@ export type GroupDomainEvent =
   | {
       type: 'group.member_role_updated';
       conversationId: string;
+      actorUserId?: string;
       userId: string;
       role: 'owner' | 'admin' | 'member';
+    }
+  | {
+      type: 'group.ownership_transferred';
+      conversationId: string;
+      actorUserId: string;
+      toUserId: string;
     };
 
 @Injectable()

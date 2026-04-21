@@ -105,6 +105,10 @@ model User {
   groupJoinRequests        GroupJoinRequest[]    @relation("GroupJoinRequestApplicant")
   groupJoinRequestsResolved GroupJoinRequest[]   @relation("GroupJoinRequestResolvedBy")
   messageHides             MessageUserHidden[]
+  messageMentions          MessageMention[]
+  conversationSpamLimits   ConversationSpamRateLimit[]
+  groupAuditLogsActor      GroupAuditLog[]       @relation("GroupAuditLogActor")
+  groupAuditLogsTarget     GroupAuditLog[]       @relation("GroupAuditLogTarget")
 
   @@map("users")
 }
@@ -276,6 +280,9 @@ model Conversation {
   messages      Message[]
   attachments   Attachment[]
   groupJoinRequests GroupJoinRequest[]
+  messageMentions   MessageMention[]
+  spamRateLimits    ConversationSpamRateLimit[]
+  groupAuditLogs    GroupAuditLog[]
 
   @@index([updatedAt(sort: Desc)])
   /// Direct threads: at most one row per (directUserOneId, directUserTwoId); enforced by partial unique index `conversations_direct_pair_uidx` in migrations.
@@ -473,6 +480,7 @@ model Message {
   replies                Message[]            @relation("MessageReplies")
   sticker                Sticker?             @relation(fields: [stickerId], references: [id], onDelete: SetNull)
   reactions              MessageReaction[]
+  mentions               MessageMention[]
   lastMessageFor         Conversation?        @relation("ConversationLastMessage")
   lastReadByMembers      ConversationMember[] @relation("MemberLastRead")
   lastDeliveredByMembers ConversationMember[] @relation("MemberLastDelivered")
@@ -483,6 +491,59 @@ model Message {
   @@index([conversationId, createdAt(sort: Desc), id(sort: Desc)])
   @@index([stickerId])
   @@map("messages")
+}
+
+model MessageMention {
+  id             String   @id @default(uuid())
+  messageId      String   @map("message_id")
+  conversationId String   @map("conversation_id")
+  mentionedUserId String  @map("mentioned_user_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  message      Message      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [mentionedUserId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, mentionedUserId])
+  @@index([mentionedUserId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([conversationId, mentionedUserId, createdAt(sort: Desc), id(sort: Desc)])
+  @@map("message_mentions")
+}
+
+model ConversationSpamRateLimit {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  conversationId String   @map("conversation_id")
+  action         String
+  windowStartSec Int      @map("window_start_sec")
+  count          Int      @default(0)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, conversationId, action, windowStartSec])
+  @@index([userId, conversationId, action, updatedAt])
+  @@map("conversation_spam_rate_limits")
+}
+
+model GroupAuditLog {
+  id             String   @id @default(uuid())
+  conversationId String   @map("conversation_id")
+  actorUserId    String   @map("actor_user_id")
+  action         String
+  targetUserId   String?  @map("target_user_id")
+  payloadJson    Json?    @map("payload_json")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  actor        User         @relation("GroupAuditLogActor", fields: [actorUserId], references: [id], onDelete: Cascade)
+  target       User?        @relation("GroupAuditLogTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt(sort: Desc)])
+  @@index([actorUserId, createdAt(sort: Desc)])
+  @@map("group_audit_logs")
 }
 
 /// Per-user hide in timeline (does not delete the message for others). Distinct from global recall/delete (`messages.deleted_at`).

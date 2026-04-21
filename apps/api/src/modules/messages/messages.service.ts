@@ -39,6 +39,7 @@ import { parseGroupSettings } from '../groups/group-settings.util';
 import { UploadRulesService } from '../uploads/upload-rules.service';
 import { isAllowedReaction } from './constants/reaction-allowlist';
 import { MessageDomainEventsService } from './message-domain-events.service';
+import { ConversationRateLimitService } from './conversation-rate-limit.service';
 import { MessageHistoryQueryDto } from './dto/message-history-query.dto';
 import type { SendMessageWithAttachmentsDto } from './dto/send-message-with-attachments.dto';
 import type { SendMessageDto } from './dto/send-message.dto';
@@ -59,6 +60,7 @@ type MessageDeletionMode = 'recalled' | 'deleted';
 
 type ForwardedMessageMeta = { forwardedFromMessageId: string };
 type MentionMeta = {
+  version: 1;
   mentionAll: boolean;
   mentionUserIds: string[];
   mentionHandles: string[];
@@ -82,6 +84,7 @@ export class MessagesService {
     private readonly uploadRules: UploadRulesService,
     private readonly stickers: StickersService,
     private readonly domainEvents: MessageDomainEventsService,
+    private readonly rateLimit: ConversationRateLimitService,
     private readonly config: ConfigService<AppConfiguration, true>,
   ) {}
 
@@ -177,7 +180,12 @@ export class MessagesService {
       }
       handles.add(raw);
     }
-    return { mentionAll, mentionUserIds: [], mentionHandles: [...handles] };
+    return {
+      version: 1,
+      mentionAll,
+      mentionUserIds: [],
+      mentionHandles: [...handles],
+    };
   }
 
   private buildMentionTokens(identity: MentionUserIdentity): Set<string> {
@@ -222,6 +230,7 @@ export class MessagesService {
         : ({} as Prisma.JsonObject);
     if (mentions) {
       base.mentions = {
+        version: 1,
         mentionAll: mentions.mentionAll,
         userIds: mentions.mentionUserIds,
         handles: mentions.mentionHandles,
@@ -293,10 +302,37 @@ export class MessagesService {
     }
 
     return {
+      version: 1,
       mentionAll: parsed.mentionAll,
       mentionHandles: parsed.mentionHandles,
       mentionUserIds: [...mentionUserIds],
     };
+  }
+
+  private async createMentionIndexTx(
+    tx: Prisma.TransactionClient,
+    conversationId: string,
+    messageId: string,
+    mentionMeta: MentionMeta | null,
+  ): Promise<void> {
+    if (!mentionMeta || mentionMeta.mentionUserIds.length === 0) {
+      return;
+    }
+    for (const mentionedUserId of mentionMeta.mentionUserIds) {
+      await tx.$executeRaw`
+        INSERT INTO "message_mentions"
+          ("id","message_id","conversation_id","mentioned_user_id","created_at")
+        VALUES
+          (
+            gen_random_uuid()::text,
+            ${messageId},
+            ${conversationId},
+            ${mentionedUserId},
+            NOW()
+          )
+        ON CONFLICT ("message_id","mentioned_user_id") DO NOTHING
+      `;
+    }
   }
 
   async sendTextMessage(
@@ -308,8 +344,13 @@ export class MessagesService {
   }> {
     await this.conversations.assertMaySendDirectMessage(senderId, dto.conversationId);
     await this.groupPostPolicy.assertUserMaySendMessage(senderId, dto.conversationId);
-
     const result = await this.prisma.$transaction(async (tx) => {
+      await this.rateLimit.assertAndConsume(
+        senderId,
+        dto.conversationId,
+        'text',
+        tx,
+      );
       await this.membership.requireActiveMemberTx(tx, senderId, dto.conversationId);
 
       if (dto.replyToMessageId) {
@@ -378,6 +419,12 @@ export class MessagesService {
           where: { id: dto.conversationId },
           data: { lastMessageId: created.id },
         });
+        await this.createMentionIndexTx(
+          tx,
+          dto.conversationId,
+          created.id,
+          mentionMeta,
+        );
 
         return { message: this.toMessageView(created), created: true };
       } catch (err) {
@@ -426,8 +473,13 @@ export class MessagesService {
     await this.stickers.requireSendableSticker(dto.stickerId);
     await this.conversations.assertMaySendDirectMessage(senderId, dto.conversationId);
     await this.groupPostPolicy.assertUserMaySendMessage(senderId, dto.conversationId);
-
     const result = await this.prisma.$transaction(async (tx) => {
+      await this.rateLimit.assertAndConsume(
+        senderId,
+        dto.conversationId,
+        'text',
+        tx,
+      );
       await this.membership.requireActiveMemberTx(tx, senderId, dto.conversationId);
 
       if (dto.replyToMessageId) {
@@ -571,8 +623,13 @@ export class MessagesService {
 
     await this.conversations.assertMaySendDirectMessage(senderId, dto.conversationId);
     await this.groupPostPolicy.assertUserMaySendMessage(senderId, dto.conversationId);
-
     const result = await this.prisma.$transaction(async (tx) => {
+      await this.rateLimit.assertAndConsume(
+        senderId,
+        dto.conversationId,
+        dto.type === MessageType.voice ? 'voice' : 'text',
+        tx,
+      );
       await this.membership.requireActiveMemberTx(tx, senderId, dto.conversationId);
 
       if (dto.replyToMessageId) {
@@ -638,7 +695,16 @@ export class MessagesService {
       );
 
       try {
-        const metadataJson = this.forwardedMetadataJson(forwardMeta);
+        const mentionMeta = await this.resolveMentionsForConversationTx(
+          tx,
+          dto.conversationId,
+          senderId,
+          content,
+        );
+        const metadataJson = this.mergeMetadataJson(
+          this.forwardedMetadataJson(forwardMeta),
+          mentionMeta,
+        );
         const created = await tx.message.create({
           data: {
             conversationId: dto.conversationId,
@@ -671,6 +737,12 @@ export class MessagesService {
           where: { id: dto.conversationId },
           data: { lastMessageId: created.id },
         });
+        await this.createMentionIndexTx(
+          tx,
+          dto.conversationId,
+          created.id,
+          mentionMeta,
+        );
 
         const withAtt = await tx.message.findUniqueOrThrow({
           where: { id: created.id },
@@ -1159,6 +1231,7 @@ export class MessagesService {
       throw new NotFoundException('Message not found');
     }
     await this.membership.requireActiveMember(userId, message.conversationId);
+    await this.rateLimit.assertAndConsume(userId, message.conversationId, 'reaction');
 
     const existing = await this.prisma.messageReaction.findUnique({
       where: {
@@ -1211,6 +1284,7 @@ export class MessagesService {
       throw new NotFoundException('Message not found');
     }
     await this.membership.requireActiveMember(userId, message.conversationId);
+    await this.rateLimit.assertAndConsume(userId, message.conversationId, 'reaction');
 
     const existing = await this.prisma.messageReaction.findUnique({
       where: {
@@ -1238,6 +1312,70 @@ export class MessagesService {
     });
 
     return { summary };
+  }
+
+  async listMessagesMentioningUser(
+    viewerId: string,
+    opts?: { conversationId?: string; limit?: number; cursor?: string },
+  ): Promise<{ messages: MessageWithReceiptStateView[]; nextCursor: string | null }> {
+    const take = Math.max(1, Math.min(opts?.limit ?? 30, 100));
+    const cursor = opts?.cursor ? decodeMessageCursor(opts.cursor) : null;
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        id: string;
+        createdAt: Date;
+        messageId: string;
+      }>
+    >`
+      SELECT mm."id", mm."created_at" AS "createdAt", mm."message_id" AS "messageId"
+      FROM "message_mentions" mm
+      WHERE mm."mentioned_user_id" = ${viewerId}
+        ${opts?.conversationId ? Prisma.sql`AND mm."conversation_id" = ${opts.conversationId}` : Prisma.empty}
+        ${
+          cursor
+            ? Prisma.sql`AND (mm."created_at" < ${new Date(cursor.createdAt)} OR (mm."created_at" = ${new Date(cursor.createdAt)} AND mm."id" < ${cursor.id}))`
+            : Prisma.empty
+        }
+      ORDER BY mm."created_at" DESC, mm."id" DESC
+      LIMIT ${take + 1}
+    `;
+    const page = rows.slice(0, take);
+    const hasMore = rows.length > take;
+    const messageIds = page.map((r: { messageId: string }) => r.messageId);
+    const messageRows = await this.prisma.message.findMany({
+      where: { id: { in: messageIds } },
+      include: {
+        sender: true,
+        attachments: { orderBy: { sortOrder: 'asc' } },
+        sticker: { include: { pack: true } },
+      },
+    });
+    const messageById = new Map(messageRows.map((m) => [m.id, m]));
+    const reactions = await this.buildReactionSummariesForMessages(viewerId, messageIds);
+    const messages = page
+      .map((r: { messageId: string }) => {
+        const row = messageById.get(r.messageId);
+        if (!row) return null;
+        const base = this.toMessageView(row, reactions.get(row.id));
+        return {
+          ...base,
+          sentByViewer: base.senderId === viewerId,
+          deliveredToPeer: false,
+          seenByPeer: false,
+        };
+      })
+      .filter((m): m is MessageWithReceiptStateView => Boolean(m));
+    const last = page.at(-1) ?? null;
+    return {
+      messages,
+      nextCursor:
+        hasMore && last
+          ? encodeMessageCursor({
+              createdAt: last.createdAt.toISOString(),
+              id: last.id,
+            })
+          : null,
+    };
   }
 
   private async fetchReactionSummaryForMessage(
