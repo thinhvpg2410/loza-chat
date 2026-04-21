@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { LOZA_ACCESS_COOKIE } from "@/lib/auth/constants";
+import { CORRELATION_HEADER, createCorrelationId } from "@/lib/telemetry/correlation";
 
 function parseFailedJsonMessage(raw: unknown): string | undefined {
   if (!raw || typeof raw !== "object") return undefined;
@@ -28,6 +29,7 @@ export async function apiFetchPublicJson<T>(path: string, init: RequestInit = {}
     throw new Error("LOZA_API_BASE_URL is not configured");
   }
   const headers = new Headers(init.headers);
+  headers.set(CORRELATION_HEADER, createCorrelationId("web-http"));
   if (!headers.has("Content-Type") && init.body !== undefined && !(init.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
@@ -57,6 +59,7 @@ export async function apiFetchJson<T>(path: string, init: RequestInit = {}): Pro
   const jar = await cookies();
   const token = jar.get(LOZA_ACCESS_COOKIE)?.value;
   const headers = new Headers(init.headers);
+  headers.set(CORRELATION_HEADER, createCorrelationId("web-http"));
   if (!headers.has("Content-Type") && init.body !== undefined && !(init.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }

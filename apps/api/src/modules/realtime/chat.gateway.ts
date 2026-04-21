@@ -188,6 +188,7 @@ export class ChatGateway
         const data = socket.data as ChatSocketData;
         data.user = ctx.user;
         data.deviceId = ctx.deviceId;
+        data.correlationId = ctx.correlationId;
         data.conversationRooms = new Set<string>();
         next();
       } catch (err) {
@@ -266,7 +267,12 @@ export class ChatGateway
       data.conversationRooms.add(dto.conversationId);
       return { ok: true, conversationId: dto.conversationId };
     } catch (err) {
-      this.emitStructuredError(client, 'conversation:join', err);
+      this.emitStructuredError(
+        client,
+        'conversation:join',
+        err,
+        this.correlationIdFromPayload(body),
+      );
       return { ok: false };
     }
   }
@@ -292,7 +298,12 @@ export class ChatGateway
 
       return { ok: true };
     } catch (err) {
-      this.emitStructuredError(client, 'message:send', err);
+      this.emitStructuredError(
+        client,
+        'message:send',
+        err,
+        this.correlationIdFromPayload(body),
+      );
       return { ok: false };
     }
   }
@@ -315,7 +326,12 @@ export class ChatGateway
         .emit('message:delivered', payload);
       return { ok: true };
     } catch (err) {
-      this.emitStructuredError(client, 'message:delivered', err);
+      this.emitStructuredError(
+        client,
+        'message:delivered',
+        err,
+        this.correlationIdFromPayload(body),
+      );
       return { ok: false };
     }
   }
@@ -338,7 +354,12 @@ export class ChatGateway
         .emit('message:seen', payload);
       return { ok: true };
     } catch (err) {
-      this.emitStructuredError(client, 'message:seen', err);
+      this.emitStructuredError(
+        client,
+        'message:seen',
+        err,
+        this.correlationIdFromPayload(body),
+      );
       return { ok: false };
     }
   }
@@ -364,7 +385,12 @@ export class ChatGateway
         });
       return { ok: true };
     } catch (err) {
-      this.emitStructuredError(client, 'typing:start', err);
+      this.emitStructuredError(
+        client,
+        'typing:start',
+        err,
+        this.correlationIdFromPayload(body),
+      );
       return { ok: false };
     }
   }
@@ -391,7 +417,12 @@ export class ChatGateway
       }
       return { ok: true };
     } catch (err) {
-      this.emitStructuredError(client, 'typing:stop', err);
+      this.emitStructuredError(
+        client,
+        'typing:stop',
+        err,
+        this.correlationIdFromPayload(body),
+      );
       return { ok: false };
     }
   }
@@ -416,7 +447,12 @@ export class ChatGateway
       });
       return { ok: true };
     } catch (err) {
-      this.emitStructuredError(client, 'presence:heartbeat', err);
+      this.emitStructuredError(
+        client,
+        'presence:heartbeat',
+        err,
+        this.correlationIdFromPayload(body),
+      );
       return { ok: false };
     }
   }
@@ -433,12 +469,14 @@ export class ChatGateway
     client: Socket,
     sourceEvent: string,
     err: unknown,
+    correlationId?: string,
   ): void {
     if (err instanceof WsPayloadValidationError) {
       client.emit('error', {
         code: 'VALIDATION_ERROR',
         message: err.message,
         sourceEvent,
+        correlationId: correlationId ?? null,
         at: new Date().toISOString(),
       });
       return;
@@ -461,6 +499,7 @@ export class ChatGateway
         code: `HTTP_${status}`,
         message,
         sourceEvent,
+        correlationId: correlationId ?? null,
         at: new Date().toISOString(),
       });
       return;
@@ -470,8 +509,20 @@ export class ChatGateway
       code: 'INTERNAL_ERROR',
       message: 'Unexpected error',
       sourceEvent,
+      correlationId: correlationId ?? null,
       at: new Date().toISOString(),
     });
+  }
+
+  private correlationIdFromPayload(payload: unknown): string | undefined {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return undefined;
+    }
+    const raw = (payload as Record<string, unknown>).correlationId;
+    if (typeof raw === 'string' && raw.trim().length > 0) {
+      return raw.trim();
+    }
+    return undefined;
   }
 
   private async broadcastPresenceToFriends(

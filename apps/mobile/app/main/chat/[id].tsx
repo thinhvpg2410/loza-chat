@@ -76,9 +76,11 @@ import {
   emitTypingStop,
   isChatSocketConfigured,
   setChatRealtimeHandlers,
+  subscribeSocketConnectionStatus,
   subscribeGroupRoomEvents,
 } from "@/services/socket/socket";
 import { uploadLocalFileToAttachment } from "@/services/uploads/directUpload";
+import { trackClientError } from "@/services/telemetry/telemetry";
 import { buildDocumentPreviewEmbedUrl, isDocumentPreviewable } from "@/lib/document-preview-url";
 import { useAuthStore } from "@/store/authStore";
 import { useChatStore } from "@/store/chatStore";
@@ -333,6 +335,10 @@ export default function ChatRoomScreen() {
   const [messagesLoading, setMessagesLoading] = useState(!USE_API_MOCK);
   const [messagesError, setMessagesError] = useState<string | null>(null);
   const [typingPeerCount, setTypingPeerCount] = useState(0);
+  const [socketStatus, setSocketStatus] = useState<{
+    state: "idle" | "connecting" | "connected" | "reconnecting" | "disconnected" | "error";
+    detail: string | null;
+  }>({ state: "idle", detail: null });
   const typingPeersRef = useRef<Map<string, boolean>>(new Map());
 
   const [viewerUri, setViewerUri] = useState<string | null>(null);
@@ -360,6 +366,9 @@ export default function ChatRoomScreen() {
   const typingStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagesRef = useRef<ChatRoomMessage[]>(messages);
   messagesRef.current = messages;
+  const offlineQueueRef = useRef<
+    Array<{ localId: string; body: string; replyToMessageId?: string; attempts: number }>
+  >([]);
 
   useEffect(() => {
     return () => {
@@ -373,6 +382,13 @@ export default function ChatRoomScreen() {
         voiceTimerRef.current = null;
       }
     };
+  }, []);
+
+  useEffect(() => {
+    const unsub = subscribeSocketConnectionStatus((state, detail) => {
+      setSocketStatus({ state, detail: detail ?? null });
+    });
+    return unsub;
   }, []);
 
   useEffect(() => {
@@ -1125,6 +1141,67 @@ export default function ChatRoomScreen() {
     setDraft((prev) => `${prev}${emoji}`);
   }, []);
 
+  const enqueueOfflineText = useCallback(
+    (body: string, replyToMessageId?: string) => {
+      const localId = `offline-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      offlineQueueRef.current.push({ localId, body, replyToMessageId, attempts: 0 });
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: localId,
+          conversationId: id,
+          senderRole: "me",
+          kind: "text",
+          body,
+          createdAt: new Date().toISOString(),
+          delivery: "sending",
+          replyTo: replyingTo ?? undefined,
+        },
+      ]);
+    },
+    [id, replyingTo],
+  );
+
+  const flushOfflineQueue = useCallback(async () => {
+    if (USE_API_MOCK || !id || !viewerId || offlineQueueRef.current.length === 0) return;
+    if (socketStatus.state !== "connected") return;
+    const pending = [...offlineQueueRef.current];
+    for (const item of pending) {
+      try {
+        const { message } = await sendTextMessageApi({
+          conversationId: id,
+          clientMessageId: newClientMessageId(),
+          content: item.body,
+          replyToMessageId: item.replyToMessageId,
+        });
+        const row = asReceiptView(message, viewerId);
+        setMessages((prev) => {
+          const filtered = prev.filter((m) => m.id !== item.localId);
+          return mergeMessagesById(filtered, mapApiMessagesToChatRoomList([row], viewerId, displayName));
+        });
+        offlineQueueRef.current = offlineQueueRef.current.filter((q) => q.localId !== item.localId);
+      } catch (e) {
+        trackClientError("chat", "flush_offline_queue_failed", e, { conversationId: id });
+        offlineQueueRef.current = offlineQueueRef.current.map((q) =>
+          q.localId === item.localId ? { ...q, attempts: q.attempts + 1 } : q,
+        );
+      }
+    }
+  }, [displayName, id, socketStatus.state, viewerId]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      void flushOfflineQueue();
+    }, 6000);
+    return () => clearInterval(timer);
+  }, [flushOfflineQueue]);
+
+  useEffect(() => {
+    if (socketStatus.state === "connected") {
+      void flushOfflineQueue();
+    }
+  }, [flushOfflineQueue, socketStatus.state]);
+
   const send = useCallback(async () => {
     const body = draft.trim();
     if (!body.length || sendBusy) return;
@@ -1167,14 +1244,21 @@ export default function ChatRoomScreen() {
       setMessages((prev) => mergeMessagesById(prev, mapApiMessagesToChatRoomList([row], viewerId, displayName)));
       void fetchConversations();
     } catch (e) {
-      Alert.alert("Gửi tin nhắn", getApiErrorMessage(e));
-      setDraft(body);
-      if (replyToMessageId) {
-        setReplyingTo({
-          id: replyToMessageId,
-          senderLabel: "Bạn",
-          preview: body.slice(0, 80),
-        });
+      trackClientError("chat", "send_text_failed", e, { conversationId: id });
+      const message = getApiErrorMessage(e);
+      const shouldQueue = message.toLowerCase().includes("network") || socketStatus.state !== "connected";
+      if (shouldQueue) {
+        enqueueOfflineText(body, replyToMessageId);
+      } else {
+        Alert.alert("Gửi tin nhắn", message);
+        setDraft(body);
+        if (replyToMessageId) {
+          setReplyingTo({
+            id: replyToMessageId,
+            senderLabel: "Bạn",
+            preview: body.slice(0, 80),
+          });
+        }
       }
     } finally {
       setSendBusy(false);
@@ -1186,8 +1270,10 @@ export default function ChatRoomScreen() {
     displayName,
     fetchConversations,
     id,
+    enqueueOfflineText,
     replyingTo,
     sendBusy,
+    socketStatus.state,
     viewerId,
   ]);
 
@@ -1262,6 +1348,15 @@ export default function ChatRoomScreen() {
               <View style={{ marginHorizontal: 12, marginBottom: 6, padding: 10, borderRadius: 8, backgroundColor: "#e0f2fe" }}>
                 <AppText variant="caption" style={{ color: "#075985", textAlign: "center" }}>
                   {groupSendGuard.banner}
+                </AppText>
+              </View>
+            ) : null}
+            {!USE_API_MOCK && socketStatus.state !== "connected" ? (
+              <View style={{ marginHorizontal: 12, marginBottom: 6, padding: 10, borderRadius: 8, backgroundColor: "#fff7ed" }}>
+                <AppText variant="caption" style={{ color: "#9a3412", textAlign: "center" }}>
+                  {socketStatus.state === "reconnecting" || socketStatus.state === "connecting"
+                    ? socketStatus.detail ?? "Đang kết nối lại realtime..."
+                    : "Mất kết nối realtime. Tin nhắn sẽ được xếp hàng và gửi lại khi có mạng."}
                 </AppText>
               </View>
             ) : null}

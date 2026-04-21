@@ -10,6 +10,7 @@ import type { AccessTokenPayload } from '../auth/interfaces/jwt-payload.interfac
 export interface SocketAuthContext {
   user: User;
   deviceId?: string;
+  correlationId?: string;
 }
 
 @Injectable()
@@ -43,11 +44,27 @@ export class SocketAuthService {
     if (!user || !user.isActive) {
       throw new UnauthorizedException(AuthErrorMessage.INVALID_OR_EXPIRED_SESSION);
     }
+    const correlationId = this.extractCorrelationId(handshake) ?? undefined;
 
     return {
       user,
       ...(payload.deviceId ? { deviceId: payload.deviceId } : {}),
+      ...(correlationId ? { correlationId } : {}),
     };
+  }
+
+  private extractCorrelationId(handshake: Socket['handshake']): string | null {
+    const auth = handshake.auth as Record<string, unknown> | undefined;
+    const fromAuth =
+      typeof auth?.correlationId === 'string' ? auth.correlationId.trim() : '';
+    if (fromAuth.length > 0) {
+      return fromAuth;
+    }
+    const header = handshake.headers['x-correlation-id'];
+    if (typeof header === 'string' && header.trim().length > 0) {
+      return header.trim();
+    }
+    return null;
   }
 
   private extractBearerToken(handshake: Socket['handshake']): string | null {

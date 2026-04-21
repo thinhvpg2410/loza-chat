@@ -1,6 +1,8 @@
 import axios, { isAxiosError, type InternalAxiosRequestConfig } from "axios";
 
 import { API_BASE_URL } from "@/constants/env";
+import { createCorrelationId, CORRELATION_HEADER } from "@/services/telemetry/correlation";
+import { trackClientError } from "@/services/telemetry/telemetry";
 import { useAuthStore } from "@/store/authStore";
 
 export const apiClient = axios.create({
@@ -57,12 +59,22 @@ apiClient.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  const headers = config.headers as Record<string, string | undefined>;
+  if (!headers[CORRELATION_HEADER]) {
+    headers[CORRELATION_HEADER] = createCorrelationId("http");
+  }
   return config;
 });
 
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: unknown) => {
+    if (isAxiosError(error)) {
+      trackClientError("chat", "http_response_error", error, {
+        status: error.response?.status ?? null,
+        url: error.config?.url ?? "",
+      });
+    }
     if (!isAxiosError(error) || error.response?.status !== 401) {
       return Promise.reject(error);
     }

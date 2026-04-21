@@ -2,7 +2,9 @@ import { io, type Socket } from "socket.io-client";
 
 import { SOCKET_URL } from "@/constants/env";
 import type { ApiConversationMemberProgress, ApiMessageView } from "@/services/conversations/conversationsApi";
+import { createCorrelationId } from "@/services/telemetry/correlation";
 import { useChatStore } from "@/store/chatStore";
+import { trackClientError } from "@/services/telemetry/telemetry";
 
 export type TypingUpdatePayload = {
   conversationId: string;
@@ -74,6 +76,33 @@ const EV_MESSAGE_SEEN = "message:seen";
 let socket: Socket | null = null;
 let handlers: ChatRealtimeHandlers = {};
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+type SocketConnectionStatus =
+  | "idle"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "disconnected"
+  | "error";
+const socketStatusListeners = new Set<(status: SocketConnectionStatus, detail?: string) => void>();
+
+function emitSocketStatus(status: SocketConnectionStatus, detail?: string) {
+  for (const fn of socketStatusListeners) {
+    try {
+      fn(status, detail);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+export function subscribeSocketConnectionStatus(
+  listener: (status: SocketConnectionStatus, detail?: string) => void,
+): () => void {
+  socketStatusListeners.add(listener);
+  return () => {
+    socketStatusListeners.delete(listener);
+  };
+}
 
 function stopHeartbeatLoop() {
   if (heartbeatTimer) {
@@ -112,16 +141,33 @@ export function connectChatSocket(accessToken?: string): () => void {
 
   socket = io(url, {
     transports: ["websocket", "polling"],
-    auth: accessToken ? { token: accessToken } : {},
+    auth: accessToken
+      ? { token: accessToken, correlationId: createCorrelationId("ws-auth") }
+      : { correlationId: createCorrelationId("ws-auth") },
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 800,
+    reconnectionDelayMax: 12_000,
+    randomizationFactor: 0.5,
   });
+  emitSocketStatus("connecting");
 
   socket.on("connect", () => {
     startHeartbeatLoop();
     handlers.onSocketConnected?.();
     useChatStore.getState().scheduleConversationsListRefresh();
+    emitSocketStatus("connected");
   });
   socket.on("disconnect", () => {
     stopHeartbeatLoop();
+    emitSocketStatus("disconnected");
+  });
+  socket.io.on("reconnect_attempt", (attempt) => {
+    emitSocketStatus("reconnecting", `Thử kết nối lại (${attempt})...`);
+  });
+  socket.on("connect_error", (err: Error) => {
+    trackClientError("realtime", "socket_connect_error", err);
+    emitSocketStatus("error", err.message || "Lỗi kết nối realtime");
   });
 
   socket.on(EV_MESSAGE_NEW, (body: unknown) => {
@@ -291,15 +337,24 @@ export function connectChatSocket(accessToken?: string): () => void {
     socket?.off("group.member_role_updated");
     socket?.disconnect();
     socket = null;
+    emitSocketStatus("idle");
   };
 }
 
 export function emitMessageDelivered(conversationId: string, messageId: string) {
-  socket?.emit(EV_MESSAGE_DELIVERED, { conversationId, messageId });
+  socket?.emit(EV_MESSAGE_DELIVERED, {
+    conversationId,
+    messageId,
+    correlationId: createCorrelationId("ws"),
+  });
 }
 
 export function emitMessageSeen(conversationId: string, messageId: string) {
-  socket?.emit(EV_MESSAGE_SEEN, { conversationId, messageId });
+  socket?.emit(EV_MESSAGE_SEEN, {
+    conversationId,
+    messageId,
+    correlationId: createCorrelationId("ws"),
+  });
 }
 
 /** After REST read/delivered advance, mirror pointers on the socket so the peer updates in realtime. */
@@ -317,13 +372,22 @@ export function emitConversationReceiptsFromMyProgress(
 
 export function emitConversationJoin(conversationId: string) {
   if (!conversationId.trim().length) return;
-  socket?.emit("conversation:join", { conversationId });
+  socket?.emit("conversation:join", {
+    conversationId,
+    correlationId: createCorrelationId("ws"),
+  });
 }
 
 export function emitTypingStart(conversationId: string) {
-  socket?.emit("typing:start", { conversationId });
+  socket?.emit("typing:start", {
+    conversationId,
+    correlationId: createCorrelationId("ws"),
+  });
 }
 
 export function emitTypingStop(conversationId: string) {
-  socket?.emit("typing:stop", { conversationId });
+  socket?.emit("typing:stop", {
+    conversationId,
+    correlationId: createCorrelationId("ws"),
+  });
 }

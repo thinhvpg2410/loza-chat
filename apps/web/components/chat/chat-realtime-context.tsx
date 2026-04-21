@@ -5,6 +5,8 @@ import { io, type Socket } from "socket.io-client";
 import { getChatRealtimeSessionAction } from "@/features/chat/chat-actions";
 import type { ApiMessageWithReceipt } from "@/lib/chat/api-dtos";
 import { socketMessageViewToApiRow } from "@/lib/chat/socket-message-map";
+import { createCorrelationId } from "@/lib/telemetry/correlation";
+import { trackClientError } from "@/lib/telemetry/telemetry";
 
 export type ChatReceiptPayload = {
   conversationId: string;
@@ -36,7 +38,7 @@ export type RoomRealtimeHandlers = {
 };
 
 export type ChatRealtimeContextValue = {
-  status: "idle" | "connecting" | "ready" | "error";
+  status: "idle" | "connecting" | "reconnecting" | "ready" | "error";
   connectionError: string | null;
   /** True after first successful Socket.IO connect for this session (false on disconnect). */
   socketConnected: boolean;
@@ -77,7 +79,7 @@ export function ChatRealtimeProvider({
   onRemoteMessageUpdatedForList,
   onGroupRoomEvent,
 }: ChatRealtimeProviderProps) {
-  const [status, setStatus] = useState<"idle" | "connecting" | "ready" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "connecting" | "reconnecting" | "ready" | "error">("idle");
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [socketConnected, setSocketConnected] = useState(false);
   const [session, setSession] = useState<{
@@ -138,7 +140,10 @@ export function ChatRealtimeProvider({
     if (active) merged.add(active);
     for (const id of merged) {
       if (joinedRef.current.has(id)) continue;
-      socket.emit("conversation:join", { conversationId: id });
+      socket.emit("conversation:join", {
+        conversationId: id,
+        correlationId: createCorrelationId("ws"),
+      });
       joinedRef.current.add(id);
     }
   }, []);
@@ -166,12 +171,17 @@ export function ChatRealtimeProvider({
     };
 
     const socket = io(session.apiBaseUrl, {
-      auth: { token: session.accessToken },
+      auth: {
+        token: session.accessToken,
+        correlationId: createCorrelationId("ws-auth"),
+      },
       transports: ["websocket", "polling"],
       autoConnect: true,
       reconnection: true,
-      reconnectionAttempts: 12,
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 800,
+      reconnectionDelayMax: 12_000,
+      randomizationFactor: 0.5,
     });
     socketRef.current = socket;
 
@@ -187,16 +197,24 @@ export function ChatRealtimeProvider({
     const onDisconnect = () => {
       setSocketConnected(false);
       stopHeartbeat();
+      setStatus("reconnecting");
+      setConnectionError("Mất kết nối realtime. Đang kết nối lại...");
     };
 
     const onConnectError = (err: Error) => {
       setConnectionError(err.message || "Lỗi kết nối realtime");
+      trackClientError("realtime", "socket_connect_error", err);
     };
 
     const onReconnectFailed = () => {
       setConnectionError("Không kết nối được realtime sau nhiều lần thử.");
       setStatus("error");
       setSocketConnected(false);
+      trackClientError("realtime", "socket_reconnect_failed", "reconnect_failed");
+    };
+    const onReconnectAttempt = (attempt: number) => {
+      setStatus("reconnecting");
+      setConnectionError(`Đang kết nối lại realtime (${attempt})...`);
     };
 
     const onMessageNew = (payload: { message?: unknown }) => {
@@ -259,6 +277,7 @@ export function ChatRealtimeProvider({
           ? String((payload as { message?: unknown }).message)
           : "Lỗi realtime";
       setConnectionError(msg);
+      trackClientError("realtime", "socket_error_event", msg);
     };
 
     const dispatchGroup = (ev: GroupRoomEvent) => {
@@ -355,6 +374,7 @@ export function ChatRealtimeProvider({
     socket.on("disconnect", onDisconnect);
     socket.on("connect_error", onConnectError);
     socket.io.on("reconnect_failed", onReconnectFailed);
+    socket.io.on("reconnect_attempt", onReconnectAttempt);
     socket.on("message:new", onMessageNew);
     socket.on("message:updated", onMessageUpdated);
     socket.on("typing:update", onTyping);
@@ -382,6 +402,7 @@ export function ChatRealtimeProvider({
       socket.off("disconnect", onDisconnect);
       socket.off("connect_error", onConnectError);
       socket.io.off("reconnect_failed", onReconnectFailed);
+      socket.io.off("reconnect_attempt", onReconnectAttempt);
       socket.off("message:new", onMessageNew);
       socket.off("message:updated", onMessageUpdated);
       socket.off("typing:update", onTyping);
@@ -426,19 +447,33 @@ export function ChatRealtimeProvider({
   }, []);
 
   const startTyping = useCallback((conversationId: string) => {
-    socketRef.current?.emit("typing:start", { conversationId });
+    socketRef.current?.emit("typing:start", {
+      conversationId,
+      correlationId: createCorrelationId("ws"),
+    });
   }, []);
 
   const stopTyping = useCallback((conversationId: string) => {
-    socketRef.current?.emit("typing:stop", { conversationId });
+    socketRef.current?.emit("typing:stop", {
+      conversationId,
+      correlationId: createCorrelationId("ws"),
+    });
   }, []);
 
   const emitSeen = useCallback((conversationId: string, messageId: string) => {
-    socketRef.current?.emit("message:seen", { conversationId, messageId });
+    socketRef.current?.emit("message:seen", {
+      conversationId,
+      messageId,
+      correlationId: createCorrelationId("ws"),
+    });
   }, []);
 
   const emitDelivered = useCallback((conversationId: string, messageId: string) => {
-    socketRef.current?.emit("message:delivered", { conversationId, messageId });
+    socketRef.current?.emit("message:delivered", {
+      conversationId,
+      messageId,
+      correlationId: createCorrelationId("ws"),
+    });
   }, []);
 
   const memoizedRealtimeApi = useMemo((): ChatRealtimeContextValue | null => {
@@ -494,6 +529,10 @@ export function ChatRealtimeProvider({
         {status === "connecting" ? (
           <div className="shrink-0 border-b border-[var(--zalo-border)] bg-[var(--zalo-surface)] px-3 py-1.5 text-center text-[11px] text-[var(--zalo-text-muted)]">
             Đang kết nối realtime…
+          </div>
+        ) : status === "reconnecting" ? (
+          <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-center text-[11px] text-amber-900">
+            Mất kết nối realtime, đang kết nối lại…
           </div>
         ) : null}
         {children}

@@ -469,7 +469,7 @@ export class MessagesService {
           tx,
           dto.conversationId,
           senderId,
-          content,
+          null,
         );
         const metadataJson = this.mergeMetadataJson(
           this.forwardedMetadataJson(forwardMeta),
