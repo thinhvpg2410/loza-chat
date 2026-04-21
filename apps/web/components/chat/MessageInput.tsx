@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { AttachmentPanel, type AttachmentAction } from "@/components/chat/AttachmentPanel";
 import { IconMic, IconPlus, IconSend, IconSmile } from "@/components/chat/icons";
 import { EmojiStickerPanel } from "@/components/chat/EmojiStickerPanel";
@@ -27,6 +27,7 @@ type MessageInputProps = {
   isVoiceRecording?: boolean;
   voiceRecordingDurationSec?: number;
   onCancelVoiceRecording?: () => void;
+  voiceWaveLevels?: number[];
 };
 
 type ActiveMentionQuery = {
@@ -34,6 +35,9 @@ type ActiveMentionQuery = {
   end: number;
   query: string;
 };
+
+const MENTION_ROW_HEIGHT = 40;
+const MENTION_WINDOW_SIZE = 10;
 
 function extractActiveMentionQuery(text: string, caret: number): ActiveMentionQuery | null {
   if (caret < 0 || caret > text.length) return null;
@@ -68,6 +72,7 @@ export function MessageInput({
   isVoiceRecording = false,
   voiceRecordingDurationSec = 0,
   onCancelVoiceRecording,
+  voiceWaveLevels = [0.2, 0.4, 0.65, 0.45, 0.25],
 }: MessageInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [attachOpen, setAttachOpen] = useState(false);
@@ -76,6 +81,7 @@ export function MessageInput({
   const [pickerSession, setPickerSession] = useState(0);
   const [caretIndex, setCaretIndex] = useState(0);
   const [activeMentionIndex, setActiveMentionIndex] = useState(0);
+  const mentionListRef = useRef<HTMLDivElement>(null);
 
   const mentionQuery = extractActiveMentionQuery(value, caretIndex);
   const mentionItems = mentionQuery
@@ -91,7 +97,6 @@ export function MessageInput({
             const byUser = (m.username ?? "").toLowerCase().includes(q);
             return byName || byUser;
           })
-          .slice(0, 8)
           .map((m) => ({
             id: m.userId,
             label: m.displayName,
@@ -113,6 +118,35 @@ export function MessageInput({
     }
     setActiveMentionIndex((prev) => Math.max(0, Math.min(prev, mentionItems.length - 1)));
   }, [mentionItems.length]);
+
+  const mentionWindowStart = useMemo(() => {
+    if (mentionItems.length <= MENTION_WINDOW_SIZE) return 0;
+    const centered = activeMentionIndex - Math.floor(MENTION_WINDOW_SIZE / 2);
+    return Math.max(0, Math.min(centered, mentionItems.length - MENTION_WINDOW_SIZE));
+  }, [activeMentionIndex, mentionItems.length]);
+
+  const mentionWindowEnd = useMemo(
+    () => Math.min(mentionItems.length, mentionWindowStart + MENTION_WINDOW_SIZE),
+    [mentionItems.length, mentionWindowStart],
+  );
+
+  const mentionVisibleItems = useMemo(
+    () => mentionItems.slice(mentionWindowStart, mentionWindowEnd),
+    [mentionItems, mentionWindowEnd, mentionWindowStart],
+  );
+
+  useEffect(() => {
+    if (mentionItems.length === 0) return;
+    const list = mentionListRef.current;
+    if (!list) return;
+    const activeOffsetTop = activeMentionIndex * MENTION_ROW_HEIGHT;
+    const activeOffsetBottom = activeOffsetTop + MENTION_ROW_HEIGHT;
+    if (activeOffsetTop < list.scrollTop) {
+      list.scrollTop = activeOffsetTop;
+    } else if (activeOffsetBottom > list.scrollTop + list.clientHeight) {
+      list.scrollTop = activeOffsetBottom - list.clientHeight;
+    }
+  }, [activeMentionIndex, mentionItems.length]);
 
   const applyMentionToken = useCallback(
     (token: string) => {
@@ -159,6 +193,15 @@ export function MessageInput({
         return;
       }
       if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        const target = mentionItems[activeMentionIndex];
+        if (target) {
+          applyMentionToken(target.token);
+          setActiveMentionIndex(0);
+          return;
+        }
+      }
+      if (e.key === "Tab") {
         e.preventDefault();
         const target = mentionItems[activeMentionIndex];
         if (target) {
@@ -250,11 +293,14 @@ export function MessageInput({
                   REC {mm}:{ss}
                 </span>
                 <div className="flex items-end gap-0.5 text-[var(--zalo-blue)]">
-                  <span className="h-2 w-1 animate-pulse rounded bg-current [animation-delay:0ms]" />
-                  <span className="h-3 w-1 animate-pulse rounded bg-current [animation-delay:120ms]" />
-                  <span className="h-4 w-1 animate-pulse rounded bg-current [animation-delay:240ms]" />
-                  <span className="h-3 w-1 animate-pulse rounded bg-current [animation-delay:360ms]" />
-                  <span className="h-2 w-1 animate-pulse rounded bg-current [animation-delay:480ms]" />
+                  {voiceWaveLevels.map((level, idx) => (
+                    <span
+                      // eslint-disable-next-line react/no-array-index-key
+                      key={`wave-${idx}`}
+                      className="w-1 rounded bg-current transition-all duration-100"
+                      style={{ height: `${Math.max(6, Math.round(level * 22))}px` }}
+                    />
+                  ))}
                 </div>
                 <span className="text-[12px] text-[var(--zalo-text-muted)]">Đang ghi âm...</span>
               </div>
@@ -337,21 +383,29 @@ export function MessageInput({
             }}
           />
           {mentionItems.length > 0 ? (
-            <div className="absolute bottom-[52px] left-10 z-20 max-h-52 w-[min(320px,88vw)] overflow-auto rounded-lg border border-[var(--zalo-border)] bg-white py-1 shadow-lg">
-              {mentionItems.map((item, idx) => (
+            <div
+              ref={mentionListRef}
+              className="absolute bottom-[52px] left-10 z-20 h-52 w-[min(320px,88vw)] overflow-auto rounded-lg border border-[var(--zalo-border)] bg-white py-1 shadow-lg"
+            >
+              <div style={{ height: mentionWindowStart * MENTION_ROW_HEIGHT }} aria-hidden />
+              {mentionVisibleItems.map((item, localIdx) => {
+                const idx = mentionWindowStart + localIdx;
+                return (
                 <button
                   key={item.id}
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => applyMentionToken(item.token)}
-                  className={`flex w-full items-center justify-between px-3 py-2 text-left hover:bg-[var(--zalo-surface)] ${
+                  className={`flex h-[40px] w-full items-center justify-between px-3 py-2 text-left hover:bg-[var(--zalo-surface)] ${
                     idx === activeMentionIndex ? "bg-[var(--zalo-surface)]" : ""
                   }`}
                 >
                   <span className="text-[13px] text-[var(--zalo-text)]">{item.label}</span>
                   <span className="text-[11px] text-[var(--zalo-text-muted)]">@{item.token}</span>
                 </button>
-              ))}
+                );
+              })}
+              <div style={{ height: (mentionItems.length - mentionWindowEnd) * MENTION_ROW_HEIGHT }} aria-hidden />
             </div>
           ) : null}
         </div>

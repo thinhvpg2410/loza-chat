@@ -27,17 +27,80 @@ export function ActionMenu({
 }: ActionMenuProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const listId = useId();
+  const [activeIndex, setActiveIndex] = useState(0);
 
   const close = useCallback(() => setOpen(false), []);
 
+  const moveActive = useCallback(
+    (delta: number) => {
+      if (items.length === 0) return;
+      let idx = activeIndex;
+      for (let i = 0; i < items.length; i += 1) {
+        idx = (idx + delta + items.length) % items.length;
+        if (!items[idx]?.disabled) {
+          setActiveIndex(idx);
+          itemRefs.current[idx]?.focus();
+          return;
+        }
+      }
+    },
+    [activeIndex, items],
+  );
+
   useEffect(() => {
     if (!open) return;
+    const firstEnabled = items.findIndex((item) => !item.disabled);
+    setActiveIndex(firstEnabled >= 0 ? firstEnabled : 0);
+    queueMicrotask(() => {
+      if (firstEnabled >= 0) itemRefs.current[firstEnabled]?.focus();
+    });
     const onDoc = (e: MouseEvent) => {
       if (!rootRef.current?.contains(e.target as Node)) close();
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
+      if (!rootRef.current?.contains(document.activeElement)) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close();
+        triggerRef.current?.focus();
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        moveActive(1);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        moveActive(-1);
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        moveActive(e.shiftKey ? -1 : 1);
+        return;
+      }
+      if (e.key === "Home") {
+        e.preventDefault();
+        const idx = items.findIndex((item) => !item.disabled);
+        if (idx >= 0) {
+          setActiveIndex(idx);
+          itemRefs.current[idx]?.focus();
+        }
+        return;
+      }
+      if (e.key === "End") {
+        e.preventDefault();
+        const idx = [...items].reverse().findIndex((item) => !item.disabled);
+        if (idx >= 0) {
+          const realIndex = items.length - 1 - idx;
+          setActiveIndex(realIndex);
+          itemRefs.current[realIndex]?.focus();
+        }
+      }
     };
     document.addEventListener("mousedown", onDoc);
     document.addEventListener("keydown", onKey);
@@ -45,11 +108,12 @@ export function ActionMenu({
       document.removeEventListener("mousedown", onDoc);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open, close]);
+  }, [open, close, items, moveActive]);
 
   return (
     <div className="relative shrink-0" ref={rootRef}>
       <button
+        ref={triggerRef}
         type="button"
         className={
           compact
@@ -61,6 +125,12 @@ export function ActionMenu({
         aria-controls={listId}
         title={ariaLabel}
         onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setOpen(true);
+          }
+        }}
       >
         <IconMore className={compact ? "h-4 w-4" : "h-[18px] w-[18px]"} />
         <span className="sr-only">{ariaLabel}</span>
@@ -76,9 +146,13 @@ export function ActionMenu({
           {items.map((item) => (
             <li key={item.id} role="none">
               <button
+                ref={(el) => {
+                  itemRefs.current[items.indexOf(item)] = el;
+                }}
                 type="button"
                 role="menuitem"
                 disabled={item.disabled}
+                tabIndex={items.indexOf(item) === activeIndex ? 0 : -1}
                 className={
                   item.disabled
                     ? "flex w-full cursor-not-allowed px-3 py-1.5 text-left text-[13px] text-[var(--zalo-text-muted)] opacity-50"
@@ -90,7 +164,9 @@ export function ActionMenu({
                   if (item.disabled) return;
                   item.onSelect();
                   close();
+                  triggerRef.current?.focus();
                 }}
+                onFocus={() => setActiveIndex(items.indexOf(item))}
               >
                 {item.label}
               </button>

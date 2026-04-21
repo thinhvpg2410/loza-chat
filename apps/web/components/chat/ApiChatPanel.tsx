@@ -118,11 +118,18 @@ export function ApiChatPanel({
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [typingPeers, setTypingPeers] = useState<Record<string, boolean>>({});
+  const [liveAnnouncement, setLiveAnnouncement] = useState("");
   const [groupDetail, setGroupDetail] = useState<ApiGroupDetail | null>(null);
   const [groupInfoOpen, setGroupInfoOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadingLabel, setUploadingLabel] = useState<string | null>(null);
+  const [uploadProgressPct, setUploadProgressPct] = useState(0);
+  const [uploadRetryFile, setUploadRetryFile] = useState<File | null>(null);
+  const [uploadRetryMode, setUploadRetryMode] = useState<"image" | "file" | "voice" | null>(null);
   const [voiceRecordingDurationSec, setVoiceRecordingDurationSec] = useState(0);
+  const [voiceWaveLevels, setVoiceWaveLevels] = useState<number[]>([0.2, 0.4, 0.65, 0.45, 0.25]);
+  const [voicePreviewFile, setVoicePreviewFile] = useState<File | null>(null);
+  const [voicePreviewUrl, setVoicePreviewUrl] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmActionState>(null);
   const [messageActionBusy, setMessageActionBusy] = useState(false);
   const [forwardOpen, setForwardOpen] = useState(false);
@@ -148,6 +155,9 @@ export function ApiChatPanel({
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const mediaChunksRef = useRef<Blob[]>([]);
   const voiceTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const uploadAbortRef = useRef<AbortController | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const waveformFrameRef = useRef<number | null>(null);
   const [voiceRecording, setVoiceRecording] = useState(false);
 
   useEffect(() => {
@@ -162,11 +172,19 @@ export function ApiChatPanel({
     return () => {
       mediaRecorderRef.current?.stop();
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+      uploadAbortRef.current?.abort();
+      if (waveformFrameRef.current !== null) {
+        cancelAnimationFrame(waveformFrameRef.current);
+      }
+      audioCtxRef.current?.close().catch(() => undefined);
+      if (voicePreviewUrl) {
+        URL.revokeObjectURL(voicePreviewUrl);
+      }
       if (voiceTimerRef.current) {
         clearInterval(voiceTimerRef.current);
       }
     };
-  }, []);
+  }, [voicePreviewUrl]);
 
   const applyReceipts = useCallback((list: Message[]) => {
     return applyPeerReceiptPointersToMessages(
@@ -358,6 +376,7 @@ export function ApiChatPanel({
           return next;
         });
         if (!row.sentByViewer) {
+          setLiveAnnouncement("Bạn có tin nhắn mới.");
           void markConversationReadAction(convId, row.id);
           realtime.emitDelivered(convId, row.id);
           realtime.emitSeen(convId, row.id);
@@ -679,6 +698,35 @@ export function ApiChatPanel({
     [conversation, replyTarget, sending, uploading, refreshSidebar, applyReceipts, flushTypingStop],
   );
 
+  const putFileWithProgress = useCallback(
+    async (
+      url: string,
+      method: "PUT",
+      headers: Record<string, string>,
+      file: File,
+      onProgress: (pct: number) => void,
+      signal: AbortSignal,
+    ) =>
+      new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open(method, url);
+        Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
+        xhr.upload.onprogress = (event) => {
+          if (!event.lengthComputable) return;
+          onProgress(Math.round((event.loaded / event.total) * 100));
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve();
+          else reject(new Error(`Upload thất bại (${xhr.status}).`));
+        };
+        xhr.onerror = () => reject(new Error("Upload thất bại do lỗi mạng."));
+        xhr.onabort = () => reject(new Error("Upload đã bị hủy."));
+        signal.addEventListener("abort", () => xhr.abort(), { once: true });
+        xhr.send(file);
+      }),
+    [],
+  );
+
   const uploadAndSendAttachment = useCallback(
     async (file: File, mode: "image" | "file" | "voice") => {
       if (!conversation) return;
@@ -697,9 +745,14 @@ export function ApiChatPanel({
 
       setSendError(null);
       setUploading(true);
+      setUploadProgressPct(0);
+      setUploadRetryFile(null);
+      setUploadRetryMode(null);
       setUploadingLabel(
         mode === "image" ? "Đang tải ảnh…" : mode === "voice" ? "Đang tải ghi âm…" : "Đang tải tệp…",
       );
+      const abort = new AbortController();
+      uploadAbortRef.current = abort;
 
       try {
         const normalizedMime =
@@ -737,15 +790,14 @@ export function ApiChatPanel({
           headers.Authorization = `Bearer ${init.putBearerToken}`;
         }
 
-        const putRes = await fetch(init.uploadUrl, {
-          method: init.uploadMethod,
+        await putFileWithProgress(
+          init.uploadUrl,
+          init.uploadMethod,
           headers,
-          body: file,
-        });
-        if (!putRes.ok) {
-          setSendError(`Upload thất bại (${putRes.status}).`);
-          return;
-        }
+          file,
+          setUploadProgressPct,
+          abort.signal,
+        );
 
         setUploadingLabel("Đang xử lý đính kèm…");
         const done = await completeChatUploadAction(init.uploadSessionId);
@@ -783,12 +835,15 @@ export function ApiChatPanel({
         void refreshSidebar();
       } catch (e) {
         setSendError(e instanceof Error ? e.message : "Không gửi được đính kèm.");
+        setUploadRetryFile(file);
+        setUploadRetryMode(mode);
       } finally {
         setUploading(false);
         setUploadingLabel(null);
+        uploadAbortRef.current = null;
       }
     },
-    [conversation, sending, uploading, replyTarget, applyReceipts, refreshSidebar],
+    [conversation, sending, uploading, replyTarget, applyReceipts, refreshSidebar, putFileWithProgress],
   );
 
   const toggleVoiceRecording = useCallback(async () => {
@@ -815,6 +870,11 @@ export function ApiChatPanel({
     }
     try {
       setSendError(null);
+      if (voicePreviewUrl) {
+        URL.revokeObjectURL(voicePreviewUrl);
+        setVoicePreviewUrl(null);
+      }
+      setVoicePreviewFile(null);
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
       mediaStreamRef.current = stream;
@@ -831,6 +891,12 @@ export function ApiChatPanel({
         mediaRecorderRef.current = null;
         mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
         mediaStreamRef.current = null;
+        if (waveformFrameRef.current !== null) {
+          cancelAnimationFrame(waveformFrameRef.current);
+          waveformFrameRef.current = null;
+        }
+        audioCtxRef.current?.close().catch(() => undefined);
+        audioCtxRef.current = null;
         setVoiceRecording(false);
         setVoiceRecordingDurationSec(0);
         if (voiceTimerRef.current) {
@@ -842,7 +908,11 @@ export function ApiChatPanel({
           const file = new File([blob], `voice-${Date.now()}.${ext}`, {
             type: recorder.mimeType || "audio/webm",
           });
-          void uploadAndSendAttachment(file, "voice");
+          if (voicePreviewUrl) {
+            URL.revokeObjectURL(voicePreviewUrl);
+          }
+          setVoicePreviewFile(file);
+          setVoicePreviewUrl(URL.createObjectURL(file));
         }
       };
       recorder.start();
@@ -854,6 +924,27 @@ export function ApiChatPanel({
       voiceTimerRef.current = setInterval(() => {
         setVoiceRecordingDurationSec((sec) => sec + 1);
       }, 1000);
+      const audioCtx = new AudioContext();
+      audioCtxRef.current = audioCtx;
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 64;
+      const source = audioCtx.createMediaStreamSource(stream);
+      source.connect(analyser);
+      const bins = new Uint8Array(analyser.frequencyBinCount);
+      const draw = () => {
+        analyser.getByteFrequencyData(bins);
+        const step = Math.max(1, Math.floor(bins.length / 8));
+        const levels = Array.from({ length: 8 }).map((_, i) => {
+          const start = i * step;
+          const end = Math.min(bins.length, start + step);
+          const slice = bins.slice(start, end);
+          const avg = slice.reduce((sum, v) => sum + v, 0) / Math.max(1, slice.length);
+          return Math.max(0.1, Math.min(1, avg / 255));
+        });
+        setVoiceWaveLevels(levels);
+        waveformFrameRef.current = requestAnimationFrame(draw);
+      };
+      draw();
     } catch (e) {
       setVoiceRecording(false);
       setSendError(
@@ -869,8 +960,14 @@ export function ApiChatPanel({
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
       mediaStreamRef.current = null;
       mediaRecorderRef.current = null;
+      if (waveformFrameRef.current !== null) {
+        cancelAnimationFrame(waveformFrameRef.current);
+        waveformFrameRef.current = null;
+      }
+      audioCtxRef.current?.close().catch(() => undefined);
+      audioCtxRef.current = null;
     }
-  }, [conversation, uploadAndSendAttachment, voiceRecording]);
+  }, [conversation, voicePreviewUrl, voiceRecording]);
 
   const cancelVoiceRecording = useCallback(() => {
     mediaChunksRef.current = [];
@@ -881,12 +978,26 @@ export function ApiChatPanel({
     mediaRecorderRef.current = null;
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
     mediaStreamRef.current = null;
+    if (waveformFrameRef.current !== null) {
+      cancelAnimationFrame(waveformFrameRef.current);
+      waveformFrameRef.current = null;
+    }
+    audioCtxRef.current?.close().catch(() => undefined);
+    audioCtxRef.current = null;
     setVoiceRecording(false);
     setVoiceRecordingDurationSec(0);
+    setVoiceWaveLevels([0.2, 0.4, 0.65, 0.45, 0.25]);
     if (voiceTimerRef.current) {
       clearInterval(voiceTimerRef.current);
       voiceTimerRef.current = null;
     }
+  }, []);
+
+  const cancelUpload = useCallback(() => {
+    uploadAbortRef.current?.abort();
+    uploadAbortRef.current = null;
+    setUploading(false);
+    setUploadingLabel(null);
   }, []);
 
   const handleImagePicked = useCallback(
@@ -1140,6 +1251,9 @@ export function ApiChatPanel({
           conversation?.chatType === "group" ? () => setGroupInfoOpen(true) : undefined
         }
       />
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {liveAnnouncement}
+      </div>
       <div
         ref={messageScrollRef}
         onScroll={onMessageScroll}
@@ -1220,7 +1334,68 @@ export function ApiChatPanel({
         <>
           {uploadingLabel ? (
             <div className="border-t border-[var(--zalo-border)] bg-[var(--zalo-surface)] px-3 py-1.5">
-              <p className="text-center text-[12px] text-[var(--zalo-text-muted)]">{uploadingLabel}</p>
+              <p className="text-center text-[12px] text-[var(--zalo-text-muted)]">
+                {uploadingLabel} ({uploadProgressPct}%)
+              </p>
+              <div className="mt-1 h-1.5 w-full overflow-hidden rounded bg-black/[0.08]">
+                <div className="h-full bg-[var(--zalo-blue)] transition-all" style={{ width: `${uploadProgressPct}%` }} />
+              </div>
+              <div className="mt-1 flex justify-center">
+                <button
+                  type="button"
+                  className="rounded px-2 py-0.5 text-[11px] text-red-600 hover:bg-red-50"
+                  onClick={cancelUpload}
+                >
+                  Hủy upload
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {uploadRetryFile && uploadRetryMode ? (
+            <div className="border-t border-amber-200 bg-amber-50 px-3 py-1.5">
+              <p className="text-center text-[12px] text-amber-900">Upload thất bại. Bạn có thể thử lại.</p>
+              <div className="mt-1 flex justify-center">
+                <button
+                  type="button"
+                  className="rounded px-2 py-0.5 text-[11px] text-[var(--zalo-blue)] hover:bg-white"
+                  onClick={() => void uploadAndSendAttachment(uploadRetryFile, uploadRetryMode)}
+                >
+                  Retry upload
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {voicePreviewFile && voicePreviewUrl ? (
+            <div className="border-t border-[var(--zalo-border)] bg-[var(--zalo-surface)] px-3 py-2">
+              <p className="text-center text-[12px] text-[var(--zalo-text-muted)]">Preview ghi âm trước khi gửi</p>
+              <audio controls src={voicePreviewUrl} className="mt-1 w-full" preload="metadata" />
+              <div className="mt-2 flex justify-center gap-2">
+                <button
+                  type="button"
+                  className="rounded px-2 py-1 text-[12px] text-red-600 hover:bg-red-50"
+                  onClick={() => {
+                    URL.revokeObjectURL(voicePreviewUrl);
+                    setVoicePreviewFile(null);
+                    setVoicePreviewUrl(null);
+                  }}
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  className="rounded bg-[var(--zalo-blue)] px-2 py-1 text-[12px] text-white"
+                  onClick={() => {
+                    const file = voicePreviewFile;
+                    if (!file) return;
+                    void uploadAndSendAttachment(file, "voice");
+                    URL.revokeObjectURL(voicePreviewUrl);
+                    setVoicePreviewFile(null);
+                    setVoicePreviewUrl(null);
+                  }}
+                >
+                  Gửi ghi âm
+                </button>
+              </div>
             </div>
           ) : null}
           {sendError ? (
@@ -1276,6 +1451,7 @@ export function ApiChatPanel({
             isVoiceRecording={voiceRecording}
             voiceRecordingDurationSec={voiceRecordingDurationSec}
             onCancelVoiceRecording={cancelVoiceRecording}
+            voiceWaveLevels={voiceWaveLevels}
             onPickSticker={(stickerId, emoji) => void sendSticker(stickerId, emoji)}
             onInsertEmoji={(emoji) => {
               setDraft((d) => d + emoji);
