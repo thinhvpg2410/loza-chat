@@ -19,6 +19,7 @@ type ImageMessageProps = {
   replyTo?: ReplyReference;
   onPress: () => void;
   onLongPress?: () => void;
+  autoLoad?: boolean;
 };
 
 function UnpackedImageMessage({
@@ -30,9 +31,11 @@ function UnpackedImageMessage({
   replyTo,
   onPress,
   onLongPress,
+  autoLoad = true,
 }: ImageMessageProps) {
   const { width: screenW } = useWindowDimensions();
   const [loaded, setLoaded] = useState(false);
+  const [loadRequested, setLoadRequested] = useState(autoLoad);
 
   const { w, h } = useMemo(() => {
     const iw = imageWidth ?? 400;
@@ -75,18 +78,24 @@ function UnpackedImageMessage({
         </View>
       ) : null}
       <View style={[styles.frame, { width: w, height: h }]}>
-        {!loaded ? (
+        {!loadRequested ? (
+          <Pressable style={[styles.placeholder, { width: w, height: h }]} onPress={() => setLoadRequested(true)}>
+            <ActivityIndicator color={colors.primary} />
+          </Pressable>
+        ) : !loaded ? (
           <View style={[styles.placeholder, { width: w, height: h }]}>
             <ActivityIndicator color={colors.primary} />
           </View>
         ) : null}
-        <Image
-          source={{ uri: imageUrl }}
-          style={[styles.img, { width: w, height: h }, !loaded && styles.imgHidden]}
-          contentFit="cover"
-          transition={200}
-          onLoadEnd={() => setLoaded(true)}
-        />
+        {loadRequested ? (
+          <Image
+            source={{ uri: imageUrl }}
+            style={[styles.img, { width: w, height: h }, !loaded && styles.imgHidden]}
+            contentFit="cover"
+            transition={200}
+            onLoadEnd={() => setLoaded(true)}
+          />
+        ) : null}
       </View>
     </Pressable>
   );

@@ -5,6 +5,7 @@ export { UnreadBadge } from "./UnreadBadge";
 
 export { ChatRoomHeader } from "./ChatRoomHeader";
 export { MessageList } from "./MessageList";
+export { ChatGroupEventRow } from "./ChatGroupEventRow";
 export { MessageBubble } from "./MessageBubble";
 export { MessageGroup } from "./MessageGroup";
 export { MessageInputBar } from "./MessageInputBar";
@@ -18,6 +19,7 @@ export { StickerMessage } from "./StickerMessage";
 export { ReactionBar } from "./ReactionBar";
 export { ReplyInline, ReplyPreviewBanner } from "./ReplyPreview";
 export { ImageViewerModal } from "./ImageViewerModal";
+export { FilePreviewModal } from "./FilePreviewModal";
 export { ReactionPickerSheet } from "./ReactionPickerSheet";
 export { MessageActionsSheet, type MessageActionId, type MessageActionItem } from "./MessageActionsSheet";
 export { ForwardConversationSheet } from "./ForwardConversationSheet";

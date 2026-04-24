@@ -24,7 +24,7 @@ export function FriendRequestRow({
   return (
     <div className="flex gap-2 rounded-[6px] border border-[var(--zalo-border)]/80 bg-white px-2 py-1.5 shadow-[0_1px_0_rgba(0,0,0,0.03)]">
       <div className="shrink-0 pt-px">
-        <Avatar name={request.displayName} size="contact" />
+        <Avatar name={request.displayName} size="contact" src={request.avatarUrl} />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">

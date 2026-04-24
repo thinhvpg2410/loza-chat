@@ -11,7 +11,12 @@ export { buildMessageFeed } from "./buildMessageFeed";
 export { formatFileSize } from "./formatFileSize";
 export { formatSeparatorLabel } from "./formatSeparatorLabel";
 export { getMockThreadMessages } from "./mockThreadMessages";
-export { mapApiMessageToChatRoom, mapApiMessagesToChatRoomList, mergeReactionsFromSummary } from "./mapApiMessage";
+export {
+  mapApiMessageToChatRoom,
+  mapApiMessagesToChatRoomList,
+  mergeReactionsFromSocketBroadcast,
+  mergeReactionsFromSummary,
+} from "./mapApiMessage";
 export { newClientMessageId } from "./newClientMessageId";
 export { applyOutgoingReceiptFromPeerPointer } from "./receiptPointer";
 export { toggleReactionOnMessage } from "./toggleReaction";

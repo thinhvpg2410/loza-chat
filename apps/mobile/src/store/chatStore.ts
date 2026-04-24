@@ -11,10 +11,14 @@ type ChatState = {
   loading: boolean;
   hasLoadedOnce: boolean;
   fetchError: string | null;
+  /** Monotonic signal when the server deletes a group conversation (socket `group:dissolved`). */
+  lastGroupDissolved: { conversationId: string; seq: number } | null;
   /** `silent` avoids toggling `loading` (used for socket-driven list updates). */
   fetchConversations: (opts?: { silent?: boolean }) => Promise<void>;
   /** Coalesced refresh for realtime events (e.g. new message in another thread). */
   scheduleConversationsListRefresh: () => void;
+  /** Notifies focused chat/group screens so they can navigate away. */
+  notifyGroupDissolved: (conversationId: string) => void;
   getTotalUnread: () => number;
   reset: () => void;
 };
@@ -35,6 +39,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   loading: false,
   hasLoadedOnce: false,
   fetchError: null,
+  lastGroupDissolved: null,
 
   fetchConversations: async (opts) => {
     const silent = opts?.silent === true;
@@ -89,6 +94,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }, 400);
   },
 
+  notifyGroupDissolved: (conversationId: string) => {
+    if (USE_API_MOCK) return;
+    set((s) => ({
+      lastGroupDissolved: {
+        conversationId,
+        seq: (s.lastGroupDissolved?.seq ?? 0) + 1,
+      },
+    }));
+  },
+
   getTotalUnread: () => get().conversations.reduce((sum, c) => sum + (c.unreadCount ?? 0), 0),
 
   reset: () => {
@@ -98,6 +113,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       loading: false,
       hasLoadedOnce: false,
       fetchError: null,
+      lastGroupDissolved: null,
     });
   },
 }));

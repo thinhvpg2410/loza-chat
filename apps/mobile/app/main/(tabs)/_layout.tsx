@@ -5,8 +5,11 @@ import { useCallback, useEffect } from "react";
 import { StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { MOCK_INCOMING_FRIEND_REQUESTS } from "@/constants/mockData";
+import { USE_API_MOCK } from "@/constants/env";
 import { useAuthStore } from "@/store/authStore";
 import { useChatStore } from "@/store/chatStore";
+import { useFriendsStore } from "@/store/friendsStore";
 import { useUserStore } from "@/store/userStore";
 import { colors } from "@theme";
 
@@ -31,6 +34,16 @@ export default function MainTabsLayout() {
   }, [fetchConversations]);
 
   const totalUnread = conversations.reduce((sum, c) => sum + (c.unreadCount ?? 0), 0);
+  const incomingFriendRequests = useFriendsStore((s) => s.incoming.length);
+
+  useEffect(() => {
+    if (USE_API_MOCK) return;
+    void useFriendsStore.getState().refresh();
+  }, []);
+
+  const friendsTabBadgeCount = USE_API_MOCK ? MOCK_INCOMING_FRIEND_REQUESTS.length : incomingFriendRequests;
+  const friendsTabBadge =
+    friendsTabBadgeCount > 0 ? (friendsTabBadgeCount > 99 ? "99+" : friendsTabBadgeCount) : undefined;
 
   const tabBarStyle = [
     styles.tabBar,
@@ -72,6 +85,8 @@ export default function MainTabsLayout() {
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? "people" : "people-outline"} size={20} color={color} />
           ),
+          tabBarBadge: friendsTabBadge,
+          tabBarBadgeStyle: styles.badge,
         }}
       />
       <Tabs.Screen

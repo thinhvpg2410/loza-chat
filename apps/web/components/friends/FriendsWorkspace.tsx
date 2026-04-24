@@ -14,6 +14,7 @@ import {
   blockUserAction,
   cancelOutgoingForUserAction,
   fetchFriendsListAction,
+  fetchIncomingRequestsAction,
   getPublicProfileAction,
   rejectIncomingForUserAction,
   sendFriendRequestAction,
@@ -30,6 +31,8 @@ export type FriendsWorkspaceProps = {
   initialFriends?: Friend[];
   initialError?: string | null;
   selfProfile?: ProfileUser | null;
+  /** Incoming friend requests count (API); shown next to “Lời mời kết bạn”. */
+  incomingRequestCount?: number;
 };
 
 type ConfirmState =
@@ -47,6 +50,7 @@ export function FriendsWorkspace({
   initialFriends = [],
   initialError = null,
   selfProfile = null,
+  incomingRequestCount = 0,
 }: FriendsWorkspaceProps) {
   const router = useRouter();
   const isApi = source === "api";
@@ -78,13 +82,19 @@ export function FriendsWorkspace({
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const [openingDirectChatUserId, setOpeningDirectChatUserId] = useState<string | null>(null);
   const openingDirectChatLock = useRef(false);
+  const [incomingBadgeCount, setIncomingBadgeCount] = useState(incomingRequestCount);
 
   const showOnlineRecentFilters = !isApi;
 
+  useEffect(() => {
+    setIncomingBadgeCount(incomingRequestCount);
+  }, [incomingRequestCount]);
+
   const refreshFriends = useCallback(async () => {
     if (!isApi) return;
-    const r = await fetchFriendsListAction();
-    if (r.ok) setFriends(r.friends.map(mapApiFriend));
+    const [rFriends, rInc] = await Promise.all([fetchFriendsListAction(), fetchIncomingRequestsAction()]);
+    if (rFriends.ok) setFriends(rFriends.friends.map(mapApiFriend));
+    if (rInc.ok) setIncomingBadgeCount(rInc.requests.length);
   }, [isApi]);
 
   useEffect(() => {
@@ -232,14 +242,30 @@ export function FriendsWorkspace({
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0">
               <h1 className="text-[16px] font-semibold leading-tight text-[var(--zalo-text)]">Bạn bè</h1>
-              <div className="mt-1 flex flex-wrap gap-2 text-[12px]">
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px]">
                 <Link
                   href="/friends/requests"
-                  className="font-medium text-[var(--zalo-blue)] hover:underline"
+                  className="inline-flex items-center gap-1 font-medium text-[var(--zalo-blue)] hover:underline"
                 >
                   Lời mời kết bạn
+                  {isApi && incomingBadgeCount > 0 ? (
+                    <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-none text-white">
+                      {incomingBadgeCount > 99 ? "99+" : incomingBadgeCount}
+                    </span>
+                  ) : null}
                 </Link>
                 <span className="text-[var(--zalo-border)]">·</span>
+                {isApi ? (
+                  <>
+                    <Link
+                      href="/friends/blocked"
+                      className="font-medium text-[var(--zalo-blue)] hover:underline"
+                    >
+                      Đã chặn
+                    </Link>
+                    <span className="text-[var(--zalo-border)]">·</span>
+                  </>
+                ) : null}
                 <button
                   type="button"
                   className="font-medium text-[var(--zalo-text-muted)] hover:text-[var(--zalo-text)]"

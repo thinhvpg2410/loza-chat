@@ -1,10 +1,15 @@
 import {
   BadRequestException,
   ForbiddenException,
+  forwardRef,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
+  ConversationMemberRole,
+  ConversationMemberStatus,
   ConversationType,
   MessageType,
   Prisma,
@@ -14,6 +19,8 @@ import {
   type StickerPack,
   type User,
 } from '@prisma/client';
+import type { AppConfiguration } from '../../config/configuration';
+import { publicMediaUrlForStorageKey } from '../../common/media/public-media-url';
 import { toAttachmentPublicDto } from '../../common/mappers/attachment-public.mapper';
 import { toPublicUserProfile } from '../../common/types/public-user-profile';
 import {
@@ -25,9 +32,14 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { toStickerPublicDto } from '../stickers/mappers/sticker-public.mapper';
 import { StickersService } from '../stickers/stickers.service';
 import { ConversationMembershipService } from '../conversations/conversation-membership.service';
+import { ConversationsService } from '../conversations/conversations.service';
+import { GroupPermissionsService } from '../groups/group-permissions.service';
+import { GroupPostPolicyService } from '../groups/group-post-policy.service';
+import { parseGroupSettings } from '../groups/group-settings.util';
 import { UploadRulesService } from '../uploads/upload-rules.service';
 import { isAllowedReaction } from './constants/reaction-allowlist';
 import { MessageDomainEventsService } from './message-domain-events.service';
+import { ConversationRateLimitService } from './conversation-rate-limit.service';
 import { MessageHistoryQueryDto } from './dto/message-history-query.dto';
 import type { SendMessageWithAttachmentsDto } from './dto/send-message-with-attachments.dto';
 import type { SendMessageDto } from './dto/send-message.dto';
@@ -46,15 +58,65 @@ type MessageWithRelations = Message & {
 
 type MessageDeletionMode = 'recalled' | 'deleted';
 
+type ForwardedMessageMeta = { forwardedFromMessageId: string };
+type MentionMeta = {
+  version: 1;
+  mentionAll: boolean;
+  mentionUserIds: string[];
+  mentionHandles: string[];
+};
+
+type MentionUserIdentity = {
+  userId: string;
+  username: string | null;
+  displayName: string | null;
+};
+
 @Injectable()
 export class MessagesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly membership: ConversationMembershipService,
+    @Inject(forwardRef(() => ConversationsService))
+    private readonly conversations: ConversationsService,
+    private readonly groupPostPolicy: GroupPostPolicyService,
+    private readonly groupPermissions: GroupPermissionsService,
     private readonly uploadRules: UploadRulesService,
     private readonly stickers: StickersService,
     private readonly domainEvents: MessageDomainEventsService,
+    private readonly rateLimit: ConversationRateLimitService,
+    private readonly config: ConfigService<AppConfiguration, true>,
   ) {}
+
+  /**
+   * Used when group system messages are created outside this service (still persisted in `messages`).
+   */
+  async broadcastPersistedMessage(
+    conversationId: string,
+    messageId: string,
+  ): Promise<void> {
+    const row = await this.prisma.message.findFirst({
+      where: { id: messageId, conversationId },
+      include: {
+        sender: true,
+        attachments: { orderBy: { sortOrder: 'asc' } },
+        sticker: { include: { pack: true } },
+      },
+    });
+    if (!row) {
+      return;
+    }
+    const reactionMap = await this.buildReactionSummariesForMessages(
+      row.senderId,
+      [row.id],
+    );
+    const message = this.toMessageView(row, reactionMap.get(row.id));
+    this.domainEvents.emit({
+      type: 'message.created',
+      conversationId,
+      message,
+    });
+  }
 
   private parseDeletionMode(
     metadata: Prisma.JsonValue | null,
@@ -90,14 +152,206 @@ export class MessagesService {
     return base as Prisma.InputJsonValue;
   }
 
+  private forwardedMetadataJson(
+    forwardMeta?: ForwardedMessageMeta,
+  ): Prisma.InputJsonValue | undefined {
+    if (!forwardMeta?.forwardedFromMessageId) {
+      return undefined;
+    }
+    return {
+      forwardedFrom: {
+        messageId: forwardMeta.forwardedFromMessageId,
+      },
+    } as Prisma.InputJsonValue;
+  }
+
+  private extractMentionHandles(content: string): MentionMeta {
+    const handles = new Set<string>();
+    let mentionAll = false;
+    const mentionPattern = /(^|\s)@([a-zA-Z0-9._-]{1,64})/g;
+    for (const match of content.matchAll(mentionPattern)) {
+      const raw = (match[2] ?? '').trim().toLowerCase();
+      if (!raw) {
+        continue;
+      }
+      if (raw === 'all') {
+        mentionAll = true;
+        continue;
+      }
+      handles.add(raw);
+    }
+    return {
+      version: 1,
+      mentionAll,
+      mentionUserIds: [],
+      mentionHandles: [...handles],
+    };
+  }
+
+  private buildMentionTokens(identity: MentionUserIdentity): Set<string> {
+    const tokens = new Set<string>();
+    const username = (identity.username ?? '').trim().toLowerCase();
+    if (username) {
+      tokens.add(username);
+    }
+    const displayName = (identity.displayName ?? '').trim().toLowerCase();
+    if (displayName) {
+      const ascii = displayName.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const compact = ascii.replace(/[^a-z0-9]+/g, '');
+      const dot = ascii.replace(/[^a-z0-9]+/g, '.').replace(/^\.+|\.+$/g, '');
+      const underscore = ascii.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+      const hyphen = ascii.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      if (compact) {
+        tokens.add(compact);
+      }
+      if (dot) {
+        tokens.add(dot);
+      }
+      if (underscore) {
+        tokens.add(underscore);
+      }
+      if (hyphen) {
+        tokens.add(hyphen);
+      }
+    }
+    return tokens;
+  }
+
+  private mergeMetadataJson(
+    forwarded: Prisma.InputJsonValue | undefined,
+    mentions: MentionMeta | null,
+  ): Prisma.InputJsonValue | undefined {
+    if (!forwarded && !mentions) {
+      return undefined;
+    }
+    const base =
+      forwarded && typeof forwarded === 'object' && !Array.isArray(forwarded)
+        ? ({ ...(forwarded as Prisma.JsonObject) } as Prisma.JsonObject)
+        : ({} as Prisma.JsonObject);
+    if (mentions) {
+      base.mentions = {
+        version: 1,
+        mentionAll: mentions.mentionAll,
+        userIds: mentions.mentionUserIds,
+        handles: mentions.mentionHandles,
+      };
+    }
+    return base as Prisma.InputJsonValue;
+  }
+
+  private async resolveMentionsForConversationTx(
+    tx: Prisma.TransactionClient,
+    conversationId: string,
+    senderId: string,
+    content: string | null | undefined,
+  ): Promise<MentionMeta | null> {
+    if (!content?.trim()) {
+      return null;
+    }
+    const parsed = this.extractMentionHandles(content);
+    if (!parsed.mentionAll && parsed.mentionHandles.length === 0) {
+      return null;
+    }
+
+    const conversation = await tx.conversation.findUnique({
+      where: { id: conversationId },
+      select: { type: true },
+    });
+    if (!conversation || conversation.type !== ConversationType.group) {
+      return null;
+    }
+
+    const members = await tx.conversationMember.findMany({
+      where: {
+        conversationId,
+        status: ConversationMemberStatus.active,
+      },
+      select: {
+        userId: true,
+        user: {
+          select: {
+            username: true,
+            displayName: true,
+          },
+        },
+      },
+    });
+
+    const mentionUserIds = new Set<string>();
+    if (parsed.mentionAll) {
+      for (const row of members) {
+        if (row.userId !== senderId) {
+          mentionUserIds.add(row.userId);
+        }
+      }
+    }
+
+    if (parsed.mentionHandles.length > 0) {
+      const normalizedHandles = new Set(parsed.mentionHandles);
+      for (const row of members) {
+        const tokens = this.buildMentionTokens({
+          userId: row.userId,
+          username: row.user.username,
+          displayName: row.user.displayName,
+        });
+        const matched = [...tokens].some((token) => normalizedHandles.has(token));
+        if (matched && row.userId !== senderId) {
+          mentionUserIds.add(row.userId);
+        }
+      }
+    }
+
+    return {
+      version: 1,
+      mentionAll: parsed.mentionAll,
+      mentionHandles: parsed.mentionHandles,
+      mentionUserIds: [...mentionUserIds],
+    };
+  }
+
+  private async createMentionIndexTx(
+    tx: Prisma.TransactionClient,
+    conversationId: string,
+    messageId: string,
+    mentionMeta: MentionMeta | null,
+  ): Promise<void> {
+    if (!mentionMeta || mentionMeta.mentionUserIds.length === 0) {
+      return;
+    }
+    for (const mentionedUserId of mentionMeta.mentionUserIds) {
+      await tx.$executeRaw`
+        INSERT INTO "message_mentions"
+          ("id","message_id","conversation_id","mentioned_user_id","created_at")
+        VALUES
+          (
+            gen_random_uuid()::text,
+            ${messageId},
+            ${conversationId},
+            ${mentionedUserId},
+            NOW()
+          )
+        ON CONFLICT ("message_id","mentioned_user_id") DO NOTHING
+      `;
+    }
+  }
+
   async sendTextMessage(
     senderId: string,
     dto: SendMessageDto,
+    forwardMeta?: ForwardedMessageMeta,
   ): Promise<{
     message: MessageView;
   }> {
+    await this.conversations.assertMaySendDirectMessage(senderId, dto.conversationId);
+    await this.groupPostPolicy.assertUserMaySendMessage(senderId, dto.conversationId);
     const result = await this.prisma.$transaction(async (tx) => {
-      await this.membership.requireMemberTx(tx, senderId, dto.conversationId);
+      await this.rateLimit.assertAndConsume(
+        senderId,
+        dto.conversationId,
+        'text',
+        tx,
+      );
+      await this.membership.requireActiveMemberTx(tx, senderId, dto.conversationId);
 
       if (dto.replyToMessageId) {
         const parent = await tx.message.findFirst({
@@ -134,6 +388,16 @@ export class MessagesService {
       }
 
       try {
+        const mentionMeta = await this.resolveMentionsForConversationTx(
+          tx,
+          dto.conversationId,
+          senderId,
+          dto.content,
+        );
+        const metadataJson = this.mergeMetadataJson(
+          this.forwardedMetadataJson(forwardMeta),
+          mentionMeta,
+        );
         const created = await tx.message.create({
           data: {
             conversationId: dto.conversationId,
@@ -142,6 +406,7 @@ export class MessagesService {
             type: MessageType.text,
             content: dto.content,
             replyToMessageId: dto.replyToMessageId ?? null,
+            ...(metadataJson !== undefined ? { metadataJson } : {}),
           },
           include: {
             sender: true,
@@ -154,6 +419,12 @@ export class MessagesService {
           where: { id: dto.conversationId },
           data: { lastMessageId: created.id },
         });
+        await this.createMentionIndexTx(
+          tx,
+          dto.conversationId,
+          created.id,
+          mentionMeta,
+        );
 
         return { message: this.toMessageView(created), created: true };
       } catch (err) {
@@ -197,11 +468,19 @@ export class MessagesService {
   async sendStickerMessage(
     senderId: string,
     dto: SendStickerMessageDto,
+    forwardMeta?: ForwardedMessageMeta,
   ): Promise<{ message: MessageView }> {
     await this.stickers.requireSendableSticker(dto.stickerId);
-
+    await this.conversations.assertMaySendDirectMessage(senderId, dto.conversationId);
+    await this.groupPostPolicy.assertUserMaySendMessage(senderId, dto.conversationId);
     const result = await this.prisma.$transaction(async (tx) => {
-      await this.membership.requireMemberTx(tx, senderId, dto.conversationId);
+      await this.rateLimit.assertAndConsume(
+        senderId,
+        dto.conversationId,
+        'text',
+        tx,
+      );
+      await this.membership.requireActiveMemberTx(tx, senderId, dto.conversationId);
 
       if (dto.replyToMessageId) {
         const parent = await tx.message.findFirst({
@@ -238,6 +517,16 @@ export class MessagesService {
       }
 
       try {
+        const mentionMeta = await this.resolveMentionsForConversationTx(
+          tx,
+          dto.conversationId,
+          senderId,
+          null,
+        );
+        const metadataJson = this.mergeMetadataJson(
+          this.forwardedMetadataJson(forwardMeta),
+          mentionMeta,
+        );
         const created = await tx.message.create({
           data: {
             conversationId: dto.conversationId,
@@ -247,6 +536,7 @@ export class MessagesService {
             content: null,
             stickerId: dto.stickerId,
             replyToMessageId: dto.replyToMessageId ?? null,
+            ...(metadataJson !== undefined ? { metadataJson } : {}),
           },
           include: {
             sender: true,
@@ -321,6 +611,7 @@ export class MessagesService {
   async sendMessageWithAttachments(
     senderId: string,
     dto: SendMessageWithAttachmentsDto,
+    forwardMeta?: ForwardedMessageMeta,
   ): Promise<{ message: MessageView }> {
     this.uploadRules.assertAttachmentIdsForMessageType(
       dto.type,
@@ -330,8 +621,16 @@ export class MessagesService {
     const content =
       dto.content !== undefined && dto.content.length > 0 ? dto.content : null;
 
+    await this.conversations.assertMaySendDirectMessage(senderId, dto.conversationId);
+    await this.groupPostPolicy.assertUserMaySendMessage(senderId, dto.conversationId);
     const result = await this.prisma.$transaction(async (tx) => {
-      await this.membership.requireMemberTx(tx, senderId, dto.conversationId);
+      await this.rateLimit.assertAndConsume(
+        senderId,
+        dto.conversationId,
+        dto.type === MessageType.voice ? 'voice' : 'text',
+        tx,
+      );
+      await this.membership.requireActiveMemberTx(tx, senderId, dto.conversationId);
 
       if (dto.replyToMessageId) {
         const parent = await tx.message.findFirst({
@@ -396,6 +695,16 @@ export class MessagesService {
       );
 
       try {
+        const mentionMeta = await this.resolveMentionsForConversationTx(
+          tx,
+          dto.conversationId,
+          senderId,
+          content,
+        );
+        const metadataJson = this.mergeMetadataJson(
+          this.forwardedMetadataJson(forwardMeta),
+          mentionMeta,
+        );
         const created = await tx.message.create({
           data: {
             conversationId: dto.conversationId,
@@ -404,6 +713,7 @@ export class MessagesService {
             type: dto.type,
             content,
             replyToMessageId: dto.replyToMessageId ?? null,
+            ...(metadataJson ? { metadataJson } : {}),
           },
           include: {
             sender: true,
@@ -427,6 +737,12 @@ export class MessagesService {
           where: { id: dto.conversationId },
           data: { lastMessageId: created.id },
         });
+        await this.createMentionIndexTx(
+          tx,
+          dto.conversationId,
+          created.id,
+          mentionMeta,
+        );
 
         const withAtt = await tx.message.findUniqueOrThrow({
           where: { id: created.id },
@@ -490,6 +806,41 @@ export class MessagesService {
     return this.softDeleteMessage(actorId, messageId, 'deleted');
   }
 
+  /**
+   * Hides a message only for the current user (others still see it). Distinct from
+   * {@link deleteMessage} which soft-deletes for everyone in the thread.
+   */
+  async hideMessageForSelf(
+    actorId: string,
+    messageId: string,
+  ): Promise<{ ok: true }> {
+    const message = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      select: { id: true, conversationId: true },
+    });
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+    await this.membership.requireActiveMember(actorId, message.conversationId);
+    try {
+      await this.prisma.messageUserHidden.create({
+        data: {
+          messageId: message.id,
+          userId: actorId,
+        },
+      });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        return { ok: true };
+      }
+      throw err;
+    }
+    return { ok: true };
+  }
+
   async forwardMessage(
     actorId: string,
     sourceMessageId: string,
@@ -507,7 +858,7 @@ export class MessagesService {
     if (!source) {
       throw new NotFoundException('Message not found');
     }
-    await this.membership.requireMember(actorId, source.conversationId);
+    await this.membership.requireActiveMember(actorId, source.conversationId);
 
     if (source.deletedAt) {
       throw new BadRequestException('Cannot forward a recalled/deleted message');
@@ -517,36 +868,48 @@ export class MessagesService {
       where: { id: targetConversationId },
       select: { id: true, type: true },
     });
-    if (!targetConversation || targetConversation.type !== ConversationType.direct) {
-      throw new BadRequestException('Target conversation must be a direct conversation');
+    if (!targetConversation) {
+      throw new NotFoundException('Target conversation not found');
     }
 
     if (source.type === MessageType.system) {
       throw new BadRequestException('System messages cannot be forwarded');
     }
 
+    const forwardMeta: ForwardedMessageMeta = {
+      forwardedFromMessageId: sourceMessageId,
+    };
+
     if (source.type === MessageType.text) {
-      return this.sendTextMessage(actorId, {
-        conversationId: targetConversationId,
-        clientMessageId,
-        content: source.content ?? '',
-      });
+      return this.sendTextMessage(
+        actorId,
+        {
+          conversationId: targetConversationId,
+          clientMessageId,
+          content: source.content ?? '',
+        },
+        forwardMeta,
+      );
     }
 
     if (source.type === MessageType.sticker) {
       if (!source.stickerId) {
         throw new BadRequestException('Source sticker message is invalid');
       }
-      return this.sendStickerMessage(actorId, {
-        conversationId: targetConversationId,
-        clientMessageId,
-        stickerId: source.stickerId,
-      });
+      return this.sendStickerMessage(
+        actorId,
+        {
+          conversationId: targetConversationId,
+          clientMessageId,
+          stickerId: source.stickerId,
+        },
+        forwardMeta,
+      );
     }
 
     if (source.attachments.length > 0) {
       const clonedAttachmentIds = await this.prisma.$transaction(async (tx) => {
-        await this.membership.requireMemberTx(tx, actorId, targetConversationId);
+        await this.membership.requireActiveMemberTx(tx, actorId, targetConversationId);
 
         const created: string[] = [];
         for (const att of source.attachments) {
@@ -572,24 +935,32 @@ export class MessagesService {
         return created;
       });
 
-      return this.sendMessageWithAttachments(actorId, {
-        conversationId: targetConversationId,
-        clientMessageId,
-        type: source.type,
-        content: source.content ?? undefined,
-        attachmentIds: clonedAttachmentIds,
-      });
+      return this.sendMessageWithAttachments(
+        actorId,
+        {
+          conversationId: targetConversationId,
+          clientMessageId,
+          type: source.type,
+          content: source.content ?? undefined,
+          attachmentIds: clonedAttachmentIds,
+        },
+        forwardMeta,
+      );
     }
 
     if (!source.content || source.content.trim().length === 0) {
       throw new BadRequestException('Source message has no forwardable payload');
     }
 
-    return this.sendTextMessage(actorId, {
-      conversationId: targetConversationId,
-      clientMessageId,
-      content: source.content,
-    });
+    return this.sendTextMessage(
+      actorId,
+      {
+        conversationId: targetConversationId,
+        clientMessageId,
+        content: source.content,
+      },
+      forwardMeta,
+    );
   }
 
   private async softDeleteMessage(
@@ -610,9 +981,60 @@ export class MessagesService {
         throw new NotFoundException('Message not found');
       }
 
-      await this.membership.requireMemberTx(tx, actorId, message.conversationId);
+      await this.membership.requireActiveMemberTx(tx, actorId, message.conversationId);
+
+      let allowModeratorRecall = false;
       if (message.senderId !== actorId) {
-        throw new ForbiddenException('Only the sender can perform this action');
+        if (mode === 'recalled') {
+          const conv = await tx.conversation.findUnique({
+            where: { id: message.conversationId },
+            select: { type: true, groupSettingsJson: true },
+          });
+          if (conv?.type === ConversationType.group) {
+            const settings = parseGroupSettings(conv.groupSettingsJson);
+            if (settings.moderatorsCanRecallMessages) {
+              const actorMember = await tx.conversationMember.findUnique({
+                where: {
+                  conversationId_userId: {
+                    conversationId: message.conversationId,
+                    userId: actorId,
+                  },
+                },
+              });
+              const actorRole = this.groupPermissions.normalizeRole(
+                actorMember?.role ?? null,
+              );
+              if (
+                actorRole === ConversationMemberRole.owner ||
+                actorRole === ConversationMemberRole.admin
+              ) {
+                const senderMember = await tx.conversationMember.findUnique({
+                  where: {
+                    conversationId_userId: {
+                      conversationId: message.conversationId,
+                      userId: message.senderId,
+                    },
+                  },
+                });
+                const senderRole = this.groupPermissions.normalizeRole(
+                  senderMember?.role ?? null,
+                );
+                if (senderRole === ConversationMemberRole.owner) {
+                  throw new ForbiddenException(
+                    "Group leaders' messages cannot be recalled by moderators",
+                  );
+                }
+                if (message.type === MessageType.system) {
+                  throw new BadRequestException('System messages cannot be recalled');
+                }
+                allowModeratorRecall = true;
+              }
+            }
+          }
+        }
+        if (!allowModeratorRecall) {
+          throw new ForbiddenException('Only the sender can perform this action');
+        }
       }
 
       if (message.deletedAt) {
@@ -663,7 +1085,7 @@ export class MessagesService {
     messages: MessageWithReceiptStateView[];
     nextCursor: string | null;
   }> {
-    await this.membership.requireMember(viewerId, conversationId);
+    await this.membership.requireActiveMember(viewerId, conversationId);
 
     const limit = MessageHistoryQueryDto.resolveLimit(query.limit);
     const cursorPayload = query.cursor
@@ -672,6 +1094,7 @@ export class MessagesService {
 
     const where: Prisma.MessageWhereInput = {
       conversationId,
+      hiddenByUsers: { none: { userId: viewerId } },
       ...(cursorPayload
         ? {
             OR: [
@@ -780,7 +1203,7 @@ export class MessagesService {
     if (!message) {
       throw new NotFoundException('Message not found');
     }
-    await this.membership.requireMember(viewerId, message.conversationId);
+    await this.membership.requireActiveMember(viewerId, message.conversationId);
     const summary = await this.fetchReactionSummaryForMessage(
       viewerId,
       messageId,
@@ -807,7 +1230,8 @@ export class MessagesService {
     if (!message) {
       throw new NotFoundException('Message not found');
     }
-    await this.membership.requireMember(userId, message.conversationId);
+    await this.membership.requireActiveMember(userId, message.conversationId);
+    await this.rateLimit.assertAndConsume(userId, message.conversationId, 'reaction');
 
     const existing = await this.prisma.messageReaction.findUnique({
       where: {
@@ -836,7 +1260,8 @@ export class MessagesService {
       type: 'message.reaction_updated',
       conversationId: message.conversationId,
       messageId,
-      summary,
+      /** Counts are global; `mine` is viewer-specific so omit in broadcast (clients merge locally). */
+      summary: { counts: summary.counts, mine: [] },
     });
 
     return { summary, alreadyExists: false };
@@ -858,7 +1283,8 @@ export class MessagesService {
     if (!message) {
       throw new NotFoundException('Message not found');
     }
-    await this.membership.requireMember(userId, message.conversationId);
+    await this.membership.requireActiveMember(userId, message.conversationId);
+    await this.rateLimit.assertAndConsume(userId, message.conversationId, 'reaction');
 
     const existing = await this.prisma.messageReaction.findUnique({
       where: {
@@ -882,10 +1308,74 @@ export class MessagesService {
       type: 'message.reaction_updated',
       conversationId: message.conversationId,
       messageId,
-      summary,
+      summary: { counts: summary.counts, mine: [] },
     });
 
     return { summary };
+  }
+
+  async listMessagesMentioningUser(
+    viewerId: string,
+    opts?: { conversationId?: string; limit?: number; cursor?: string },
+  ): Promise<{ messages: MessageWithReceiptStateView[]; nextCursor: string | null }> {
+    const take = Math.max(1, Math.min(opts?.limit ?? 30, 100));
+    const cursor = opts?.cursor ? decodeMessageCursor(opts.cursor) : null;
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        id: string;
+        createdAt: Date;
+        messageId: string;
+      }>
+    >`
+      SELECT mm."id", mm."created_at" AS "createdAt", mm."message_id" AS "messageId"
+      FROM "message_mentions" mm
+      WHERE mm."mentioned_user_id" = ${viewerId}
+        ${opts?.conversationId ? Prisma.sql`AND mm."conversation_id" = ${opts.conversationId}` : Prisma.empty}
+        ${
+          cursor
+            ? Prisma.sql`AND (mm."created_at" < ${new Date(cursor.createdAt)} OR (mm."created_at" = ${new Date(cursor.createdAt)} AND mm."id" < ${cursor.id}))`
+            : Prisma.empty
+        }
+      ORDER BY mm."created_at" DESC, mm."id" DESC
+      LIMIT ${take + 1}
+    `;
+    const page = rows.slice(0, take);
+    const hasMore = rows.length > take;
+    const messageIds = page.map((r: { messageId: string }) => r.messageId);
+    const messageRows = await this.prisma.message.findMany({
+      where: { id: { in: messageIds } },
+      include: {
+        sender: true,
+        attachments: { orderBy: { sortOrder: 'asc' } },
+        sticker: { include: { pack: true } },
+      },
+    });
+    const messageById = new Map(messageRows.map((m) => [m.id, m]));
+    const reactions = await this.buildReactionSummariesForMessages(viewerId, messageIds);
+    const messages = page
+      .map((r: { messageId: string }) => {
+        const row = messageById.get(r.messageId);
+        if (!row) return null;
+        const base = this.toMessageView(row, reactions.get(row.id));
+        return {
+          ...base,
+          sentByViewer: base.senderId === viewerId,
+          deliveredToPeer: false,
+          seenByPeer: false,
+        };
+      })
+      .filter((m): m is MessageWithReceiptStateView => Boolean(m));
+    const last = page.at(-1) ?? null;
+    return {
+      messages,
+      nextCursor:
+        hasMore && last
+          ? encodeMessageCursor({
+              createdAt: last.createdAt.toISOString(),
+              id: last.id,
+            })
+          : null,
+    };
   }
 
   private async fetchReactionSummaryForMessage(
@@ -983,7 +1473,12 @@ export class MessagesService {
       sender: toPublicUserProfile(row.sender),
       attachments: row.deletedAt
         ? []
-        : row.attachments.map((a) => toAttachmentPublicDto(a)),
+        : row.attachments.map((a) =>
+            toAttachmentPublicDto(
+              a,
+              publicMediaUrlForStorageKey(this.config, a.storageKey),
+            ),
+          ),
       sticker: row.deletedAt ? null : row.sticker ? toStickerPublicDto(row.sticker) : null,
       reactions: row.deletedAt ? { counts: [], mine: [] } : reactionSummary ?? { counts: [], mine: [] },
     };

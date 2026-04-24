@@ -5,7 +5,7 @@ export type MessageSenderRole = "me" | "peer";
 
 export type OutgoingDeliveryState = "sending" | "sent" | "delivered" | "seen";
 
-export type MessageKind = "text" | "image" | "file" | "sticker";
+export type MessageKind = "text" | "image" | "file" | "sticker" | "groupEvent";
 
 export type ReplyReference = {
   id: string;
@@ -30,6 +30,9 @@ export type ChatRoomMessage = {
   kind: MessageKind;
   /** Primary text (text messages) or optional caption */
   body?: string;
+  /** Centered group activity row (from API `type: system` + known `metadata.kind`). */
+  groupEventBadge?: string;
+  groupEventDetail?: string;
   imageUrl?: string;
   imageWidth?: number;
   imageHeight?: number;
@@ -37,6 +40,8 @@ export type ChatRoomMessage = {
     name: string;
     sizeBytes: number;
     mime?: string;
+    /** Public URL for download / in-app preview (PDF, Office). */
+    url?: string;
   };
   /** Remote sticker asset — or use stickerEmoji for simple mock */
   stickerUrl?: string;
@@ -50,4 +55,5 @@ export type ChatRoomMessage = {
 
 export type MessageFeedItem =
   | { kind: "separator"; key: string; label: string }
-  | { kind: "group"; key: string; messages: ChatRoomMessage[]; role: MessageSenderRole };
+  | { kind: "group"; key: string; messages: ChatRoomMessage[]; role: MessageSenderRole }
+  | { kind: "groupEvent"; key: string; message: ChatRoomMessage };

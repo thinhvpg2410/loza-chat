@@ -2,7 +2,9 @@ import { io, type Socket } from "socket.io-client";
 
 import { SOCKET_URL } from "@/constants/env";
 import type { ApiConversationMemberProgress, ApiMessageView } from "@/services/conversations/conversationsApi";
+import { createCorrelationId } from "@/services/telemetry/correlation";
 import { useChatStore } from "@/store/chatStore";
+import { trackClientError } from "@/services/telemetry/telemetry";
 
 export type TypingUpdatePayload = {
   conversationId: string;
@@ -33,6 +35,37 @@ export type ChatRealtimeHandlers = {
   onMessageSeen?: (payload: ReceiptBroadcastPayload) => void;
 };
 
+/** Normalized group room events (server dùng `message:new` / `message:updated` cho tin nhắn). */
+export type GroupRoomEvent =
+  | { type: "group_updated"; conversationId: string }
+  | { type: "members_added"; conversationId: string; userIds: string[] }
+  | { type: "members_removed"; conversationId: string; userId: string }
+  | { type: "group_dissolved"; conversationId: string }
+  | { type: "group_created"; conversationId: string; title?: string }
+  | { type: "join_request_created"; conversationId: string; userId: string }
+  | { type: "join_request_decided"; conversationId: string; userId: string; approved: boolean }
+  | { type: "member_role_updated"; conversationId: string; userId: string; role: string };
+
+const groupRoomListeners = new Set<(ev: GroupRoomEvent) => void>();
+
+export function subscribeGroupRoomEvents(listener: (ev: GroupRoomEvent) => void): () => void {
+  groupRoomListeners.add(listener);
+  return () => {
+    groupRoomListeners.delete(listener);
+  };
+}
+
+function dispatchGroupRoomEvent(ev: GroupRoomEvent) {
+  useChatStore.getState().scheduleConversationsListRefresh();
+  for (const fn of groupRoomListeners) {
+    try {
+      fn(ev);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 const EV_MESSAGE_NEW = "message:new";
 const EV_MESSAGE_UPDATED = "message:updated";
 const EV_TYPING_UPDATE = "typing:update";
@@ -43,6 +76,33 @@ const EV_MESSAGE_SEEN = "message:seen";
 let socket: Socket | null = null;
 let handlers: ChatRealtimeHandlers = {};
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+type SocketConnectionStatus =
+  | "idle"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "disconnected"
+  | "error";
+const socketStatusListeners = new Set<(status: SocketConnectionStatus, detail?: string) => void>();
+
+function emitSocketStatus(status: SocketConnectionStatus, detail?: string) {
+  for (const fn of socketStatusListeners) {
+    try {
+      fn(status, detail);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+export function subscribeSocketConnectionStatus(
+  listener: (status: SocketConnectionStatus, detail?: string) => void,
+): () => void {
+  socketStatusListeners.add(listener);
+  return () => {
+    socketStatusListeners.delete(listener);
+  };
+}
 
 function stopHeartbeatLoop() {
   if (heartbeatTimer) {
@@ -81,16 +141,33 @@ export function connectChatSocket(accessToken?: string): () => void {
 
   socket = io(url, {
     transports: ["websocket", "polling"],
-    auth: accessToken ? { token: accessToken } : {},
+    auth: accessToken
+      ? { token: accessToken, correlationId: createCorrelationId("ws-auth") }
+      : { correlationId: createCorrelationId("ws-auth") },
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 800,
+    reconnectionDelayMax: 12_000,
+    randomizationFactor: 0.5,
   });
+  emitSocketStatus("connecting");
 
   socket.on("connect", () => {
     startHeartbeatLoop();
     handlers.onSocketConnected?.();
     useChatStore.getState().scheduleConversationsListRefresh();
+    emitSocketStatus("connected");
   });
   socket.on("disconnect", () => {
     stopHeartbeatLoop();
+    emitSocketStatus("disconnected");
+  });
+  socket.io.on("reconnect_attempt", (attempt) => {
+    emitSocketStatus("reconnecting", `Thử kết nối lại (${attempt})...`);
+  });
+  socket.on("connect_error", (err: Error) => {
+    trackClientError("realtime", "socket_connect_error", err);
+    emitSocketStatus("error", err.message || "Lỗi kết nối realtime");
   });
 
   socket.on(EV_MESSAGE_NEW, (body: unknown) => {
@@ -121,10 +198,21 @@ export function connectChatSocket(accessToken?: string): () => void {
 
   socket.on(EV_REACTION_UPDATED, (body: unknown) => {
     if (!body || typeof body !== "object") return;
-    const p = body as ReactionUpdatedPayload;
-    if (p.conversationId && p.messageId && p.summary) {
-      handlers.onReactionUpdated?.(p);
-    }
+    const raw = body as Partial<ReactionUpdatedPayload> & {
+      summary?: { counts?: { reaction: string; count: number }[]; mine?: string[] };
+    };
+    if (!raw.conversationId || !raw.messageId) return;
+    const counts = raw.summary?.counts;
+    if (!Array.isArray(counts)) return;
+    const p: ReactionUpdatedPayload = {
+      conversationId: raw.conversationId,
+      messageId: raw.messageId,
+      summary: {
+        counts,
+        mine: Array.isArray(raw.summary?.mine) ? raw.summary!.mine : [],
+      },
+    };
+    handlers.onReactionUpdated?.(p);
   });
 
   socket.on(EV_MESSAGE_DELIVERED, (body: unknown) => {
@@ -143,6 +231,92 @@ export function connectChatSocket(accessToken?: string): () => void {
     }
   });
 
+  socket.on("group:updated", (body: unknown) => {
+    if (!body || typeof body !== "object") return;
+    const cid = (body as { conversationId?: string }).conversationId;
+    if (typeof cid === "string" && cid.length) {
+      dispatchGroupRoomEvent({ type: "group_updated", conversationId: cid });
+    }
+  });
+  socket.on("group:members_added", (body: unknown) => {
+    if (!body || typeof body !== "object") return;
+    const raw = body as { conversationId?: string; userIds?: string[] };
+    const cid = raw.conversationId;
+    const userIds = raw.userIds;
+    if (typeof cid === "string" && cid.length && Array.isArray(userIds)) {
+      dispatchGroupRoomEvent({ type: "members_added", conversationId: cid, userIds });
+    }
+  });
+  socket.on("group:members_removed", (body: unknown) => {
+    if (!body || typeof body !== "object") return;
+    const raw = body as { conversationId?: string; userId?: string };
+    const cid = raw.conversationId;
+    const userId = raw.userId;
+    if (typeof cid === "string" && cid.length && typeof userId === "string") {
+      dispatchGroupRoomEvent({ type: "members_removed", conversationId: cid, userId });
+    }
+  });
+  socket.on("group:dissolved", (body: unknown) => {
+    if (!body || typeof body !== "object") return;
+    const cid = (body as { conversationId?: string }).conversationId;
+    if (typeof cid === "string" && cid.length) {
+      useChatStore.getState().notifyGroupDissolved(cid);
+      dispatchGroupRoomEvent({ type: "group_dissolved", conversationId: cid });
+    }
+  });
+
+  socket.on("group.created", (body: unknown) => {
+    if (!body || typeof body !== "object") return;
+    const raw = body as { conversationId?: string; title?: string };
+    const cid = raw.conversationId;
+    if (typeof cid === "string" && cid.length) {
+      dispatchGroupRoomEvent({
+        type: "group_created",
+        conversationId: cid,
+        ...(typeof raw.title === "string" ? { title: raw.title } : {}),
+      });
+    }
+  });
+  socket.on("group.join_request_created", (body: unknown) => {
+    if (!body || typeof body !== "object") return;
+    const raw = body as { conversationId?: string; userId?: string };
+    if (typeof raw.conversationId === "string" && typeof raw.userId === "string") {
+      dispatchGroupRoomEvent({
+        type: "join_request_created",
+        conversationId: raw.conversationId,
+        userId: raw.userId,
+      });
+    }
+  });
+  socket.on("group.join_request_decided", (body: unknown) => {
+    if (!body || typeof body !== "object") return;
+    const raw = body as { conversationId?: string; userId?: string; approved?: boolean };
+    if (
+      typeof raw.conversationId === "string" &&
+      typeof raw.userId === "string" &&
+      typeof raw.approved === "boolean"
+    ) {
+      dispatchGroupRoomEvent({
+        type: "join_request_decided",
+        conversationId: raw.conversationId,
+        userId: raw.userId,
+        approved: raw.approved,
+      });
+    }
+  });
+  socket.on("group.member_role_updated", (body: unknown) => {
+    if (!body || typeof body !== "object") return;
+    const raw = body as { conversationId?: string; userId?: string; role?: string };
+    if (typeof raw.conversationId === "string" && typeof raw.userId === "string" && typeof raw.role === "string") {
+      dispatchGroupRoomEvent({
+        type: "member_role_updated",
+        conversationId: raw.conversationId,
+        userId: raw.userId,
+        role: raw.role,
+      });
+    }
+  });
+
   return () => {
     stopHeartbeatLoop();
     socket?.off("connect");
@@ -153,17 +327,34 @@ export function connectChatSocket(accessToken?: string): () => void {
     socket?.off(EV_REACTION_UPDATED);
     socket?.off(EV_MESSAGE_DELIVERED);
     socket?.off(EV_MESSAGE_SEEN);
+    socket?.off("group:updated");
+    socket?.off("group:members_added");
+    socket?.off("group:members_removed");
+    socket?.off("group:dissolved");
+    socket?.off("group.created");
+    socket?.off("group.join_request_created");
+    socket?.off("group.join_request_decided");
+    socket?.off("group.member_role_updated");
     socket?.disconnect();
     socket = null;
+    emitSocketStatus("idle");
   };
 }
 
 export function emitMessageDelivered(conversationId: string, messageId: string) {
-  socket?.emit(EV_MESSAGE_DELIVERED, { conversationId, messageId });
+  socket?.emit(EV_MESSAGE_DELIVERED, {
+    conversationId,
+    messageId,
+    correlationId: createCorrelationId("ws"),
+  });
 }
 
 export function emitMessageSeen(conversationId: string, messageId: string) {
-  socket?.emit(EV_MESSAGE_SEEN, { conversationId, messageId });
+  socket?.emit(EV_MESSAGE_SEEN, {
+    conversationId,
+    messageId,
+    correlationId: createCorrelationId("ws"),
+  });
 }
 
 /** After REST read/delivered advance, mirror pointers on the socket so the peer updates in realtime. */
@@ -181,13 +372,22 @@ export function emitConversationReceiptsFromMyProgress(
 
 export function emitConversationJoin(conversationId: string) {
   if (!conversationId.trim().length) return;
-  socket?.emit("conversation:join", { conversationId });
+  socket?.emit("conversation:join", {
+    conversationId,
+    correlationId: createCorrelationId("ws"),
+  });
 }
 
 export function emitTypingStart(conversationId: string) {
-  socket?.emit("typing:start", { conversationId });
+  socket?.emit("typing:start", {
+    conversationId,
+    correlationId: createCorrelationId("ws"),
+  });
 }
 
 export function emitTypingStop(conversationId: string) {
-  socket?.emit("typing:stop", { conversationId });
+  socket?.emit("typing:stop", {
+    conversationId,
+    correlationId: createCorrelationId("ws"),
+  });
 }

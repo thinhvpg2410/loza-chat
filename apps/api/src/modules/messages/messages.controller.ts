@@ -2,14 +2,17 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiOkResponse,
   ApiOperation,
   ApiResponse,
   ApiTags,
@@ -39,7 +42,7 @@ export class MessagesController {
     summary:
       'Send a message with pre-uploaded attachments (idempotent via clientMessageId)',
   })
-  @ApiCreatedResponse({ type: SendMessageResultOpenApiDto })
+  @ApiOkResponse({ type: SendMessageResultOpenApiDto })
   @ApiResponse({ status: 400, type: ApiErrorEnvelopeDto })
   @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
   @ApiResponse({ status: 403, type: ApiErrorEnvelopeDto })
@@ -84,9 +87,28 @@ export class MessagesController {
     return this.messagesService.sendTextMessage(userId, dto);
   }
 
+  @Get('mentions/me')
+  @ApiOperation({
+    summary: 'List messages that mention me (indexed query)',
+  })
+  @ApiCreatedResponse({ type: SendMessageResultOpenApiDto })
+  async listMyMentions(
+    @GetUser('id') userId: string,
+    @Query('conversationId') conversationId?: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.messagesService.listMessagesMentioningUser(userId, {
+      conversationId,
+      cursor,
+      limit: limit ? Number(limit) : undefined,
+    });
+  }
+
   @Post(':id/recall')
   @ApiOperation({
-    summary: 'Recall (unsend) your message for everyone in the conversation',
+    summary:
+      'Recall a message for everyone (sender, or group owner/admin when moderatorsCanRecallMessages is enabled)',
   })
   @ApiCreatedResponse({ type: MessageActionResultOpenApiDto })
   @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
@@ -97,6 +119,27 @@ export class MessagesController {
     @Param('id', new ParseUUIDPipe({ version: '4' })) messageId: string,
   ) {
     return this.messagesService.recallMessage(userId, messageId);
+  }
+
+  @Post(':id/hide-self')
+  @ApiOperation({
+    summary:
+      'Hide a message only for yourself (others still see it; distinct from global delete)',
+  })
+  @ApiCreatedResponse({
+    schema: {
+      type: 'object',
+      properties: { ok: { type: 'boolean', example: true } },
+    },
+  })
+  @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 403, type: ApiErrorEnvelopeDto })
+  @ApiResponse({ status: 404, type: ApiErrorEnvelopeDto })
+  async hideForSelf(
+    @GetUser('id') userId: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) messageId: string,
+  ) {
+    return this.messagesService.hideMessageForSelf(userId, messageId);
   }
 
   @Delete(':id')

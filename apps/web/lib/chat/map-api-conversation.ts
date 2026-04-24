@@ -1,5 +1,6 @@
 import type { ApiConversationListItem } from "@/lib/chat/api-dtos";
 import type { Conversation } from "@/lib/types/chat";
+import type { RelationshipStatus } from "@/lib/types/social";
 
 function lastActivityIso(item: ApiConversationListItem): string {
   return item.lastMessage?.createdAt ?? item.updatedAt;
@@ -16,6 +17,8 @@ export function mapConversationListItem(item: ApiConversationListItem): Conversa
     undefined;
   const preview = item.lastMessage?.contentPreview?.trim() || "";
 
+  const rel = item.directPeerRelationshipStatus as RelationshipStatus | null | undefined;
+
   return {
     id: item.conversationId,
     title,
@@ -24,5 +27,9 @@ export function mapConversationListItem(item: ApiConversationListItem): Conversa
     lastMessageAt: lastActivityIso(item),
     unreadCount: item.unreadCount,
     isMuted: Boolean(item.mutedUntil),
+    chatType: item.type === "direct" ? "direct" : "group",
+    memberCount: item.memberCount,
+    directPeerId: isDirect ? item.otherParticipant?.id : undefined,
+    directPeerRelationshipStatus: isDirect ? (rel ?? null) : null,
   };
 }

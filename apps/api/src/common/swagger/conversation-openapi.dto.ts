@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ConversationMemberRole,
+  ConversationMemberStatus,
   ConversationType,
   MessageType,
 } from '@prisma/client';
@@ -54,6 +55,13 @@ export class ConversationListItemOpenApiDto {
   otherParticipant!: PublicUserProfileOpenApiDto | null;
 
   @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Direct chats only: relationship between viewer and otherParticipant (for UI warnings). Sending is blocked only when blocked_by_me or blocked_me.',
+  })
+  directPeerRelationshipStatus!: string | null;
+
+  @ApiPropertyOptional({
     type: ConversationLastMessagePreviewOpenApiDto,
     nullable: true,
   })
@@ -84,6 +92,12 @@ export class MyMembershipOpenApiDto {
     nullable: true,
   })
   role!: ConversationMemberRole | null;
+
+  @ApiProperty({
+    enum: ConversationMemberStatus,
+    enumName: 'ConversationMemberStatus',
+  })
+  status!: ConversationMemberStatus;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   lastReadMessageId!: string | null;
@@ -122,6 +136,13 @@ export class ConversationDetailOpenApiDto {
     nullable: true,
   })
   otherParticipant!: PublicUserProfileOpenApiDto | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Direct chats only: relationship between viewer and otherParticipant (for UI warnings).',
+  })
+  directPeerRelationshipStatus!: string | null;
 
   @ApiProperty({ type: MyMembershipOpenApiDto })
   myMembership!: MyMembershipOpenApiDto;

@@ -8,4 +8,10 @@ export class PresenceHeartbeatDto {
   @IsString()
   @MaxLength(64)
   clientTag?: string;
+
+  @ApiPropertyOptional({ maxLength: 128 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  correlationId?: string;
 }

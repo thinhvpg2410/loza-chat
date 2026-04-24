@@ -16,22 +16,34 @@ function UnpackedReactionBar({ reactions, onPressEmoji }: ReactionBarProps) {
   return (
     <View style={styles.row}>
       {reactions.map((r) => (
-        <Pressable
-          key={r.emoji}
-          accessibilityRole="button"
-          accessibilityLabel={`${r.emoji} ${r.count}`}
-          onPress={() => onPressEmoji?.(r.emoji)}
-          style={({ pressed }) => [
-            styles.chip,
-            r.reactedByMe && styles.chipMine,
-            pressed && styles.chipPressed,
-          ]}
-        >
-          <AppText style={styles.emoji}>{r.emoji}</AppText>
-          <AppText variant="micro" color="textSecondary" style={styles.count}>
-            {r.count}
-          </AppText>
-        </Pressable>
+        <View key={r.emoji} style={styles.chipRow}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${r.emoji} ${r.count}`}
+            onPress={() => onPressEmoji?.(r.emoji)}
+            style={({ pressed }) => [
+              styles.chip,
+              r.reactedByMe && styles.chipMine,
+              pressed && styles.chipPressed,
+            ]}
+          >
+            <AppText style={styles.emoji}>{r.emoji}</AppText>
+            <AppText variant="micro" color="textSecondary" style={styles.count}>
+              {r.count}
+            </AppText>
+          </Pressable>
+          {r.reactedByMe ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Bỏ cảm xúc"
+              hitSlop={6}
+              onPress={() => onPressEmoji?.(r.emoji)}
+              style={({ pressed }) => [styles.clearBtn, pressed && styles.chipPressed]}
+            >
+              <AppText style={styles.clearText}>×</AppText>
+            </Pressable>
+          ) : null}
+        </View>
       ))}
     </View>
   );
@@ -46,6 +58,11 @@ const styles = StyleSheet.create({
     gap: 2,
     marginTop: 2,
     maxWidth: 240,
+  },
+  chipRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 1,
   },
   chip: {
     flexDirection: "row",
@@ -73,5 +90,18 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 10,
     lineHeight: 12,
+  },
+  clearBtn: {
+    minWidth: 22,
+    minHeight: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.full,
+  },
+  clearText: {
+    fontSize: 14,
+    lineHeight: 16,
+    fontWeight: "600",
+    color: colors.textMuted,
   },
 });

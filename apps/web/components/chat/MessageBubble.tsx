@@ -1,14 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import { Avatar } from "@/components/common/Avatar";
 import type { ActionMenuItem } from "@/components/common/ActionMenu";
 import { FileMessage } from "@/components/chat/FileMessage";
 import { ImageMessage } from "@/components/chat/ImageMessage";
 import { MessageActions } from "@/components/chat/MessageActions";
 import { ReactionBar } from "@/components/chat/ReactionBar";
-import { MessageReplyQuote } from "@/components/chat/ReplyPreview";
+import { MessageReplyQuote, type MessageReplyQuoteSurface } from "@/components/chat/ReplyPreview";
 import { StickerMessage } from "@/components/chat/StickerMessage";
+import { buildDocumentPreviewEmbedUrl, isDocumentPreviewable } from "@/lib/document-preview-url";
 import { groupSpacingClass } from "@/lib/message-grouping";
+import { renderMentionText } from "@/lib/chat/render-mention-text";
 import type { Message, MessageGroupPosition, MessageReaction } from "@/lib/types/chat";
 
 type MessageBubbleProps = {
@@ -21,6 +24,8 @@ type MessageBubbleProps = {
   onDelete?: () => void;
   onForward?: () => void;
   onOpenImage: (url: string) => void;
+  /** In-app preview (iframe) for PDF / Office when URL is available. */
+  onOpenDocument?: (embedUrl: string, title: string, downloadUrl: string) => void;
 };
 
 function ownReceiptLabel(message: Message): string | null {
@@ -29,15 +34,6 @@ function ownReceiptLabel(message: Message): string | null {
   if (message.peerSeen) return "Đã xem";
   if (message.peerDelivered) return "Đã nhận";
   return "Đã gửi";
-}
-
-function Avatar({ label }: { label: string }) {
-  const initial = label.trim().charAt(0).toUpperCase();
-  return (
-    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[#7eb6ff] to-[var(--zalo-blue)] text-[11px] font-semibold text-white">
-      {initial}
-    </div>
-  );
 }
 
 export function MessageBubble({
@@ -50,6 +46,7 @@ export function MessageBubble({
   onDelete,
   onForward,
   onOpenImage,
+  onOpenDocument,
 }: MessageBubbleProps) {
   const [hover, setHover] = useState(false);
 
@@ -95,7 +92,8 @@ export function MessageBubble({
     </div>
   );
 
-  const replyQuote = message.replyTo ? <MessageReplyQuote replyTo={message.replyTo} /> : null;
+  const renderReplyQuote = (surface: MessageReplyQuoteSurface) =>
+    message.replyTo ? <MessageReplyQuote replyTo={message.replyTo} surface={surface} /> : null;
 
   const timeClass = isOwn ? "text-right text-white/75" : "text-[var(--zalo-text-muted)]";
   const receipt = ownReceiptLabel(message);
@@ -121,13 +119,18 @@ export function MessageBubble({
                 : "rounded-bl-sm bg-white ring-1 ring-black/[0.06]"
             }`}
           >
-            {replyQuote}
+            {renderReplyQuote(isOwn ? "tinted" : "card")}
             <p
               className={`whitespace-pre-wrap break-words text-[15px] leading-snug ${
                 isOwn ? "text-white" : "text-[var(--zalo-text)]"
               }`}
             >
-              {message.body}
+              {renderMentionText(message.body, {
+                textClassName: isOwn ? "text-white" : "text-[var(--zalo-text)]",
+                mentionClassName: isOwn
+                  ? "rounded bg-white/20 px-0.5 font-semibold text-white"
+                  : "rounded bg-blue-50 px-0.5 font-semibold text-blue-700",
+              })}
             </p>
             <p className={`mt-1 text-[10px] leading-none ${timeClass}`}>{message.sentAt}</p>
             {receiptBlock}
@@ -136,7 +139,7 @@ export function MessageBubble({
       case "image":
         return (
           <div className="flex max-w-[min(100%,320px)] flex-col gap-1">
-            {replyQuote}
+            {renderReplyQuote("plain")}
             <div className={`overflow-hidden rounded-lg ${isOwn ? "rounded-br-sm" : "rounded-bl-sm"}`}>
               <ImageMessage
                 imageUrl={message.imageUrl}
@@ -156,35 +159,85 @@ export function MessageBubble({
             {receiptBlock}
           </div>
         );
-      case "file":
+      case "file": {
+        const fileUrl = message.fileUrl;
+        const isVideo = Boolean(message.mimeType?.toLowerCase().startsWith("video/"));
+        const isVoice = Boolean(message.mimeType?.toLowerCase().startsWith("audio/"));
+        const canPreview =
+          Boolean(fileUrl) &&
+          isDocumentPreviewable(message.fileName, message.mimeType) &&
+          Boolean(onOpenDocument);
         return (
           <div className="flex max-w-[min(100%,320px)] flex-col gap-1">
-            {replyQuote}
-            <div
-              className={`rounded-lg px-0.5 py-0.5 ${
-                isOwn ? "bg-[var(--zalo-blue)]" : "bg-transparent"
-              }`}
-            >
-              <FileMessage
-                fileName={message.fileName}
-                fileSizeBytes={message.fileSizeBytes}
-                isOwn={isOwn}
-                onDownload={
-                  message.fileUrl
-                    ? () => {
-                        window.open(message.fileUrl, "_blank", "noopener,noreferrer");
-                      }
-                    : undefined
-                }
-              />
-            </div>
+            {renderReplyQuote("plain")}
+            {isVideo && fileUrl ? (
+              <div
+                className={`overflow-hidden rounded-lg ${
+                  isOwn ? "rounded-br-sm ring-1 ring-white/25" : "rounded-bl-sm ring-1 ring-black/[0.08]"
+                }`}
+              >
+                <video
+                  src={fileUrl}
+                  controls
+                  playsInline
+                  className="max-h-[240px] w-full bg-black object-contain"
+                  preload="metadata"
+                />
+              </div>
+            ) : null}
+            {isVoice && fileUrl ? (
+              <div
+                className={`rounded-lg px-2 py-1 ${
+                  isOwn ? "rounded-br-sm bg-[var(--zalo-blue)] ring-1 ring-white/25" : "rounded-bl-sm bg-white ring-1 ring-black/[0.08]"
+                }`}
+              >
+                <audio
+                  controls
+                  src={fileUrl}
+                  className="block h-10 w-[min(320px,68vw)] min-w-[240px] max-w-full"
+                  preload="metadata"
+                />
+              </div>
+            ) : null}
+            {!isVoice ? (
+              <div
+                className={`rounded-lg px-0.5 py-0.5 ${
+                  isOwn ? "bg-[var(--zalo-blue)]" : "bg-transparent"
+                }`}
+              >
+                <FileMessage
+                  fileName={message.fileName}
+                  fileSizeBytes={message.fileSizeBytes}
+                  isOwn={isOwn}
+                  onPreview={
+                    canPreview && fileUrl && onOpenDocument
+                      ? () =>
+                          onOpenDocument(
+                            buildDocumentPreviewEmbedUrl(fileUrl, message.fileName, message.mimeType),
+                            message.fileName,
+                            fileUrl,
+                          )
+                      : undefined
+                  }
+                  onOpenExternal={
+                    fileUrl
+                      ? () => {
+                          window.open(fileUrl, "_blank", "noopener,noreferrer");
+                        }
+                      : undefined
+                  }
+                />
+              </div>
+            ) : null}
             <p className={`text-[10px] ${timeClass}`}>{message.sentAt}</p>
             {receiptBlock}
           </div>
         );
+      }
       case "sticker":
         return (
           <div className="flex flex-col">
+            {renderReplyQuote("plain")}
             <StickerMessage emoji={message.emoji} imageUrl={message.stickerImageUrl} />
             <p
               className={`mt-1 text-[10px] ${
@@ -219,7 +272,15 @@ export function MessageBubble({
       onMouseLeave={() => setHover(false)}
     >
       {!isOwn ? (
-        <div className="flex w-8 shrink-0 flex-col justify-end pb-1">{showAvatar ? <Avatar label="L" /> : null}</div>
+        <div className="flex w-9 shrink-0 flex-col justify-end pb-1">
+          {showAvatar ? (
+            <Avatar
+              name={message.senderDisplayName ?? "?"}
+              src={message.senderAvatarUrl}
+              size="sm"
+            />
+          ) : null}
+        </div>
       ) : null}
 
       {/* Tin mình: [actions][bubble][spacer] — actions bên trái bubble, cùng hàng */}
@@ -230,7 +291,7 @@ export function MessageBubble({
       {/* Tin người khác: [avatar][bubble][actions] — actions bên phải bubble, cùng hàng */}
       {!isOwn ? actionsSlot : null}
 
-      {isOwn ? <div className="w-8 shrink-0" aria-hidden /> : null}
+      {isOwn ? <div className="w-9 shrink-0" aria-hidden /> : null}
     </div>
   );
 }

@@ -1,4 +1,22 @@
-import type { ApiAttachment, ApiMessageWithReceipt, ApiReactionSummary, ApiSticker } from "@/lib/chat/api-dtos";
+import type {
+  ApiAttachment,
+  ApiMessageWithReceipt,
+  ApiPublicUser,
+  ApiReactionSummary,
+  ApiSticker,
+} from "@/lib/chat/api-dtos";
+
+function parseSenderPayload(raw: unknown): ApiPublicUser | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const o = raw as Record<string, unknown>;
+  const id = typeof o.id === "string" ? o.id : "";
+  if (!id) return undefined;
+  const displayName = typeof o.displayName === "string" ? o.displayName : "";
+  const username = o.username == null || o.username === "" ? null : String(o.username);
+  const avatarUrl =
+    o.avatarUrl == null || o.avatarUrl === "" ? null : String(o.avatarUrl);
+  return { id, displayName, username, avatarUrl };
+}
 
 /** Normalizes `message:new` payload (`MessageView` JSON) into the same shape as REST history rows. */
 export function socketMessageViewToApiRow(
@@ -54,11 +72,13 @@ export function socketMessageViewToApiRow(
   const sticker = (m.sticker as ApiSticker | null | undefined) ?? null;
 
   const sentByViewer = senderId === viewerUserId;
+  const sender = parseSenderPayload(m.sender);
 
   return {
     id,
     conversationId,
     senderId,
+    sender,
     type,
     content,
     metadataJson,

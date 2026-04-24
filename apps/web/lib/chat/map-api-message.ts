@@ -1,4 +1,4 @@
-import { mockStoragePublicUrl } from "@/lib/chat/attachment-public-url";
+import { attachmentReadUrl } from "@/lib/chat/attachment-public-url";
 import type { ApiMessageWithReceipt } from "@/lib/chat/api-dtos";
 import type {
   FileMessage,
@@ -22,6 +22,23 @@ export function mapReactions(r: ApiMessageWithReceipt["reactions"]): MessageReac
     count,
     viewerReacted: r.mine.includes(reaction),
   }));
+}
+
+function peerSenderFields(row: ApiMessageWithReceipt): {
+  senderDisplayName?: string;
+  senderAvatarUrl?: string;
+} {
+  if (row.sentByViewer) return {};
+  const s = row.sender;
+  if (!s) return {};
+  const name = (s.displayName ?? "").trim();
+  const raw = s.avatarUrl;
+  const avatar =
+    raw != null && String(raw).trim().length > 0 ? String(raw).trim() : undefined;
+  return {
+    senderDisplayName: name.length > 0 ? name : "?",
+    ...(avatar ? { senderAvatarUrl: avatar } : {}),
+  };
 }
 
 function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message {
@@ -63,6 +80,7 @@ function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message
         sentAt,
         createdAt,
         isOwn: baseOwn,
+        ...peerSenderFields(row),
         ...receipt,
         reactions,
       };
@@ -81,6 +99,7 @@ function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message
         sentAt,
         createdAt,
         isOwn: baseOwn,
+        ...peerSenderFields(row),
         ...receipt,
         reactions,
       };
@@ -101,7 +120,7 @@ function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message
     }
     case "image": {
       const imgAtt = row.attachments.find((a) => a.attachmentType === "image");
-      const url = imgAtt ? mockStoragePublicUrl(apiBaseUrl, imgAtt.storageKey) : "";
+      const url = imgAtt ? attachmentReadUrl(apiBaseUrl, imgAtt) : "";
       const m: ImageMessage = {
         kind: "image",
         id: row.id,
@@ -112,6 +131,7 @@ function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message
         sentAt,
         createdAt,
         isOwn: baseOwn,
+        ...peerSenderFields(row),
         ...receipt,
         reactions,
       };
@@ -133,10 +153,11 @@ function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message
         fileName,
         fileSizeBytes: Number.isFinite(size) ? size : 0,
         mimeType: att?.mimeType,
-        fileUrl: att ? mockStoragePublicUrl(apiBaseUrl, att.storageKey) : undefined,
+        fileUrl: att ? attachmentReadUrl(apiBaseUrl, att) : undefined,
         sentAt,
         createdAt,
         isOwn: baseOwn,
+        ...peerSenderFields(row),
         ...receipt,
         reactions,
       };
@@ -151,6 +172,7 @@ function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message
         sentAt,
         createdAt,
         isOwn: baseOwn,
+        ...peerSenderFields(row),
         ...receipt,
         reactions,
       };
@@ -171,11 +193,25 @@ function withReply(
   const snippet = parentMsg
     ? snippetFromMessage(parentMsg)
     : parentRaw?.content?.trim() || "Tin nhắn";
-  const isOwn = parentRaw?.sentByViewer ?? false;
+  const isOwn = parentRaw
+    ? Boolean(parentRaw.sentByViewer)
+    : (parentMsg?.isOwn ?? false);
+  let peerSenderName: string | undefined;
+  if (!isOwn) {
+    if (parentMsg && parentMsg.kind !== "system") {
+      const n = (parentMsg.senderDisplayName ?? "").trim();
+      if (n) peerSenderName = n;
+    }
+    if (!peerSenderName && parentRaw?.sender) {
+      const n = (parentRaw.sender.displayName ?? "").trim();
+      if (n) peerSenderName = n;
+    }
+  }
   const replyTo: ReplyPreviewRef = {
     messageId: row.replyToMessageId,
     snippet,
     isOwn,
+    ...(peerSenderName ? { peerSenderName } : {}),
   };
   if (msg.kind === "system") return msg;
   return { ...msg, replyTo };
@@ -196,6 +232,30 @@ function snippetFromMessage(m: Message): string {
     default:
       return "";
   }
+}
+
+/**
+ * When a message was mapped alone (send response / socket), `replyTo` may miss the parent row.
+ * Merge quote snippet + peer display name from messages already in the thread.
+ */
+export function enrichMessageReplyFromThread(msg: Message, thread: Message[]): Message {
+  if (msg.kind === "system" || !msg.replyTo) return msg;
+  const parent = thread.find((m) => m.id === msg.replyTo.messageId);
+  if (!parent || parent.kind === "system") return msg;
+  const snippet = snippetFromMessage(parent);
+  const isOwn = parent.isOwn;
+  const peerSenderName = !isOwn
+    ? (parent.senderDisplayName ?? "").trim() || undefined
+    : undefined;
+  return {
+    ...msg,
+    replyTo: {
+      messageId: msg.replyTo.messageId,
+      snippet,
+      isOwn,
+      ...(peerSenderName ? { peerSenderName } : {}),
+    },
+  };
 }
 
 /** Maps API history page to UI messages (chronological). */

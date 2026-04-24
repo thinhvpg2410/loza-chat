@@ -33,6 +33,8 @@ export function ImageMessage({ imageUrl, alt = "", loading, isOwn, onOpen }: Ima
         <img
           src={imageUrl}
           alt={alt}
+          loading="lazy"
+          decoding="async"
           className={`h-full w-full object-cover transition-opacity ${loaded ? "opacity-100" : "opacity-0"}`}
           onLoad={() => setLoaded(true)}
         />

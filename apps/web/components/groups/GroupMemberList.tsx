@@ -4,6 +4,9 @@ import { GroupMemberRow } from "@/components/groups/GroupMemberRow";
 
 type GroupMemberListProps = {
   members: GroupMember[];
+  viewerUserId?: string | null;
+  viewerRole?: "owner" | "admin" | "member";
+  canRemoveOthers?: boolean;
   onAddMember?: () => void;
   onPromote?: (memberId: string) => void;
   onDemote?: (memberId: string) => void;
@@ -12,6 +15,9 @@ type GroupMemberListProps = {
 
 export function GroupMemberList({
   members,
+  viewerUserId = null,
+  viewerRole = "member",
+  canRemoveOthers = false,
   onAddMember,
   onPromote,
   onDemote,
@@ -35,15 +41,27 @@ export function GroupMemberList({
         }
       />
       <div className="mt-0.5 flex flex-col divide-y divide-[var(--zalo-border)]/60">
-        {members.map((m) => (
-          <GroupMemberRow
-            key={m.id}
-            member={m}
-            onPromote={onPromote}
-            onDemote={onDemote}
-            onRemove={onRemove}
-          />
-        ))}
+        {members.map((m) => {
+          const isSelf = viewerUserId !== null && m.userId === viewerUserId;
+          const showRoleMenu = viewerRole === "owner" && !isSelf && m.role !== "owner";
+          const showModerationMenu =
+            Boolean(onRemove) &&
+            canRemoveOthers &&
+            !isSelf &&
+            m.role !== "owner" &&
+            (viewerRole === "owner" || (viewerRole === "admin" && m.role === "member"));
+          return (
+            <GroupMemberRow
+              key={m.id}
+              member={m}
+              showModerationMenu={showModerationMenu}
+              showRoleMenu={showRoleMenu}
+              onPromote={onPromote}
+              onDemote={onDemote}
+              onRemove={onRemove}
+            />
+          );
+        })}
       </div>
     </div>
   );

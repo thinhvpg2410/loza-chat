@@ -41,6 +41,8 @@ type MessageGroupProps = {
   onMessageLongPress?: (message: ChatRoomMessage) => void;
   onImagePress?: (uri: string) => void;
   onReactionEmoji?: (messageId: string, emoji: string) => void;
+  onSwipeReply?: (message: ChatRoomMessage) => void;
+  autoLoadMedia?: boolean;
 };
 
 function UnpackedMessageGroup({
@@ -52,6 +54,8 @@ function UnpackedMessageGroup({
   onMessageLongPress,
   onImagePress,
   onReactionEmoji,
+  onSwipeReply,
+  autoLoadMedia = true,
 }: MessageGroupProps) {
   const last = messages[messages.length - 1];
   const showDelivery = role === "me" && last.delivery !== undefined;
@@ -88,6 +92,8 @@ function UnpackedMessageGroup({
               onPress={() => onMessagePress?.(m)}
               onLongPress={() => onMessageLongPress?.(m)}
               onImagePress={(uri) => onImagePress?.(uri)}
+              onSwipeReply={() => onSwipeReply?.(m)}
+              autoLoadMedia={autoLoadMedia}
             />
             <View style={[styles.reactionWrap, isOutgoing && styles.reactionWrapOut]}>
               <ReactionBar reactions={m.reactions} onPressEmoji={(emoji) => onReactionEmoji?.(m.id, emoji)} />

@@ -1,22 +1,16 @@
 import type { Conversation } from "@/lib/types/chat";
 import { IconChevronDown, IconMore, IconPhone, IconSidebar, IconVideo } from "@/components/chat/icons";
+import { Avatar } from "@/components/common/Avatar";
 
 type ChatHeaderProps = {
   conversation: Conversation | null;
   /** When set (e.g. typing), replaces the default presence line under the title. */
   statusOverride?: string | null;
+  /** Nút “Thêm” (group chat: mở thông tin nhóm). */
+  onMoreClick?: () => void;
 };
 
-function HeaderAvatar({ title }: { title: string }) {
-  const initial = title.trim().charAt(0).toUpperCase();
-  return (
-    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#7eb6ff] to-[var(--zalo-blue)] text-[13px] font-semibold text-white">
-      {initial}
-    </div>
-  );
-}
-
-export function ChatHeader({ conversation, statusOverride = null }: ChatHeaderProps) {
+export function ChatHeader({ conversation, statusOverride = null, onMoreClick }: ChatHeaderProps) {
   if (!conversation) {
     return (
       <header className="flex h-[52px] shrink-0 items-center border-b border-[var(--zalo-border)] bg-white px-3">
@@ -48,7 +42,7 @@ export function ChatHeader({ conversation, statusOverride = null }: ChatHeaderPr
         <IconSidebar className="h-5 w-5" />
         <span className="sr-only">Menu</span>
       </button>
-      <HeaderAvatar title={conversation.title} />
+      <Avatar name={conversation.title} size="sm" src={conversation.avatarUrl} />
       <div className="min-w-0 flex-1">
         <button
           type="button"
@@ -80,6 +74,7 @@ export function ChatHeader({ conversation, statusOverride = null }: ChatHeaderPr
           type="button"
           className="rounded-full p-2 text-[var(--zalo-text-muted)] transition hover:bg-black/[0.05] hover:text-[var(--zalo-text)]"
           title="Thêm"
+          onClick={() => onMoreClick?.()}
         >
           <IconMore className="h-5 w-5" />
           <span className="sr-only">Thêm</span>

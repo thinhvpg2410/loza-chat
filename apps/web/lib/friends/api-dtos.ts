@@ -31,6 +31,11 @@ export type ApiOutgoingRequest = {
   receiver: ApiPublicProfile;
 };
 
+export type ApiBlockedListEntry = {
+  user: ApiPublicProfile;
+  blockedAt: string;
+};
+
 export type ApiSearchResult = ApiPublicProfile & {
   relationshipStatus: RelationshipStatus;
 };

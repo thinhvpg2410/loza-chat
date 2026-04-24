@@ -1,4 +1,6 @@
 import type { Conversation } from "@/lib/types/chat";
+import { Avatar } from "@/components/common/Avatar";
+import { formatConversationListActivityTime } from "@/lib/format-conversation-list-time";
 
 type ConversationItemProps = {
   conversation: Conversation;
@@ -6,25 +8,20 @@ type ConversationItemProps = {
   onSelect: (id: string) => void;
 };
 
-function Avatar({ title, online }: { title: string; online?: boolean }) {
-  const initial = title.trim().charAt(0).toUpperCase();
-  return (
-    <div className="relative shrink-0">
-      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-[#7eb6ff] to-[var(--zalo-blue)] text-[13px] font-semibold text-white">
-        {initial}
-      </div>
-      {online ? (
-        <span
-          className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500"
-          title="Đang hoạt động"
-        />
-      ) : null}
-    </div>
-  );
-}
-
 export function ConversationItem({ conversation, isActive, onSelect }: ConversationItemProps) {
   const unread = conversation.unreadCount && conversation.unreadCount > 0;
+  const lastAtRaw = conversation.lastMessageAt;
+  const lastAtMs = Date.parse(lastAtRaw);
+  const lastAtLabel = formatConversationListActivityTime(lastAtRaw);
+  const lastAtTitle = Number.isFinite(lastAtMs)
+    ? new Date(lastAtMs).toLocaleString("vi-VN", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : undefined;
 
   return (
     <button
@@ -36,14 +33,22 @@ export function ConversationItem({ conversation, isActive, onSelect }: Conversat
           : "flex w-full gap-2.5 rounded-md px-2 py-2 text-left transition-colors hover:bg-black/[0.035]"
       }
     >
-      <Avatar title={conversation.title} online={conversation.isOnline} />
+      <Avatar
+        name={conversation.title}
+        size="md"
+        src={conversation.avatarUrl}
+        online={conversation.isOnline}
+      />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
           <span className="truncate text-[14px] font-semibold leading-tight text-[var(--zalo-text)]">
             {conversation.title}
           </span>
-          <span className="shrink-0 text-[11px] tabular-nums text-[var(--zalo-text-muted)]">
-            {conversation.lastMessageAt}
+          <span
+            className="shrink-0 text-[11px] tabular-nums text-[var(--zalo-text-muted)]"
+            title={lastAtTitle}
+          >
+            {lastAtLabel}
           </span>
         </div>
         <div className="mt-0.5 flex items-center justify-between gap-2">

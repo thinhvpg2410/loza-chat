@@ -3,6 +3,7 @@ import {
   ConversationMemberRole,
   ConversationType,
 } from '@prisma/client';
+import type { ParsedGroupSettings } from './group-settings.util';
 
 @Injectable()
 export class GroupPermissionsService {
@@ -16,7 +17,6 @@ export class GroupPermissionsService {
     }
   }
 
-  /** Owner and admin can rename the group and add members. */
   assertCanManageGroupContent(actorRole: ConversationMemberRole | null): void {
     const r = this.normalizeRole(actorRole);
     if (r !== ConversationMemberRole.owner && r !== ConversationMemberRole.admin) {
@@ -24,9 +24,51 @@ export class GroupPermissionsService {
     }
   }
 
+  assertCanUpdateGroupSettings(actorRole: ConversationMemberRole | null): void {
+    const r = this.normalizeRole(actorRole);
+    if (r !== ConversationMemberRole.owner && r !== ConversationMemberRole.admin) {
+      throw new ForbiddenException('Only the group owner or admins can change group settings');
+    }
+  }
+
+  assertMayPostGroupMessage(
+    actorRole: ConversationMemberRole | null,
+    settings: ParsedGroupSettings,
+  ): void {
+    if (!settings.onlyAdminsCanPost) {
+      return;
+    }
+    const r = this.normalizeRole(actorRole);
+    if (r === ConversationMemberRole.owner || r === ConversationMemberRole.admin) {
+      return;
+    }
+    throw new ForbiddenException('Only group owners and admins can send messages');
+  }
+
+  assertMayAddMembers(
+    actorRole: ConversationMemberRole | null,
+    settings: ParsedGroupSettings,
+  ): void {
+    const r = this.normalizeRole(actorRole);
+    if (settings.onlyAdminsCanAddMembers) {
+      this.assertCanManageGroupContent(r);
+    }
+  }
+
+  assertMayRemoveMembers(
+    actorRole: ConversationMemberRole | null,
+    settings: ParsedGroupSettings,
+  ): void {
+    const r = this.normalizeRole(actorRole);
+    if (settings.onlyAdminsCanRemoveMembers) {
+      this.assertCanManageGroupContent(r);
+    }
+  }
+
   assertCanEditAvatar(actorRole: ConversationMemberRole | null): void {
-    if (this.normalizeRole(actorRole) !== ConversationMemberRole.owner) {
-      throw new ForbiddenException('Only the group owner can change the avatar');
+    const r = this.normalizeRole(actorRole);
+    if (r !== ConversationMemberRole.owner && r !== ConversationMemberRole.admin) {
+      throw new ForbiddenException('Only the group owner or admins can change the avatar');
     }
   }
 
@@ -52,6 +94,12 @@ export class GroupPermissionsService {
       target === ConversationMemberRole.admin
     ) {
       throw new ForbiddenException('Admins cannot remove other admins');
+    }
+  }
+
+  assertOwnerMayAssignRoles(actorRole: ConversationMemberRole | null): void {
+    if (this.normalizeRole(actorRole) !== ConversationMemberRole.owner) {
+      throw new ForbiddenException('Only the group owner can change member roles');
     }
   }
 }

@@ -26,7 +26,7 @@ export class CreateGroupDto {
     type: [String],
   })
   @IsArray()
-  @ArrayMinSize(0)
+  @ArrayMinSize(1)
   @ArrayMaxSize(MAX_INITIAL_MEMBERS)
   @IsUUID('4', { each: true })
   memberIds!: string[];

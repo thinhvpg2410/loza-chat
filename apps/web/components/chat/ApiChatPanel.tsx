@@ -1,41 +1,54 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { ForwardMessageDialog } from "@/components/chat/ForwardMessageDialog";
 import { useChatRealtime } from "@/components/chat/chat-realtime-context";
 import { ChatHeader } from "@/components/chat/ChatHeader";
+import { GroupChatInfoDrawer } from "@/components/groups/GroupChatInfoDrawer";
+import { DocumentPreviewModal } from "@/components/chat/DocumentPreviewModal";
 import { ImagePreviewModal } from "@/components/chat/ImagePreviewModal";
 import { MessageInput } from "@/components/chat/MessageInput";
 import { MessageList } from "@/components/chat/MessageList";
+import { TypingIndicator } from "@/components/chat/TypingIndicator";
 import {
   completeChatUploadAction,
   deleteChatMessageAction,
   fetchConversationMessagesAction,
+  addChatMessageReactionAction,
   fetchConversationsListAction,
   forwardChatMessageAction,
   initChatUploadAction,
   markConversationReadAction,
   recallChatMessageAction,
+  removeChatMessageReactionAction,
   sendChatMessageWithAttachmentsAction,
   sendChatStickerMessageAction,
   sendChatTextMessageAction,
 } from "@/features/chat/chat-actions";
+import { fetchGroupDetailAction } from "@/features/chat/groups-actions";
+import { useGroupChat } from "@/hooks/useGroupChat";
 import {
   applyPeerReceiptPointersToMessages,
   initialPeerReceiptMaxFromMessages,
   mergeReceiptPointerFromSocketPayload,
 } from "@/lib/chat/apply-peer-receipts";
-import type { ApiMessageWithReceipt } from "@/lib/chat/api-dtos";
-import { mapReactions, mapSingleApiMessage } from "@/lib/chat/map-api-message";
+import type { ApiGroupDetail, ApiMessageWithReceipt } from "@/lib/chat/api-dtos";
+import {
+  enrichMessageReplyFromThread,
+  mapReactions,
+  mapSingleApiMessage,
+} from "@/lib/chat/map-api-message";
 import { maxMessageTimelineRefIso, type MessageTimelineRef } from "@/lib/chat/message-timeline";
 import { messageSnippet } from "@/lib/message-snippet";
-import { toggleViewerReaction } from "@/lib/reaction-utils";
+import { mergeReactionBroadcastCounts } from "@/lib/reaction-utils";
 import type { Conversation, Message, MessageReaction, ReplyPreviewRef } from "@/lib/types/chat";
 
 type ApiChatPanelProps = {
   conversation: Conversation | null;
   onConversationsRefresh?: (conversations: Conversation[]) => void;
+  /** Sau khi rời / giải tán nhóm từ khay thông tin — để workspace bỏ chọn hội thoại. */
+  onGroupConversationEnded?: (conversationId: string) => void;
 };
 
 type ConfirmActionState =
@@ -56,7 +69,28 @@ function buildClientMessageId(): string {
   return `c-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPanelProps) {
+/** Distance from bottom of scroll container; used to keep chat "stuck" to latest. */
+function isScrollNearBottom(element: HTMLDivElement, thresholdPx = 160): boolean {
+  return element.scrollHeight - element.scrollTop - element.clientHeight <= thresholdPx;
+}
+
+function shouldFollowIncomingMessage(
+  el: HTMLDivElement | null,
+  sentByViewer: boolean,
+  followTailRef: { current: boolean },
+): boolean {
+  if (sentByViewer) return true;
+  if (followTailRef.current) return true;
+  return !el || isScrollNearBottom(el);
+}
+
+type ScrollToEndAfterPaint = "none" | "smooth" | "auto";
+
+export function ApiChatPanel({
+  conversation,
+  onConversationsRefresh,
+  onGroupConversationEnded,
+}: ApiChatPanelProps) {
   const realtime = useChatRealtime();
   const realtimeRef = useRef(realtime);
   useEffect(() => {
@@ -70,15 +104,33 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [reactionOverrides, setReactionOverrides] = useState<Record<string, MessageReaction[]>>({});
+  const reactionOverridesRef = useRef<Record<string, MessageReaction[]>>({});
+  const reactionBusyRef = useRef<Set<string>>(new Set());
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [documentPreview, setDocumentPreview] = useState<{
+    embedUrl: string;
+    title: string;
+    downloadUrl: string;
+  } | null>(null);
   const [replyTarget, setReplyTarget] = useState<{ convId: string; message: Message } | null>(
     null,
   );
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
-  const [peerTyping, setPeerTyping] = useState(false);
+  const [typingPeers, setTypingPeers] = useState<Record<string, boolean>>({});
+  const [liveAnnouncement, setLiveAnnouncement] = useState("");
+  const [groupDetail, setGroupDetail] = useState<ApiGroupDetail | null>(null);
+  const [groupInfoOpen, setGroupInfoOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadingLabel, setUploadingLabel] = useState<string | null>(null);
+  const [uploadProgressPct, setUploadProgressPct] = useState(0);
+  const [uploadRetryFile, setUploadRetryFile] = useState<File | null>(null);
+  const [uploadRetryMode, setUploadRetryMode] = useState<"image" | "file" | "voice" | null>(null);
+  const [voiceRecordingDurationSec, setVoiceRecordingDurationSec] = useState(0);
+  const [voicePreviewDurationSec, setVoicePreviewDurationSec] = useState(0);
+  const [voiceWaveLevels, setVoiceWaveLevels] = useState<number[]>([0.2, 0.4, 0.65, 0.45, 0.25]);
+  const [voicePreviewFile, setVoicePreviewFile] = useState<File | null>(null);
+  const [voicePreviewUrl, setVoicePreviewUrl] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmActionState>(null);
   const [messageActionBusy, setMessageActionBusy] = useState(false);
   const [forwardOpen, setForwardOpen] = useState(false);
@@ -89,7 +141,9 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
   const [forwardBusyConversationId, setForwardBusyConversationId] = useState<string | null>(null);
 
   const messageScrollRef = useRef<HTMLDivElement>(null);
-  const scrollAfterOwnSendRef = useRef(false);
+  /** User is viewing the latest messages (or we have not received a scroll event yet). */
+  const nearBottomRef = useRef(true);
+  const scrollToEndAfterPaintRef = useRef<ScrollToEndAfterPaint>("none");
   const messagesRef = useRef<Message[]>([]);
   const peerDeliveredMaxRef = useRef<MessageTimelineRef | null>(null);
   const peerReadMaxRef = useRef<MessageTimelineRef | null>(null);
@@ -98,10 +152,40 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
   const peerTypingExpireTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const imagePickerRef = useRef<HTMLInputElement>(null);
   const filePickerRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const mediaChunksRef = useRef<Blob[]>([]);
+  const voiceTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const uploadAbortRef = useRef<AbortController | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const waveformFrameRef = useRef<number | null>(null);
+  const [voiceRecording, setVoiceRecording] = useState(false);
 
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  useEffect(() => {
+    reactionOverridesRef.current = reactionOverrides;
+  }, [reactionOverrides]);
+
+  useEffect(() => {
+    return () => {
+      mediaRecorderRef.current?.stop();
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+      uploadAbortRef.current?.abort();
+      if (waveformFrameRef.current !== null) {
+        cancelAnimationFrame(waveformFrameRef.current);
+      }
+      audioCtxRef.current?.close().catch(() => undefined);
+      if (voicePreviewUrl) {
+        URL.revokeObjectURL(voicePreviewUrl);
+      }
+      if (voiceTimerRef.current) {
+        clearInterval(voiceTimerRef.current);
+      }
+    };
+  }, [voicePreviewUrl]);
 
   const applyReceipts = useCallback((list: Message[]) => {
     return applyPeerReceiptPointersToMessages(
@@ -127,14 +211,14 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
       clearTimeout(peerTypingExpireTimerRef.current);
     }
     peerTypingExpireTimerRef.current = setTimeout(() => {
-      setPeerTyping(false);
+      setTypingPeers({});
       peerTypingExpireTimerRef.current = null;
-    }, 7000);
+    }, 12_000);
   }, []);
 
   useEffect(() => {
     if (realtime?.socketConnected) return;
-    setPeerTyping(false);
+    setTypingPeers({});
     if (peerTypingExpireTimerRef.current) {
       clearTimeout(peerTypingExpireTimerRef.current);
       peerTypingExpireTimerRef.current = null;
@@ -143,6 +227,10 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
 
   const notifyTypingActivity = useCallback(() => {
     if (!realtime?.socketConnected || !conversation) return;
+    if (conversation.chatType === "direct") {
+      const rel = conversation.directPeerRelationshipStatus;
+      if (rel === "blocked_by_me" || rel === "blocked_me") return;
+    }
     if (!typingStartedRef.current) {
       typingStartedRef.current = true;
       realtime.startTyping(conversation.id);
@@ -157,6 +245,22 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
     }, 2200);
   }, [realtime, conversation]);
 
+  /** Re-send typing:start while composing so peers keep seeing “đang nhập” (server + local TTL). */
+  useEffect(() => {
+    if (!conversation) return;
+    if (!realtime?.socketConnected) return;
+    if (conversation.chatType === "direct") {
+      const rel = conversation.directPeerRelationshipStatus;
+      if (rel === "blocked_by_me" || rel === "blocked_me") return;
+    }
+    if (!draft.trim()) return;
+    const convId = conversation.id;
+    const id = window.setInterval(() => {
+      realtimeRef.current?.startTyping(convId);
+    }, 8000);
+    return () => clearInterval(id);
+  }, [conversation, draft, realtime?.socketConnected]);
+
   useEffect(() => {
     if (!conversation) return;
 
@@ -169,15 +273,20 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
       }
       typingStartedRef.current = false;
 
+      nearBottomRef.current = true;
+      scrollToEndAfterPaintRef.current = "none";
+
       setLoading(true);
       setLoadError(null);
+      setSendError(null);
       setMessages([]);
       setNextCursor(null);
-      setPeerTyping(false);
+      setTypingPeers({});
       if (peerTypingExpireTimerRef.current) {
         clearTimeout(peerTypingExpireTimerRef.current);
         peerTypingExpireTimerRef.current = null;
       }
+      setGroupDetail(null);
       peerDeliveredMaxRef.current = null;
       peerReadMaxRef.current = null;
 
@@ -198,6 +307,9 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
         );
         setMessages(stamped);
         setNextCursor(r.nextCursor);
+        if (stamped.length > 0) {
+          scrollToEndAfterPaintRef.current = "auto";
+        }
         const last = stamped[stamped.length - 1];
         if (last) {
           void markConversationReadAction(conversation.id, last.id);
@@ -223,37 +335,69 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
   }, [conversation]);
 
   useEffect(() => {
+    if (!conversation || conversation.chatType !== "group") {
+      setGroupDetail(null);
+      return;
+    }
+    let cancelled = false;
+    void fetchGroupDetailAction(conversation.id).then((r) => {
+      if (cancelled) return;
+      setGroupDetail(r.ok ? r.group : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [conversation?.id, conversation?.chatType]);
+
+  const reloadGroupDetail = useCallback(async () => {
+    if (!conversation || conversation.chatType !== "group") return;
+    const r = await fetchGroupDetailAction(conversation.id);
+    if (r.ok) setGroupDetail(r.group);
+  }, [conversation?.id, conversation?.chatType]);
+
+  useEffect(() => {
+    setGroupInfoOpen(false);
+  }, [conversation?.id]);
+
+  useEffect(() => {
     if (!conversation || !realtime?.viewerUserId) return;
     const convId = conversation.id;
     const apiBase = realtime.apiBaseUrl;
 
     return realtime.registerRoom(convId, {
       onMessageNew: (row: ApiMessageWithReceipt) => {
+        const el = messageScrollRef.current;
+        if (shouldFollowIncomingMessage(el, row.sentByViewer, nearBottomRef)) {
+          scrollToEndAfterPaintRef.current = "smooth";
+        }
         setMessages((prev) => {
           if (prev.some((m) => m.id === row.id)) return prev;
-          const mapped = mapSingleApiMessage(row, apiBase);
+          const mapped = enrichMessageReplyFromThread(mapSingleApiMessage(row, apiBase), prev);
           const next = applyReceipts([...prev, mapped]);
           return next;
         });
         if (!row.sentByViewer) {
+          setLiveAnnouncement("Bạn có tin nhắn mới.");
           void markConversationReadAction(convId, row.id);
           realtime.emitDelivered(convId, row.id);
           realtime.emitSeen(convId, row.id);
         }
-        if (row.sentByViewer) {
-          scrollAfterOwnSendRef.current = true;
-        }
       },
       onMessageUpdated: (row: ApiMessageWithReceipt) => {
         setMessages((prev) => {
-          const mapped = mapSingleApiMessage(row, apiBase);
+          const mapped = enrichMessageReplyFromThread(mapSingleApiMessage(row, apiBase), prev);
           if (!prev.some((m) => m.id === row.id)) return prev;
           return applyReceipts(prev.map((m) => (m.id === row.id ? mapped : m)));
         });
       },
       onTypingUpdate: ({ userId, isTyping }) => {
         if (userId === realtime.viewerUserId) return;
-        setPeerTyping(isTyping);
+        setTypingPeers((prev) => {
+          const next = { ...prev };
+          if (isTyping) next[userId] = true;
+          else delete next[userId];
+          return next;
+        });
         if (isTyping) {
           schedulePeerTypingExpire();
         } else if (peerTypingExpireTimerRef.current) {
@@ -289,12 +433,21 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
       onReactionUpdated: (payload) => {
         if (payload.conversationId !== convId) return;
         setMessages((prev) =>
-          prev.map((m) =>
-            m.id === payload.messageId
-              ? { ...m, reactions: mapReactions(payload.summary) }
-              : m,
-          ),
+          prev.map((m) => {
+            if (m.id !== payload.messageId) return m;
+            const prevRx =
+              reactionOverridesRef.current[payload.messageId] ?? m.reactions ?? [];
+            return {
+              ...m,
+              reactions: mergeReactionBroadcastCounts(prevRx, payload.summary),
+            };
+          }),
         );
+        setReactionOverrides((o) => {
+          if (!(payload.messageId in o)) return o;
+          const { [payload.messageId]: _, ...rest } = o;
+          return rest;
+        });
       },
     });
   }, [conversation, realtime, applyReceipts, schedulePeerTypingExpire]);
@@ -304,6 +457,10 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
     let cancelled = false;
     void fetchConversationMessagesAction(conversation.id).then((r) => {
       if (cancelled || !r.ok) return;
+      const el = messageScrollRef.current;
+      if (el && (nearBottomRef.current || isScrollNearBottom(el))) {
+        scrollToEndAfterPaintRef.current = "auto";
+      }
       setMessages((prev) => {
         const byId = new Map(prev.map((m) => [m.id, m]));
         for (const next of r.messages) {
@@ -356,15 +513,73 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
     if (r.ok) onConversationsRefresh(r.conversations);
   }, [onConversationsRefresh]);
 
+  useGroupChat({
+    realtime,
+    conversationId: conversation?.chatType === "group" ? conversation.id : null,
+    isGroup: conversation?.chatType === "group",
+    onGroupEvent: useCallback(
+      (ev) => {
+        void refreshSidebar();
+        if (ev.type === "group_dissolved") {
+          setGroupDetail(null);
+          return;
+        }
+        const id = ev.conversationId;
+        void fetchGroupDetailAction(id).then((r) => {
+          setGroupDetail(r.ok ? r.group : null);
+        });
+      },
+      [refreshSidebar],
+    ),
+  });
+
+  const applyServerReactionSummary = useCallback((messageId: string, summary: ApiMessageWithReceipt["reactions"]) => {
+    const rx = mapReactions(summary);
+    setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, reactions: rx } : m)));
+    setReactionOverrides((o) => {
+      if (!(messageId in o)) return o;
+      const { [messageId]: _, ...rest } = o;
+      return rest;
+    });
+  }, []);
+
   const onToggleReaction = useCallback(
-    (messageId: string, emoji: string) => {
-      setReactionOverrides((prev) => {
-        const msg = messages.find((m) => m.id === messageId);
-        const current = prev[messageId] ?? msg?.reactions ?? [];
-        return { ...prev, [messageId]: toggleViewerReaction(current, emoji) };
-      });
+    async (messageId: string, emoji: string) => {
+      if (!conversation) return;
+      const msg = messagesRef.current.find((m) => m.id === messageId);
+      if (!msg || msg.kind === "system") return;
+      if (reactionBusyRef.current.has(messageId)) return;
+      reactionBusyRef.current.add(messageId);
+      setSendError(null);
+      try {
+        const effective = reactionOverridesRef.current[messageId] ?? msg.reactions ?? [];
+        const mine = effective.filter((r) => r.viewerReacted).map((r) => r.emoji);
+        const isMine = effective.some((r) => r.emoji === emoji && r.viewerReacted);
+
+        if (isMine) {
+          const r = await removeChatMessageReactionAction(messageId, emoji);
+          if (!r.ok) {
+            setSendError(r.error);
+            return;
+          }
+          applyServerReactionSummary(messageId, r.summary);
+          return;
+        }
+        for (const e of mine) {
+          const rm = await removeChatMessageReactionAction(messageId, e);
+          if (rm.ok) applyServerReactionSummary(messageId, rm.summary);
+        }
+        const add = await addChatMessageReactionAction(messageId, emoji);
+        if (!add.ok) {
+          setSendError(add.error);
+          return;
+        }
+        applyServerReactionSummary(messageId, add.summary);
+      } finally {
+        reactionBusyRef.current.delete(messageId);
+      }
     },
-    [messages],
+    [conversation, applyServerReactionSummary],
   );
 
   const getReactions = useCallback(
@@ -379,6 +594,17 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
     if (!conversation) return;
     const body = draft.trim();
     if (!body || sending || uploading) return;
+    if (conversation.chatType === "direct") {
+      const rel = conversation.directPeerRelationshipStatus;
+      if (rel === "blocked_by_me") {
+        setSendError("Bạn đã chặn người này. Không thể gửi tin nhắn.");
+        return;
+      }
+      if (rel === "blocked_me") {
+        setSendError("Bạn không thể nhắn tin vì đã bị chặn.");
+        return;
+      }
+    }
 
     flushTypingStop();
     setSendError(null);
@@ -401,12 +627,13 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
       return;
     }
 
-    scrollAfterOwnSendRef.current = true;
+    scrollToEndAfterPaintRef.current = "smooth";
     setDraft("");
     setReplyTarget(null);
     setMessages((prev) => {
       if (prev.some((m) => m.id === r.message.id)) return prev;
-      return applyReceipts([...prev, r.message]);
+      const merged = enrichMessageReplyFromThread(r.message, prev);
+      return applyReceipts([...prev, merged]);
     });
     void markConversationReadAction(conversation.id, r.message.id);
     realtimeRef.current?.emitSeen(conversation.id, r.message.id);
@@ -426,6 +653,17 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
     async (stickerId: string, _emoji: string) => {
       void _emoji;
       if (!conversation || sending || uploading) return;
+      if (conversation.chatType === "direct") {
+        const rel = conversation.directPeerRelationshipStatus;
+        if (rel === "blocked_by_me") {
+          setSendError("Bạn đã chặn người này. Không thể gửi tin nhắn.");
+          return;
+        }
+        if (rel === "blocked_me") {
+          setSendError("Bạn không thể nhắn tin vì đã bị chặn.");
+          return;
+        }
+      }
       flushTypingStop();
       setSendError(null);
       setSending(true);
@@ -447,11 +685,12 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
         return;
       }
 
-      scrollAfterOwnSendRef.current = true;
+      scrollToEndAfterPaintRef.current = "smooth";
       setReplyTarget(null);
       setMessages((prev) => {
         if (prev.some((m) => m.id === r.message.id)) return prev;
-        return applyReceipts([...prev, r.message]);
+        const merged = enrichMessageReplyFromThread(r.message, prev);
+        return applyReceipts([...prev, merged]);
       });
       void markConversationReadAction(conversation.id, r.message.id);
       realtimeRef.current?.emitSeen(conversation.id, r.message.id);
@@ -460,14 +699,61 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
     [conversation, replyTarget, sending, uploading, refreshSidebar, applyReceipts, flushTypingStop],
   );
 
+  const putFileWithProgress = useCallback(
+    async (
+      url: string,
+      method: "PUT",
+      headers: Record<string, string>,
+      file: File,
+      onProgress: (pct: number) => void,
+      signal: AbortSignal,
+    ) =>
+      new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open(method, url);
+        Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
+        xhr.upload.onprogress = (event) => {
+          if (!event.lengthComputable) return;
+          onProgress(Math.round((event.loaded / event.total) * 100));
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve();
+          else reject(new Error(`Upload thất bại (${xhr.status}).`));
+        };
+        xhr.onerror = () => reject(new Error("Upload thất bại do lỗi mạng."));
+        xhr.onabort = () => reject(new Error("Upload đã bị hủy."));
+        signal.addEventListener("abort", () => xhr.abort(), { once: true });
+        xhr.send(file);
+      }),
+    [],
+  );
+
   const uploadAndSendAttachment = useCallback(
-    async (file: File, mode: "image" | "file") => {
+    async (file: File, mode: "image" | "file" | "voice", durationSeconds?: number) => {
       if (!conversation) return;
       if (sending || uploading) return;
+      if (conversation.chatType === "direct") {
+        const rel = conversation.directPeerRelationshipStatus;
+        if (rel === "blocked_by_me") {
+          setSendError("Bạn đã chặn người này. Không thể gửi tin nhắn.");
+          return;
+        }
+        if (rel === "blocked_me") {
+          setSendError("Bạn không thể nhắn tin vì đã bị chặn.");
+          return;
+        }
+      }
 
       setSendError(null);
       setUploading(true);
-      setUploadingLabel(mode === "image" ? "Đang tải ảnh…" : "Đang tải tệp…");
+      setUploadProgressPct(0);
+      setUploadRetryFile(null);
+      setUploadRetryMode(null);
+      setUploadingLabel(
+        mode === "image" ? "Đang tải ảnh…" : mode === "voice" ? "Đang tải ghi âm…" : "Đang tải tệp…",
+      );
+      const abort = new AbortController();
+      uploadAbortRef.current = abort;
 
       try {
         const normalizedMime =
@@ -475,10 +761,14 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
             ? file.type.trim().toLowerCase()
             : mode === "image"
               ? "image/jpeg"
-              : "application/octet-stream";
+              : mode === "voice"
+                ? "audio/webm"
+                : "application/octet-stream";
         const uploadType: "image" | "file" | "voice" | "video" | "other" =
           mode === "image"
             ? "image"
+            : mode === "voice"
+              ? "voice"
             : normalizedMime.startsWith("video/")
               ? "video"
               : normalizedMime.startsWith("audio/")
@@ -490,6 +780,9 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
           mimeType: normalizedMime,
           fileSize: file.size,
           uploadType,
+          ...(uploadType === "voice" && durationSeconds !== undefined
+            ? { durationSeconds: Math.max(1, Math.round(durationSeconds)) }
+            : {}),
         });
         if (!init.ok) {
           setSendError(init.error);
@@ -501,15 +794,14 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
           headers.Authorization = `Bearer ${init.putBearerToken}`;
         }
 
-        const putRes = await fetch(init.uploadUrl, {
-          method: init.uploadMethod,
+        await putFileWithProgress(
+          init.uploadUrl,
+          init.uploadMethod,
           headers,
-          body: file,
-        });
-        if (!putRes.ok) {
-          setSendError(`Upload thất bại (${putRes.status}).`);
-          return;
-        }
+          file,
+          setUploadProgressPct,
+          abort.signal,
+        );
 
         setUploadingLabel("Đang xử lý đính kèm…");
         const done = await completeChatUploadAction(init.uploadSessionId);
@@ -535,24 +827,184 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
           return;
         }
 
-        scrollAfterOwnSendRef.current = true;
+        scrollToEndAfterPaintRef.current = "smooth";
         setReplyTarget(null);
         setMessages((prev) => {
           if (prev.some((m) => m.id === sent.message.id)) return prev;
-          return applyReceipts([...prev, sent.message]);
+          const merged = enrichMessageReplyFromThread(sent.message, prev);
+          return applyReceipts([...prev, merged]);
         });
         void markConversationReadAction(conversation.id, sent.message.id);
         realtimeRef.current?.emitSeen(conversation.id, sent.message.id);
         void refreshSidebar();
       } catch (e) {
         setSendError(e instanceof Error ? e.message : "Không gửi được đính kèm.");
+        setUploadRetryFile(file);
+        setUploadRetryMode(mode);
       } finally {
         setUploading(false);
         setUploadingLabel(null);
+        uploadAbortRef.current = null;
       }
     },
-    [conversation, sending, uploading, replyTarget, applyReceipts, refreshSidebar],
+    [conversation, sending, uploading, replyTarget, applyReceipts, refreshSidebar, putFileWithProgress],
   );
+
+  const toggleVoiceRecording = useCallback(async () => {
+    if (voiceRecording) {
+      const recorder = mediaRecorderRef.current;
+      if (!recorder) {
+        setVoiceRecording(false);
+        return;
+      }
+      recorder.stop();
+      return;
+    }
+    if (!conversation) return;
+    if (typeof window === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setSendError("Trình duyệt không hỗ trợ ghi âm.");
+      return;
+    }
+    if (conversation.chatType === "direct") {
+      const rel = conversation.directPeerRelationshipStatus;
+      if (rel === "blocked_by_me" || rel === "blocked_me") {
+        setSendError("Không thể gửi ghi âm trong cuộc trò chuyện này.");
+        return;
+      }
+    }
+    try {
+      setSendError(null);
+      if (voicePreviewUrl) {
+        URL.revokeObjectURL(voicePreviewUrl);
+        setVoicePreviewUrl(null);
+      }
+      setVoicePreviewFile(null);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      mediaStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+      mediaChunksRef.current = [];
+      recorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data && event.data.size > 0) {
+          mediaChunksRef.current.push(event.data);
+        }
+      };
+      recorder.onstop = () => {
+        const recordedDurationSec = Math.max(1, voiceRecordingDurationSec);
+        const blob = new Blob(mediaChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        mediaChunksRef.current = [];
+        mediaRecorderRef.current = null;
+        mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+        mediaStreamRef.current = null;
+        if (waveformFrameRef.current !== null) {
+          cancelAnimationFrame(waveformFrameRef.current);
+          waveformFrameRef.current = null;
+        }
+        audioCtxRef.current?.close().catch(() => undefined);
+        audioCtxRef.current = null;
+        setVoiceRecording(false);
+        setVoiceRecordingDurationSec(0);
+        if (voiceTimerRef.current) {
+          clearInterval(voiceTimerRef.current);
+          voiceTimerRef.current = null;
+        }
+        if (blob.size > 0) {
+          const ext = (recorder.mimeType || "").includes("ogg") ? "ogg" : "webm";
+          const file = new File([blob], `voice-${Date.now()}.${ext}`, {
+            type: recorder.mimeType || "audio/webm",
+          });
+          if (voicePreviewUrl) {
+            URL.revokeObjectURL(voicePreviewUrl);
+          }
+          setVoicePreviewFile(file);
+          setVoicePreviewUrl(URL.createObjectURL(file));
+          setVoicePreviewDurationSec(recordedDurationSec);
+        }
+      };
+      recorder.start();
+      setVoiceRecording(true);
+      setVoiceRecordingDurationSec(0);
+      if (voiceTimerRef.current) {
+        clearInterval(voiceTimerRef.current);
+      }
+      voiceTimerRef.current = setInterval(() => {
+        setVoiceRecordingDurationSec((sec) => sec + 1);
+      }, 1000);
+      const audioCtx = new AudioContext();
+      audioCtxRef.current = audioCtx;
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 64;
+      const source = audioCtx.createMediaStreamSource(stream);
+      source.connect(analyser);
+      const bins = new Uint8Array(analyser.frequencyBinCount);
+      const draw = () => {
+        analyser.getByteFrequencyData(bins);
+        const step = Math.max(1, Math.floor(bins.length / 8));
+        const levels = Array.from({ length: 8 }).map((_, i) => {
+          const start = i * step;
+          const end = Math.min(bins.length, start + step);
+          const slice = bins.slice(start, end);
+          const avg = slice.reduce((sum, v) => sum + v, 0) / Math.max(1, slice.length);
+          return Math.max(0.1, Math.min(1, avg / 255));
+        });
+        setVoiceWaveLevels(levels);
+        waveformFrameRef.current = requestAnimationFrame(draw);
+      };
+      draw();
+    } catch (e) {
+      setVoiceRecording(false);
+      setSendError(
+        e instanceof Error
+          ? `Không thể bắt đầu ghi âm: ${e.message}`
+          : "Không thể bắt đầu ghi âm. Vui lòng cấp quyền micro cho trình duyệt.",
+      );
+      setVoiceRecordingDurationSec(0);
+      if (voiceTimerRef.current) {
+        clearInterval(voiceTimerRef.current);
+        voiceTimerRef.current = null;
+      }
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+      mediaRecorderRef.current = null;
+      if (waveformFrameRef.current !== null) {
+        cancelAnimationFrame(waveformFrameRef.current);
+        waveformFrameRef.current = null;
+      }
+      audioCtxRef.current?.close().catch(() => undefined);
+      audioCtxRef.current = null;
+    }
+  }, [conversation, voicePreviewDurationSec, voicePreviewUrl, voiceRecording, voiceRecordingDurationSec]);
+
+  const cancelVoiceRecording = useCallback(() => {
+    mediaChunksRef.current = [];
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== "inactive") {
+      recorder.stop();
+    }
+    mediaRecorderRef.current = null;
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    mediaStreamRef.current = null;
+    if (waveformFrameRef.current !== null) {
+      cancelAnimationFrame(waveformFrameRef.current);
+      waveformFrameRef.current = null;
+    }
+    audioCtxRef.current?.close().catch(() => undefined);
+    audioCtxRef.current = null;
+    setVoiceRecording(false);
+    setVoiceRecordingDurationSec(0);
+    setVoiceWaveLevels([0.2, 0.4, 0.65, 0.45, 0.25]);
+    if (voiceTimerRef.current) {
+      clearInterval(voiceTimerRef.current);
+      voiceTimerRef.current = null;
+    }
+  }, []);
+
+  const cancelUpload = useCallback(() => {
+    uploadAbortRef.current?.abort();
+    uploadAbortRef.current = null;
+    setUploading(false);
+    setUploadingLabel(null);
+  }, []);
 
   const handleImagePicked = useCallback(
     (file: File | null) => {
@@ -578,7 +1030,8 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
     (nextMessage: Message) => {
       setMessages((prev) => {
         if (!prev.some((m) => m.id === nextMessage.id)) return prev;
-        return applyReceipts(prev.map((m) => (m.id === nextMessage.id ? nextMessage : m)));
+        const merged = enrichMessageReplyFromThread(nextMessage, prev);
+        return applyReceipts(prev.map((m) => (m.id === nextMessage.id ? merged : m)));
       });
     },
     [applyReceipts],
@@ -644,12 +1097,60 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
     void refreshSidebar();
   }, [confirmAction, refreshSidebar, updateMessageInThread]);
 
+  const onMessageScroll = useCallback(() => {
+    const el = messageScrollRef.current;
+    if (!el) return;
+    nearBottomRef.current = isScrollNearBottom(el);
+  }, []);
+
   useLayoutEffect(() => {
     const el = messageScrollRef.current;
-    if (!el || !scrollAfterOwnSendRef.current) return;
-    scrollAfterOwnSendRef.current = false;
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [messages]);
+    if (!el || loading) return;
+
+    const mode = scrollToEndAfterPaintRef.current;
+    if (mode !== "none") {
+      scrollToEndAfterPaintRef.current = "none";
+      const behavior: ScrollBehavior = mode === "smooth" ? "smooth" : "auto";
+      el.scrollTo({ top: el.scrollHeight, behavior });
+      if (mode === "auto") {
+        nearBottomRef.current = true;
+      }
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const box = messageScrollRef.current;
+          if (!box) return;
+          box.scrollTo({ top: box.scrollHeight, behavior: "auto" });
+        });
+      });
+      return;
+    }
+
+    if (nearBottomRef.current || isScrollNearBottom(el)) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
+    }
+  }, [messages, loading]);
+
+  useEffect(() => {
+    if (!conversation) return;
+    const root = messageScrollRef.current;
+    if (!root) return;
+
+    const pinIfFollowing = () => {
+      if (loading) return;
+      const el = messageScrollRef.current;
+      if (!el) return;
+      if (!nearBottomRef.current && !isScrollNearBottom(el)) return;
+      el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
+    };
+
+    const ro = new ResizeObserver(() => {
+      pinIfFollowing();
+    });
+    ro.observe(root);
+    const inner = root.firstElementChild;
+    if (inner) ro.observe(inner);
+    return () => ro.disconnect();
+  }, [conversation?.id, loading]);
 
   const replyRef: ReplyPreviewRef | null =
     conversation && replyTarget && replyTarget.convId === conversation.id
@@ -657,19 +1158,111 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
           messageId: replyTarget.message.id,
           snippet: messageSnippet(replyTarget.message),
           isOwn: replyTarget.message.isOwn,
+          peerSenderName: replyTarget.message.isOwn
+            ? undefined
+            : (replyTarget.message.senderDisplayName ?? "").trim() || undefined,
         }
       : null;
 
-  const typingStatus = peerTyping ? "Đang soạn tin nhắn…" : null;
+  const typingPeerCount = useMemo(() => {
+    if (!realtime) return 0;
+    return Object.entries(typingPeers).filter(
+      ([uid, on]) => on && uid !== realtime.viewerUserId,
+    ).length;
+  }, [typingPeers, realtime]);
+
+  const directMessagingGuard = useMemo(() => {
+    const c = conversation;
+    if (!c || c.chatType !== "direct") {
+      return { canSend: true, bannerKind: null as null | "blocked_by_me" | "blocked_me" | "stranger" };
+    }
+    const rel = c.directPeerRelationshipStatus;
+    if (rel === "blocked_by_me") return { canSend: false, bannerKind: "blocked_by_me" as const };
+    if (rel === "blocked_me") return { canSend: false, bannerKind: "blocked_me" as const };
+    if (!rel || rel === "friend") return { canSend: true, bannerKind: null };
+    return { canSend: true, bannerKind: "stranger" as const };
+  }, [conversation]);
+
+  const groupMessagingGuard = useMemo(() => {
+    const c = conversation;
+    if (!c || c.chatType !== "group") {
+      return { canSend: true, banner: null as string | null };
+    }
+    if (!groupDetail) {
+      return { canSend: true, banner: null as string | null };
+    }
+    if (groupDetail.myStatus === "pending") {
+      return {
+        canSend: false,
+        banner: "Bạn đang chờ trưởng nhóm hoặc phó nhóm duyệt vào nhóm.",
+      };
+    }
+    if (groupDetail.settings.onlyAdminsCanPost && groupDetail.myRole === "member") {
+      return {
+        canSend: false,
+        banner: "Chỉ trưởng nhóm và phó nhóm được gửi tin trong nhóm này.",
+      };
+    }
+    return { canSend: true, banner: null as string | null };
+  }, [conversation, groupDetail]);
+
+  const canSendMessages = directMessagingGuard.canSend && groupMessagingGuard.canSend;
+
+  const directMessagingBanner =
+    directMessagingGuard.bannerKind === "blocked_by_me" ? (
+      <div
+        className="border-t border-red-200 bg-red-50 px-3 py-2"
+        role="status"
+      >
+        <p className="text-center text-[12px] font-medium text-red-800">
+          Bạn đã chặn người này. Tin nhắn không được gửi đi.
+        </p>
+      </div>
+    ) : directMessagingGuard.bannerKind === "blocked_me" ? (
+      <div
+        className="border-t border-red-200 bg-red-50 px-3 py-2"
+        role="status"
+      >
+        <p className="text-center text-[12px] font-medium text-red-800">
+          Bạn đã bị chặn. Không thể gửi tin nhắn trong cuộc trò chuyện này.
+        </p>
+      </div>
+    ) : directMessagingGuard.bannerKind === "stranger" ? (
+      <div
+        className="border-t border-amber-200 bg-amber-50 px-3 py-2"
+        role="status"
+      >
+        <p className="text-center text-[12px] text-amber-950">
+          Cảnh báo: {conversation?.title ?? "Người này"} chưa là bạn bè hoặc chưa chấp nhận lời mời kết bạn. Bạn vẫn có
+          thể nhắn tin — hãy cẩn trọng với nội dung từ người lạ.
+        </p>
+      </div>
+    ) : null;
+
+  const groupMessagingBanner =
+    groupMessagingGuard.banner && conversation?.chatType === "group" ? (
+      <div className="border-t border-amber-200 bg-amber-50 px-3 py-2" role="status">
+        <p className="text-center text-[12px] text-amber-950">{groupMessagingGuard.banner}</p>
+      </div>
+    ) : null;
 
   return (
     <section
       className="flex min-w-0 flex-1 flex-col bg-[var(--zalo-chat-bg)]"
       aria-label="Khung trò chuyện"
     >
-      <ChatHeader conversation={conversation} statusOverride={typingStatus} />
+      <ChatHeader
+        conversation={conversation}
+        onMoreClick={
+          conversation?.chatType === "group" ? () => setGroupInfoOpen(true) : undefined
+        }
+      />
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {liveAnnouncement}
+      </div>
       <div
         ref={messageScrollRef}
+        onScroll={onMessageScroll}
         className="min-h-0 flex-1 overflow-y-auto bg-[var(--zalo-chat-bg)]"
       >
         {conversation ? (
@@ -728,6 +1321,9 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
                   }}
                   onForward={(m) => void openForwardForMessage(m)}
                   onOpenImage={setPreviewUrl}
+                  onOpenDocument={(embedUrl, title, downloadUrl) =>
+                    setDocumentPreview({ embedUrl, title, downloadUrl })
+                  }
                 />
               </>
             )}
@@ -744,12 +1340,94 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
         <>
           {uploadingLabel ? (
             <div className="border-t border-[var(--zalo-border)] bg-[var(--zalo-surface)] px-3 py-1.5">
-              <p className="text-center text-[12px] text-[var(--zalo-text-muted)]">{uploadingLabel}</p>
+              <p className="text-center text-[12px] text-[var(--zalo-text-muted)]">
+                {uploadingLabel} ({uploadProgressPct}%)
+              </p>
+              <div className="mt-1 h-1.5 w-full overflow-hidden rounded bg-black/[0.08]">
+                <div className="h-full bg-[var(--zalo-blue)] transition-all" style={{ width: `${uploadProgressPct}%` }} />
+              </div>
+              <div className="mt-1 flex justify-center">
+                <button
+                  type="button"
+                  className="rounded px-2 py-0.5 text-[11px] text-red-600 hover:bg-red-50"
+                  onClick={cancelUpload}
+                >
+                  Hủy upload
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {uploadRetryFile && uploadRetryMode ? (
+            <div className="border-t border-amber-200 bg-amber-50 px-3 py-1.5">
+              <p className="text-center text-[12px] text-amber-900">Upload thất bại. Bạn có thể thử lại.</p>
+              <div className="mt-1 flex justify-center">
+                <button
+                  type="button"
+                  className="rounded px-2 py-0.5 text-[11px] text-[var(--zalo-blue)] hover:bg-white"
+                  onClick={() => void uploadAndSendAttachment(uploadRetryFile, uploadRetryMode)}
+                >
+                  Retry upload
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {voicePreviewFile && voicePreviewUrl ? (
+            <div className="border-t border-[var(--zalo-border)] bg-[var(--zalo-surface)] px-3 py-2">
+              <p className="text-center text-[12px] text-[var(--zalo-text-muted)]">Preview ghi âm trước khi gửi</p>
+              <audio controls src={voicePreviewUrl} className="mt-1 w-full" preload="metadata" />
+              <div className="mt-2 flex justify-center gap-2">
+                <button
+                  type="button"
+                  className="rounded px-2 py-1 text-[12px] text-red-600 hover:bg-red-50"
+                  onClick={() => {
+                    URL.revokeObjectURL(voicePreviewUrl);
+                    setVoicePreviewFile(null);
+                    setVoicePreviewUrl(null);
+                    setVoicePreviewDurationSec(0);
+                  }}
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  className="rounded bg-[var(--zalo-blue)] px-2 py-1 text-[12px] text-white"
+                  onClick={() => {
+                    const file = voicePreviewFile;
+                    if (!file) return;
+                    void uploadAndSendAttachment(file, "voice", voicePreviewDurationSec);
+                    URL.revokeObjectURL(voicePreviewUrl);
+                    setVoicePreviewFile(null);
+                    setVoicePreviewUrl(null);
+                    setVoicePreviewDurationSec(0);
+                  }}
+                >
+                  Gửi ghi âm
+                </button>
+              </div>
             </div>
           ) : null}
           {sendError ? (
             <div className="border-t border-red-200 bg-red-50 px-3 py-1.5" role="alert">
               <p className="text-center text-[12px] text-red-700">{sendError}</p>
+            </div>
+          ) : null}
+          {directMessagingBanner}
+          {groupMessagingBanner}
+          {typingPeerCount > 0 && conversation ? (
+            <div
+              className="shrink-0 border-t border-[var(--zalo-border)] bg-[var(--zalo-surface)]/80 px-2"
+              role="status"
+              aria-live="polite"
+            >
+              <TypingIndicator
+                label={
+                  conversation.chatType === "direct"
+                    ? `${conversation.title} đang nhập…`
+                    : typingPeerCount === 1
+                      ? "Đang soạn tin nhắn…"
+                      : `${typingPeerCount} người đang nhập…`
+                }
+              />
             </div>
           ) : null}
           <MessageInput
@@ -759,7 +1437,7 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
               notifyTypingActivity();
             }}
             onSend={() => void sendText()}
-            disabled={loading || sending || uploading}
+            disabled={loading || sending || uploading || !canSendMessages}
             replyTo={replyRef}
             onCancelReply={() => setReplyTarget(null)}
             attachmentsEnabled
@@ -771,14 +1449,34 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
               }
               if (action === "file") {
                 filePickerRef.current?.click();
+                return;
+              }
+              if (action === "voice") {
+                void toggleVoiceRecording();
               }
             }}
+            onToggleVoiceRecording={() => void toggleVoiceRecording()}
+            isVoiceRecording={voiceRecording}
+            voiceRecordingDurationSec={voiceRecordingDurationSec}
+            onCancelVoiceRecording={cancelVoiceRecording}
+            voiceWaveLevels={voiceWaveLevels}
             onPickSticker={(stickerId, emoji) => void sendSticker(stickerId, emoji)}
             onInsertEmoji={(emoji) => {
               setDraft((d) => d + emoji);
               notifyTypingActivity();
             }}
             onComposerBlur={() => flushTypingStop()}
+            mentionCandidates={
+              conversation?.chatType === "group"
+                ? (groupDetail?.members ?? [])
+                    .filter((m) => m.user.id !== realtime?.viewerUserId)
+                    .map((m) => ({
+                      userId: m.user.id,
+                      displayName: m.user.displayName,
+                      username: m.user.username,
+                    }))
+                : []
+            }
           />
           <input
             ref={imagePickerRef}
@@ -839,6 +1537,25 @@ export function ApiChatPanel({ conversation, onConversationsRefresh }: ApiChatPa
         onConfirm={() => void runRecallOrDelete()}
       />
       <ImagePreviewModal imageUrl={previewUrl} onClose={() => setPreviewUrl(null)} />
+      <DocumentPreviewModal
+        embedUrl={documentPreview?.embedUrl ?? null}
+        title={documentPreview?.title ?? ""}
+        downloadUrl={documentPreview?.downloadUrl ?? null}
+        onClose={() => setDocumentPreview(null)}
+      />
+      {conversation?.chatType === "group" ? (
+        <GroupChatInfoDrawer
+          open={groupInfoOpen}
+          onClose={() => setGroupInfoOpen(false)}
+          conversation={conversation}
+          groupDetail={groupDetail}
+          onGroupDetailChange={setGroupDetail}
+          viewerHintUserId={realtime?.viewerUserId ?? null}
+          reloadGroupDetail={reloadGroupDetail}
+          refreshConversationList={refreshSidebar}
+          onGroupConversationEnded={onGroupConversationEnded}
+        />
+      ) : null}
     </section>
   );
 }

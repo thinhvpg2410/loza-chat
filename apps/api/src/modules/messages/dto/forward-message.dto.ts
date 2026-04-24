@@ -5,7 +5,8 @@ import { IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 export class ForwardMessageDto {
   @ApiProperty({
     format: 'uuid',
-    description: 'Target direct conversation id where the message is forwarded',
+    description:
+      'Target conversation id (direct or group). Sender must be an active member; group posting rules apply.',
   })
   @IsUUID('4')
   targetConversationId!: string;

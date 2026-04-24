@@ -1,11 +1,17 @@
-import { publicUrlForStorageKey } from "@/services/media/publicMediaUrl";
+import { attachmentPublicReadUrl } from "@/services/media/publicMediaUrl";
 import type { ApiMessageWithReceipt } from "@/services/conversations/conversationsApi";
 
 import type { ChatRoomMessage, MessageKind, MessageReaction, OutgoingDeliveryState, ReplyReference } from "./types";
+import { mapGroupSystemMessageToEvent } from "./groupSystemMessageMap";
 
 function previewLineFromApi(m: ApiMessageWithReceipt): string {
   if (m.deletedAt) {
     return m.deletionMode === "recalled" ? "Tin nhắn đã được thu hồi" : "Tin nhắn đã bị xóa";
+  }
+  if (m.type === "system") {
+    const ev = mapGroupSystemMessageToEvent(m);
+    if (ev) return ev.badge;
+    return m.content?.trim() || "Thông báo";
   }
   if (m.content?.trim()) return m.content.trim();
   if (m.type === "image") return "📷 Ảnh";
@@ -13,7 +19,6 @@ function previewLineFromApi(m: ApiMessageWithReceipt): string {
   if (m.type === "sticker") return m.sticker?.code ?? m.sticker?.name ?? "🎭 Sticker";
   if (m.type === "voice") return "🎤 Ghi âm";
   if (m.type === "video") return "🎬 Video";
-  if (m.type === "system") return "Thông báo";
   return "";
 }
 
@@ -34,6 +39,9 @@ function outgoingDelivery(m: ApiMessageWithReceipt): OutgoingDeliveryState | und
 }
 
 function resolveKind(m: ApiMessageWithReceipt): MessageKind {
+  if (m.type === "system" && mapGroupSystemMessageToEvent(m)) {
+    return "groupEvent";
+  }
   switch (m.type) {
     case "text":
     case "system":
@@ -95,6 +103,20 @@ export function mapApiMessageToChatRoom(
     };
   }
 
+  const groupEv = mapGroupSystemMessageToEvent(m);
+  if (groupEv && kind === "groupEvent") {
+    return {
+      ...base,
+      kind: "groupEvent",
+      senderRole: "peer",
+      delivery: undefined,
+      groupEventBadge: groupEv.badge,
+      groupEventDetail: groupEv.detail,
+      reactions: [],
+      replyTo,
+    };
+  }
+
   if (kind === "text") {
     return {
       ...base,
@@ -117,7 +139,7 @@ export function mapApiMessageToChatRoom(
 
   if (kind === "image") {
     const att = firstAttachment(m);
-    const url = att ? publicUrlForStorageKey(att.storageKey) : "";
+    const url = att ? attachmentPublicReadUrl(att) : "";
     return {
       ...base,
       kind: "image",
@@ -139,6 +161,7 @@ export function mapApiMessageToChatRoom(
           name: att.originalFileName,
           sizeBytes: Number.isFinite(size) ? size : 0,
           mime: att.mimeType,
+          url: attachmentPublicReadUrl(att),
         }
       : { name: "Tệp", sizeBytes: 0 },
     body: m.content ?? undefined,
@@ -172,5 +195,24 @@ export function mergeReactionsFromSummary(
     emoji: c.reaction,
     count: c.count,
     reactedByMe: mine.has(c.reaction),
+  }));
+}
+
+/** Socket broadcast: counts are global; keep each viewer's `reactedByMe` from prior state. */
+export function mergeReactionsFromSocketBroadcast(
+  prev: MessageReaction[] | undefined,
+  summary: { counts: { reaction: string; count: number }[]; mine?: string[] },
+): MessageReaction[] {
+  if (summary.mine && summary.mine.length > 0) {
+    return mergeReactionsFromSummary({
+      counts: summary.counts ?? [],
+      mine: summary.mine,
+    });
+  }
+  const prevMe = new Map((prev ?? []).map((r) => [r.emoji, Boolean(r.reactedByMe)]));
+  return (summary.counts ?? []).map((c) => ({
+    emoji: c.reaction,
+    count: c.count,
+    reactedByMe: prevMe.get(c.reaction) ?? false,
   }));
 }

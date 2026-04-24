@@ -10,6 +10,7 @@ import type { User } from '@prisma/client';
 import { MediaKind, UploadSessionStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import type { AppConfiguration } from '../../config/configuration';
+import { publicMediaUrlForStorageKey } from '../../common/media/public-media-url';
 import { toPublicUserProfile } from '../../common/types/public-user-profile';
 import type { PublicUser } from '../../common/utils/user-public';
 import { toPublicUser } from '../../common/utils/user-public';
@@ -128,7 +129,7 @@ export class UsersService {
       throw new BadRequestException('Avatar must be an image MIME type');
     }
 
-    const avatarUrl = this.buildPublicMediaUrl(session.storageKey);
+    const avatarUrl = publicMediaUrlForStorageKey(this.config, session.storageKey);
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: { avatarUrl },
@@ -167,20 +168,6 @@ export class UsersService {
       }),
     ]);
     return { message: 'Password updated' };
-  }
-
-  private buildPublicMediaUrl(storageKey: string): string {
-    const storage = this.config.get('storage', { infer: true });
-    const base = storage.publicBaseUrl;
-    if (base && base.trim().length > 0) {
-      const trimmed = base.replace(/\/$/, '');
-      return `${trimmed}/${storageKey}`;
-    }
-    const api = (this.config.get('apiPublicBaseUrl', { infer: true }) ?? '').trim();
-    if (storage.mock && api.length > 0) {
-      return `${api.replace(/\/$/, '')}/uploads/mock-public?key=${encodeURIComponent(storageKey)}`;
-    }
-    return `https://mock-storage.local/public/${storageKey}`;
   }
 
   async searchUsers(

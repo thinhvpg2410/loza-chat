@@ -5,7 +5,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "@ui/AppText";
 import { colors, radius, spacing } from "@theme";
 
-export type MessageActionId = "reply" | "copy" | "react" | "recall" | "delete" | "forward";
+export type MessageActionId =
+  | "reply"
+  | "copy"
+  | "react"
+  | "recall"
+  | "delete"
+  | "forward"
+  | "hide_self";
 
 export type MessageActionItem = {
   id: MessageActionId;

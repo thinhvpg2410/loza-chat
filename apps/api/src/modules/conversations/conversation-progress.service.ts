@@ -29,7 +29,7 @@ export class ConversationProgressService {
     userId: string,
     conversationId: string,
   ): Promise<ConversationStateView> {
-    await this.membership.requireMember(userId, conversationId);
+    await this.membership.requireActiveMember(userId, conversationId);
     return this.buildStateView(userId, conversationId);
   }
 
@@ -41,7 +41,7 @@ export class ConversationProgressService {
     const at = new Date().toISOString();
 
     await this.prisma.$transaction(async (tx) => {
-      await this.membership.requireMemberTx(tx, actorId, conversationId);
+      await this.membership.requireActiveMemberTx(tx, actorId, conversationId);
 
       const target = await this.resolveProgressTargetTx(
         tx,
@@ -96,7 +96,7 @@ export class ConversationProgressService {
     const at = new Date().toISOString();
 
     await this.prisma.$transaction(async (tx) => {
-      await this.membership.requireMemberTx(tx, actorId, conversationId);
+      await this.membership.requireActiveMemberTx(tx, actorId, conversationId);
 
       const target = await this.resolveProgressTargetTx(
         tx,

@@ -11,6 +11,7 @@ import type { AppConfiguration } from '../../config/configuration';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ObjectStoragePort } from '../storage/object-storage.port';
 import type { UploadInitDto } from './dto/upload-init.dto';
+import { publicMediaUrlForStorageKey } from '../../common/media/public-media-url';
 import { toAttachmentPublicDto } from '../../common/mappers/attachment-public.mapper';
 import type { AttachmentPublicDto } from './dto/upload-complete-response.dto';
 import { UploadRulesService } from './upload-rules.service';
@@ -139,11 +140,15 @@ export class UploadsService {
       expectedContentType: session.mimeType,
       expectedSizeBytes: session.fileSize,
     });
+    this.rules.assertMimeAndSize(session.uploadType, session.mimeType, session.fileSize);
 
     const meta = session.metadataJson as
       | { width?: number; height?: number; durationSeconds?: number }
       | null
       | undefined;
+    if (session.uploadType === 'voice') {
+      this.rules.assertVoiceDurationSeconds(meta?.durationSeconds ?? null);
+    }
 
     const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.uploadSession.update({
@@ -174,7 +179,8 @@ export class UploadsService {
       return attachment;
     });
 
-    return { attachment: toAttachmentPublicDto(result) };
+    const publicUrl = publicMediaUrlForStorageKey(this.config, result.storageKey);
+    return { attachment: toAttachmentPublicDto(result, publicUrl) };
   }
 
   /**

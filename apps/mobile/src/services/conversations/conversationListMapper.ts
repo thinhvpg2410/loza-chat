@@ -1,4 +1,5 @@
 import type { MockConversation } from "@/constants/mockData";
+import type { RelationshipStatus } from "@/services/users/usersPublicApi";
 
 export type ApiConversationListItem = {
   conversationId: string;
@@ -22,6 +23,7 @@ export type ApiConversationListItem = {
     senderId: string;
   } | null;
   unreadCount: number;
+  directPeerRelationshipStatus?: RelationshipStatus | null;
 };
 
 function formatListTime(iso: string): string {
@@ -56,6 +58,8 @@ export function mapApiConversationToListItem(row: ApiConversationListItem): Mock
   const mutedUntil = row.mutedUntil ? new Date(row.mutedUntil).getTime() : 0;
   const isMuted = Boolean(row.mutedUntil) && mutedUntil > Date.now();
 
+  const rel = row.directPeerRelationshipStatus as RelationshipStatus | null | undefined;
+
   return {
     id: row.conversationId,
     name,
@@ -68,5 +72,6 @@ export function mapApiConversationToListItem(row: ApiConversationListItem): Mock
     isMuted,
     isOnline: false,
     directPeerId: isGroup ? undefined : row.otherParticipant?.id,
+    directPeerRelationshipStatus: isGroup ? null : (rel ?? null),
   };
 }

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { apiFetchJson } from "@/lib/api/server";
 import type {
+  ApiBlockedListEntry,
   ApiFriendListEntry,
   ApiIncomingRequest,
   ApiOutgoingRequest,
@@ -18,6 +19,7 @@ export type ActionResult = { ok: true } | { ok: false; error: string };
 function revalidateFriendsViews() {
   revalidatePath("/friends");
   revalidatePath("/friends/requests");
+  revalidatePath("/friends/blocked");
   revalidatePath("/");
 }
 
@@ -54,6 +56,34 @@ export async function fetchIncomingRequestsAction(): Promise<
     return { ok: true, requests };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Không tải được lời mời đến." };
+  }
+}
+
+export async function fetchSocialNavCountsAction(): Promise<
+  { ok: true; incomingFriendRequests: number } | { ok: false; error: string }
+> {
+  const gate = await assertFriendsApi();
+  if (!gate.ok) return { ok: true, incomingFriendRequests: 0 };
+  try {
+    const { requests } = await apiFetchJson<{ requests: ApiIncomingRequest[] }>(
+      "/friends/requests/incoming",
+    );
+    return { ok: true, incomingFriendRequests: requests.length };
+  } catch {
+    return { ok: true, incomingFriendRequests: 0 };
+  }
+}
+
+export async function fetchBlockedUsersAction(): Promise<
+  { ok: true; blocks: ApiBlockedListEntry[] } | { ok: false; error: string }
+> {
+  const gate = await assertFriendsApi();
+  if (!gate.ok) return gate;
+  try {
+    const { blocks } = await apiFetchJson<{ blocks: ApiBlockedListEntry[] }>("/blocks");
+    return { ok: true, blocks: blocks ?? [] };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Không tải được danh sách chặn." };
   }
 }
 

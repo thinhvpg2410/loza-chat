@@ -176,16 +176,22 @@ export const mockSelfProfile: ProfileUser = {
 };
 
 export function getProfileForFriend(friend: Friend): ProfileUser {
-  return (
-    getProfileById(friend.id) ?? {
-      id: friend.id,
-      displayName: friend.displayName,
-      username: friend.username,
-      phone: friend.phone,
-      bio: friend.status,
-      mutualFriendsCount: 0,
-    }
-  );
+  const base = getProfileById(friend.id);
+  if (base) {
+    return {
+      ...base,
+      avatarUrl: friend.avatarUrl ?? base.avatarUrl,
+    };
+  }
+  return {
+    id: friend.id,
+    displayName: friend.displayName,
+    username: friend.username,
+    phone: friend.phone,
+    bio: friend.status,
+    avatarUrl: friend.avatarUrl,
+    mutualFriendsCount: 0,
+  };
 }
 
 export function getProfileById(id: string): ProfileUser | null {

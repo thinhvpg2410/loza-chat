@@ -6,7 +6,8 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
+import { CORRELATION_HEADER } from '../common/correlation/correlation-id.util';
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -14,7 +15,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
+    const request = ctx.getRequest<Request>();
     const response = ctx.getResponse<Response>();
+    const correlationId =
+      request?.correlationId ??
+      request?.header(CORRELATION_HEADER) ??
+      'unknown';
 
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
@@ -29,6 +35,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         error: {
           code: status,
           message,
+          correlationId,
         },
       });
       return;
@@ -41,6 +48,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       error: {
         code: HttpStatus.INTERNAL_SERVER_ERROR,
         message: 'An unexpected error occurred',
+        correlationId,
       },
     });
   }

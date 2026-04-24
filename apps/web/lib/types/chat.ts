@@ -1,15 +1,26 @@
+import type { RelationshipStatus } from "@/lib/types/social";
+
 /** Thread summary for the conversation list (middle column). */
 export type Conversation = {
   id: string;
   title: string;
   avatarUrl?: string;
   lastMessagePreview: string;
+  /** ISO timestamp of last activity (API); list formats to HH:mm / dd/mm / dd/mm/yy. */
   lastMessageAt: string;
   unreadCount?: number;
   isPinned?: boolean;
   isMuted?: boolean;
   isOnline?: boolean;
   lastSeenLabel?: string;
+  /** API threads: `direct` or `group` from list/detail. */
+  chatType?: "direct" | "group";
+  /** Group: active member count from API. */
+  memberCount?: number;
+  /** Direct: other participant id (for deep links / receipts). */
+  directPeerId?: string;
+  /** Direct: viewer ↔ peer; drives block / stranger banners and send guard. */
+  directPeerRelationshipStatus?: RelationshipStatus | null;
 };
 
 export type MessageReaction = {
@@ -22,6 +33,8 @@ export type ReplyPreviewRef = {
   messageId: string;
   snippet: string;
   isOwn: boolean;
+  /** Quoted message is from someone else: show this instead of a generic label. */
+  peerSenderName?: string;
 };
 
 type MessageCommon = {
@@ -30,6 +43,10 @@ type MessageCommon = {
   sentAt: string;
   createdAt: string;
   isOwn: boolean;
+  /** Peer messages: sender display name for avatar fallback. */
+  senderDisplayName?: string;
+  /** Peer messages: public avatar URL from API. */
+  senderAvatarUrl?: string;
   /** Direct chat: peer received this outgoing message (from API or realtime receipts). */
   peerDelivered?: boolean;
   /** Direct chat: peer read this outgoing message. */

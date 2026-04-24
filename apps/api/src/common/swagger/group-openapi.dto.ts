@@ -1,6 +1,26 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConversationMemberRole } from '@prisma/client';
+import { ConversationMemberRole, ConversationMemberStatus } from '@prisma/client';
 import { PublicUserProfileOpenApiDto } from './public-user-profile.dto';
+
+export class GroupSettingsOpenApiDto {
+  @ApiProperty()
+  onlyAdminsCanPost!: boolean;
+
+  @ApiProperty()
+  joinApprovalRequired!: boolean;
+
+  @ApiProperty()
+  onlyAdminsCanAddMembers!: boolean;
+
+  @ApiProperty()
+  onlyAdminsCanRemoveMembers!: boolean;
+
+  @ApiProperty({
+    description:
+      'When true, owner and admins may recall other members’ messages (not the leader’s).',
+  })
+  moderatorsCanRecallMessages!: boolean;
+}
 
 export class GroupMemberOpenApiDto {
   @ApiProperty({ format: 'uuid' })
@@ -11,6 +31,12 @@ export class GroupMemberOpenApiDto {
     enumName: 'ConversationMemberRole',
   })
   role!: ConversationMemberRole;
+
+  @ApiProperty({
+    enum: ConversationMemberStatus,
+    enumName: 'ConversationMemberStatus',
+  })
+  status!: ConversationMemberStatus;
 
   @ApiProperty({ type: String, format: 'date-time' })
   joinedAt!: Date;
@@ -44,8 +70,23 @@ export class GroupDetailOpenApiDto {
   })
   myRole!: ConversationMemberRole;
 
+  @ApiProperty({
+    enum: ConversationMemberStatus,
+    enumName: 'ConversationMemberStatus',
+  })
+  myStatus!: ConversationMemberStatus;
+
+  @ApiProperty({ type: GroupSettingsOpenApiDto })
+  settings!: GroupSettingsOpenApiDto;
+
   @ApiProperty({ type: [GroupMemberOpenApiDto] })
   members!: GroupMemberOpenApiDto[];
+
+  @ApiProperty({
+    type: [GroupMemberOpenApiDto],
+    description: 'Owner/admin only: pending join requests',
+  })
+  pendingMembers!: GroupMemberOpenApiDto[];
 }
 
 export class GroupDetailWrapperOpenApiDto {

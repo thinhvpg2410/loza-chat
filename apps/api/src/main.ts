@@ -3,7 +3,12 @@ import { NestFactory } from '@nestjs/core';
 import type { CorsOptions } from '@nestjs/common/interfaces/external/cors-options.interface';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import type { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
+import {
+  CORRELATION_HEADER,
+  resolveCorrelationIdFromRequest,
+} from './common/correlation/correlation-id.util';
 import { AllExceptionsFilter } from './filters/http-exception.filter';
 
 /**
@@ -36,12 +41,19 @@ async function bootstrap() {
       'Accept',
       'X-Requested-With',
       'Origin',
+      'X-Correlation-Id',
     ],
-    exposedHeaders: ['Content-Length', 'Content-Type'],
+    exposedHeaders: ['Content-Length', 'Content-Type', 'X-Correlation-Id'],
     credentials: true,
     maxAge: 86400,
   };
   app.enableCors(corsOptions);
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const correlationId = resolveCorrelationIdFromRequest(req);
+    req.correlationId = correlationId;
+    res.setHeader(CORRELATION_HEADER, correlationId);
+    next();
+  });
 
   app.useWebSocketAdapter(new IoAdapter(app));
   app.useGlobalFilters(new AllExceptionsFilter());

@@ -77,6 +77,15 @@ export default function ChatsTabScreen() {
     [router],
   );
 
+  const openNewConversationMenu = useCallback(() => {
+    Alert.alert("Bắt đầu", "Chọn người để nhắn tin hoặc tạo nhóm.", [
+      { text: "Trò chuyện mới", onPress: () => router.push("/main/start-conversation") },
+      { text: "Tạo nhóm", onPress: () => router.push("/main/group/create") },
+      { text: "Tìm kiếm", onPress: () => router.push("/main/search") },
+      { text: "Hủy", style: "cancel" },
+    ]);
+  }, [router]);
+
   const headerRight = (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
       <Pressable
@@ -90,12 +99,7 @@ export default function ChatsTabScreen() {
       <Pressable
         accessibilityLabel="Tạo mới"
         hitSlop={8}
-        onPress={() =>
-          Alert.alert("Tạo mới", undefined, [
-            { text: "Tạo nhóm", onPress: () => router.push("/main/group/create") },
-            { text: "Hủy", style: "cancel" },
-          ])
-        }
+        onPress={openNewConversationMenu}
         style={({ pressed }) => ({ opacity: pressed ? 0.65 : 1, padding: spacing.xs })}
       >
         <Ionicons name="add-outline" size={22} color={colors.primary} />
@@ -183,7 +187,7 @@ export default function ChatsTabScreen() {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Soạn tin nhắn"
-        onPress={() => {}}
+        onPress={openNewConversationMenu}
         style={({ pressed }) => ({
           position: "absolute",
           right: spacing.md,

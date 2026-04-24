@@ -1,6 +1,11 @@
 import { apiFetchJson } from "@/lib/api/server";
 import type { WebProfileUser } from "@/lib/types/profile";
-import type { ApiFriendListEntry, ApiIncomingRequest, ApiOutgoingRequest } from "@/lib/friends/api-dtos";
+import type {
+  ApiBlockedListEntry,
+  ApiFriendListEntry,
+  ApiIncomingRequest,
+  ApiOutgoingRequest,
+} from "@/lib/friends/api-dtos";
 import { getSocialApiContext } from "@/lib/friends/social-api-context";
 import type { Friend, FriendRequest, ProfileUser } from "@/lib/types/social";
 import { mapApiFriend, mapIncomingRequest, mapOutgoingRequest } from "@/lib/friends/map-api-social";
@@ -25,6 +30,7 @@ export type FriendsPageInitial =
       friends: Friend[];
       error: string | null;
       selfProfile: ProfileUser;
+      incomingRequestCount: number;
     };
 
 export async function loadFriendsPageInitial(): Promise<FriendsPageInitial> {
@@ -47,16 +53,21 @@ export async function loadFriendsPageInitial(): Promise<FriendsPageInitial> {
         isSelf: true,
         relationshipStatus: "self",
       },
+      incomingRequestCount: 0,
     };
   }
 
   try {
-    const { friends: raw } = await apiFetchJson<{ friends: ApiFriendListEntry[] }>("/friends");
+    const [friendsRes, incomingRes] = await Promise.all([
+      apiFetchJson<{ friends: ApiFriendListEntry[] }>("/friends"),
+      apiFetchJson<{ requests: ApiIncomingRequest[] }>("/friends/requests/incoming"),
+    ]);
     return {
       source: "api",
-      friends: raw.map(mapApiFriend),
+      friends: friendsRes.friends.map(mapApiFriend),
       error: null,
       selfProfile,
+      incomingRequestCount: incomingRes.requests?.length ?? 0,
     };
   } catch (e) {
     return {
@@ -64,6 +75,7 @@ export async function loadFriendsPageInitial(): Promise<FriendsPageInitial> {
       friends: [],
       error: e instanceof Error ? e.message : "Không tải được danh sách bạn bè.",
       selfProfile,
+      incomingRequestCount: 0,
     };
   }
 }
@@ -76,6 +88,25 @@ export type FriendRequestsPageInitial =
       outgoing: FriendRequest[];
       error: string | null;
     };
+
+export type BlockedPageInitial =
+  | { source: "mock" }
+  | { source: "api"; blocked: ApiBlockedListEntry[]; error: string | null };
+
+export async function loadBlockedPageInitial(): Promise<BlockedPageInitial> {
+  const ctx = await getSocialApiContext();
+  if (!ctx.ok) return { source: "mock" };
+  try {
+    const { blocks } = await apiFetchJson<{ blocks: ApiBlockedListEntry[] }>("/blocks");
+    return { source: "api", blocked: blocks ?? [], error: null };
+  } catch (e) {
+    return {
+      source: "api",
+      blocked: [],
+      error: e instanceof Error ? e.message : "Không tải được danh sách chặn.",
+    };
+  }
+}
 
 export async function loadFriendRequestsPageInitial(): Promise<FriendRequestsPageInitial> {
   const ctx = await getSocialApiContext();

@@ -10,6 +10,7 @@ import {
   MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
@@ -50,6 +51,7 @@ import { WsPayloadValidationError, parseWsPayload } from './ws-payload.util';
  * - `message:updated` — `{ message }` after recall/delete actions mutate a message.
  * - `typing:update` — `{ conversationId, userId, isTyping }`.
  * - `message:delivered` / `message:seen` — receipt payloads from {@link MessageReceiptsService}.
+ * - `group:updated` / `group:members_added` / `group:members_removed` / `group:dissolved` — group roster/metadata (last one: owner deleted the conversation).
  * - `error` — validation or HTTP-shaped failures for the triggering event.
  */
 @SkipThrottle()
@@ -59,6 +61,7 @@ import { WsPayloadValidationError, parseWsPayload } from './ws-payload.util';
 })
 export class ChatGateway
   implements
+    OnGatewayInit,
     OnGatewayConnection,
     OnGatewayDisconnect,
     OnModuleInit,
@@ -88,6 +91,12 @@ export class ChatGateway
     this.groupEventsSub = this.groupDomainEvents.events$.subscribe((ev) => {
       const room = conversationRoomId(ev.conversationId);
       switch (ev.type) {
+        case 'group.created':
+          this.server.to(room).emit('group.created', {
+            conversationId: ev.conversationId,
+            title: ev.title,
+          });
+          break;
         case 'group.updated':
           this.server.to(room).emit('group:updated', {
             conversationId: ev.conversationId,
@@ -106,10 +115,36 @@ export class ChatGateway
             userId: ev.userId,
           });
           break;
-        case 'group.system_message':
-          this.server.to(room).emit('conversation:system_message', {
+        case 'group.dissolved':
+          this.server.to(room).emit('group:dissolved', {
             conversationId: ev.conversationId,
-            messageId: ev.messageId,
+          });
+          break;
+        case 'group.join_request_created':
+          this.server.to(room).emit('group.join_request_created', {
+            conversationId: ev.conversationId,
+            userId: ev.userId,
+          });
+          break;
+        case 'group.join_request_decided':
+          this.server.to(room).emit('group.join_request_decided', {
+            conversationId: ev.conversationId,
+            userId: ev.userId,
+            approved: ev.approved,
+          });
+          break;
+        case 'group.member_role_updated':
+          this.server.to(room).emit('group.member_role_updated', {
+            conversationId: ev.conversationId,
+            userId: ev.userId,
+            role: ev.role,
+          });
+          break;
+        case 'group.ownership_transferred':
+          this.server.to(room).emit('group.ownership_transferred', {
+            conversationId: ev.conversationId,
+            actorUserId: ev.actorUserId,
+            toUserId: ev.toUserId,
           });
           break;
         default: {
@@ -148,24 +183,47 @@ export class ChatGateway
     this.messageEventsSub?.unsubscribe();
   }
 
+  /**
+   * Authenticate in Socket.IO middleware so the client cannot emit application
+   * events until {@link ChatSocketData.user} is set (avoids races with async
+   * {@link handleConnection}).
+   */
+  afterInit(server: Server): void {
+    server.use(async (socket, next) => {
+      try {
+        const ctx = await this.socketAuth.authenticateHandshake(socket.handshake);
+        const data = socket.data as ChatSocketData;
+        data.user = ctx.user;
+        data.deviceId = ctx.deviceId;
+        data.correlationId = ctx.correlationId;
+        data.conversationRooms = new Set<string>();
+        next();
+      } catch (err) {
+        this.logger.debug(`Socket auth failed: ${String(err)}`);
+        next(new Error('Unauthorized'));
+      }
+    });
+  }
+
   async handleConnection(client: Socket): Promise<void> {
     try {
       this.flushPresenceStale();
       this.flushTypingStale();
-      const ctx = await this.socketAuth.authenticateHandshake(client.handshake);
-      const data = client.data as ChatSocketData;
-      data.user = ctx.user;
-      data.deviceId = ctx.deviceId;
-      data.conversationRooms = new Set<string>();
+      const user = (client.data as ChatSocketData).user;
+      if (!user) {
+        this.logger.warn('Socket connected without authenticated user');
+        client.disconnect(true);
+        return;
+      }
 
-      await client.join(userDirectRoomId(ctx.user.id));
+      await client.join(userDirectRoomId(user.id));
 
-      const { becameOnline } = this.presence.addSocket(ctx.user.id, client.id);
+      const { becameOnline } = this.presence.addSocket(user.id, client.id);
       if (becameOnline) {
-        void this.broadcastPresenceToFriends(ctx.user.id, true);
+        void this.broadcastPresenceToFriends(user.id, true);
       }
     } catch (err) {
-      this.logger.debug(`Socket auth failed: ${String(err)}`);
+      this.logger.warn(`Socket connection setup failed: ${String(err)}`);
       client.disconnect(true);
     }
   }
@@ -208,7 +266,7 @@ export class ChatGateway
     try {
       const user = this.requireUser(client);
       const dto = parseWsPayload(ConversationJoinDto, body);
-      await this.membership.requireMember(user.id, dto.conversationId);
+      await this.membership.requireActiveMember(user.id, dto.conversationId);
       const room = conversationRoomId(dto.conversationId);
       await client.join(room);
       const data = client.data as ChatSocketData;
@@ -216,7 +274,12 @@ export class ChatGateway
       data.conversationRooms.add(dto.conversationId);
       return { ok: true, conversationId: dto.conversationId };
     } catch (err) {
-      this.emitStructuredError(client, 'conversation:join', err);
+      this.emitStructuredError(
+        client,
+        'conversation:join',
+        err,
+        this.correlationIdFromPayload(body),
+      );
       return { ok: false };
     }
   }
@@ -242,7 +305,12 @@ export class ChatGateway
 
       return { ok: true };
     } catch (err) {
-      this.emitStructuredError(client, 'message:send', err);
+      this.emitStructuredError(
+        client,
+        'message:send',
+        err,
+        this.correlationIdFromPayload(body),
+      );
       return { ok: false };
     }
   }
@@ -265,7 +333,12 @@ export class ChatGateway
         .emit('message:delivered', payload);
       return { ok: true };
     } catch (err) {
-      this.emitStructuredError(client, 'message:delivered', err);
+      this.emitStructuredError(
+        client,
+        'message:delivered',
+        err,
+        this.correlationIdFromPayload(body),
+      );
       return { ok: false };
     }
   }
@@ -288,7 +361,12 @@ export class ChatGateway
         .emit('message:seen', payload);
       return { ok: true };
     } catch (err) {
-      this.emitStructuredError(client, 'message:seen', err);
+      this.emitStructuredError(
+        client,
+        'message:seen',
+        err,
+        this.correlationIdFromPayload(body),
+      );
       return { ok: false };
     }
   }
@@ -302,20 +380,24 @@ export class ChatGateway
       this.flushTypingStale();
       const user = this.requireUser(client);
       const dto = parseWsPayload(TypingSocketDto, body);
-      await this.membership.requireMember(user.id, dto.conversationId);
-      const started = this.typing.startTyping(dto.conversationId, user.id);
-      if (started) {
-        this.server
-          .to(conversationRoomId(dto.conversationId))
-          .emit('typing:update', {
-            conversationId: dto.conversationId,
-            userId: user.id,
-            isTyping: true,
-          });
-      }
+      await this.membership.requireActiveMember(user.id, dto.conversationId);
+      /** Always broadcast so peers can refresh TTL (typing UI), not only on first key. */
+      this.typing.startTyping(dto.conversationId, user.id);
+      this.server
+        .to(conversationRoomId(dto.conversationId))
+        .emit('typing:update', {
+          conversationId: dto.conversationId,
+          userId: user.id,
+          isTyping: true,
+        });
       return { ok: true };
     } catch (err) {
-      this.emitStructuredError(client, 'typing:start', err);
+      this.emitStructuredError(
+        client,
+        'typing:start',
+        err,
+        this.correlationIdFromPayload(body),
+      );
       return { ok: false };
     }
   }
@@ -329,7 +411,7 @@ export class ChatGateway
       this.flushTypingStale();
       const user = this.requireUser(client);
       const dto = parseWsPayload(TypingSocketDto, body);
-      await this.membership.requireMember(user.id, dto.conversationId);
+      await this.membership.requireActiveMember(user.id, dto.conversationId);
       const stopped = this.typing.stopTyping(dto.conversationId, user.id);
       if (stopped) {
         this.server
@@ -342,7 +424,12 @@ export class ChatGateway
       }
       return { ok: true };
     } catch (err) {
-      this.emitStructuredError(client, 'typing:stop', err);
+      this.emitStructuredError(
+        client,
+        'typing:stop',
+        err,
+        this.correlationIdFromPayload(body),
+      );
       return { ok: false };
     }
   }
@@ -367,7 +454,12 @@ export class ChatGateway
       });
       return { ok: true };
     } catch (err) {
-      this.emitStructuredError(client, 'presence:heartbeat', err);
+      this.emitStructuredError(
+        client,
+        'presence:heartbeat',
+        err,
+        this.correlationIdFromPayload(body),
+      );
       return { ok: false };
     }
   }
@@ -384,12 +476,14 @@ export class ChatGateway
     client: Socket,
     sourceEvent: string,
     err: unknown,
+    correlationId?: string,
   ): void {
     if (err instanceof WsPayloadValidationError) {
       client.emit('error', {
         code: 'VALIDATION_ERROR',
         message: err.message,
         sourceEvent,
+        correlationId: correlationId ?? null,
         at: new Date().toISOString(),
       });
       return;
@@ -412,6 +506,7 @@ export class ChatGateway
         code: `HTTP_${status}`,
         message,
         sourceEvent,
+        correlationId: correlationId ?? null,
         at: new Date().toISOString(),
       });
       return;
@@ -421,8 +516,20 @@ export class ChatGateway
       code: 'INTERNAL_ERROR',
       message: 'Unexpected error',
       sourceEvent,
+      correlationId: correlationId ?? null,
       at: new Date().toISOString(),
     });
+  }
+
+  private correlationIdFromPayload(payload: unknown): string | undefined {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return undefined;
+    }
+    const raw = (payload as Record<string, unknown>).correlationId;
+    if (typeof raw === 'string' && raw.trim().length > 0) {
+      return raw.trim();
+    }
+    return undefined;
   }
 
   private async broadcastPresenceToFriends(

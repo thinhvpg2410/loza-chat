@@ -27,17 +27,33 @@ export async function sendMessageWithAttachmentsApi(payload: {
   return data;
 }
 
+export type ReactionSummaryDto = {
+  counts: { reaction: string; count: number }[];
+  mine: string[];
+};
+
 export async function addMessageReactionApi(
   messageId: string,
   reaction: string,
 ): Promise<{
-  summary: { counts: { reaction: string; count: number }[]; mine: string[] };
+  summary: ReactionSummaryDto;
   alreadyExists: boolean;
 }> {
   const { data } = await apiClient.post<{
-    summary: { counts: { reaction: string; count: number }[]; mine: string[] };
+    summary: ReactionSummaryDto;
     alreadyExists: boolean;
   }>(`/messages/${messageId}/reactions`, { reaction });
+  return data;
+}
+
+export async function removeMessageReactionApi(
+  messageId: string,
+  reaction: string,
+): Promise<{ summary: ReactionSummaryDto }> {
+  const encoded = encodeURIComponent(reaction);
+  const { data } = await apiClient.delete<{ summary: ReactionSummaryDto }>(
+    `/messages/${messageId}/reactions/${encoded}`,
+  );
   return data;
 }
 
@@ -64,4 +80,8 @@ export async function forwardMessageApi(payload: {
     },
   );
   return data;
+}
+
+export async function hideMessageForSelfApi(messageId: string): Promise<void> {
+  await apiClient.post(`/messages/${messageId}/hide-self`, {});
 }

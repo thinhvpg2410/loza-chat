@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { AppLogo } from "@/components/common/app-logo";
 import { IconChat, IconContacts, IconGrid, IconSettings } from "@/components/chat/icons";
 import { SignOutButton } from "@/features/auth/sign-out-button";
+import { fetchSocialNavCountsAction } from "@/features/friends/friends-actions";
 
 type NavItem = {
   href: string;
@@ -42,6 +44,18 @@ const items: NavItem[] = [
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const [friendRequestBadge, setFriendRequestBadge] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchSocialNavCountsAction().then((r) => {
+      if (cancelled || !r.ok) return;
+      setFriendRequestBadge(r.incomingFriendRequests);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname]);
 
   return (
     <aside
@@ -55,6 +69,7 @@ export function AppSidebar() {
         {items.map((item) => {
           const Icon = item.icon;
           const active = item.match(pathname);
+          const showFriendsReqBadge = item.href === "/friends" && friendRequestBadge > 0;
           return (
             <Link
               key={item.href}
@@ -62,11 +77,16 @@ export function AppSidebar() {
               title={item.label}
               className={
                 active
-                  ? "flex h-11 w-11 items-center justify-center rounded-md bg-white/20 text-white"
-                  : "flex h-11 w-11 items-center justify-center rounded-md text-white/85 transition hover:bg-white/10 hover:text-white"
+                  ? "relative flex h-11 w-11 items-center justify-center rounded-md bg-white/20 text-white"
+                  : "relative flex h-11 w-11 items-center justify-center rounded-md text-white/85 transition hover:bg-white/10 hover:text-white"
               }
             >
               <Icon className="h-6 w-6" aria-hidden />
+              {showFriendsReqBadge ? (
+                <span className="absolute -right-0.5 -top-0.5 flex min-h-[16px] min-w-[16px] items-center justify-center rounded-full bg-red-500 px-0.5 text-[9px] font-bold leading-none text-white ring-2 ring-[var(--zalo-blue)]">
+                  {friendRequestBadge > 99 ? "99+" : friendRequestBadge}
+                </span>
+              ) : null}
               <span className="sr-only">{item.label}</span>
             </Link>
           );

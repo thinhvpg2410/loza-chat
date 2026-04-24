@@ -53,10 +53,9 @@ export class ConversationsController {
 
   @Post('direct')
   @ApiOperation({
-    summary:
-      'Create or return the direct conversation with a friend (idempotent)',
+    summary: 'Create or return the direct conversation with another user (idempotent)',
     description:
-      'Requires an accepted friendship and no block in either direction. Use after search/profile confirms you may chat (e.g. `relationshipStatus: friend`). Returns the same conversation id for a given pair.',
+      'Requires an active target user and no block in either direction. Non-friends may open a thread; clients typically show a stranger warning banner. Returns the same conversation id for a given pair.',
   })
   @ApiCreatedResponse({ type: ConversationDetailWrapperOpenApiDto })
   @ApiResponse({ status: 400, type: ApiErrorEnvelopeDto })

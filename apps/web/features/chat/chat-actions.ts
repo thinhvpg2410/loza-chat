@@ -6,8 +6,10 @@ import { LOZA_ACCESS_COOKIE } from "@/lib/auth/constants";
 import { decodeJwtSub } from "@/lib/auth/decode-jwt-sub";
 import { getWebApiSession } from "@/lib/auth/web-api-session";
 import type { ApiConversationListItem, ApiMessageWithReceipt } from "@/lib/chat/api-dtos";
+import { attachmentReadUrl } from "@/lib/chat/attachment-public-url";
 import { mapConversationListItem } from "@/lib/chat/map-api-conversation";
 import { mapApiMessagesToChatMessages, mapSingleApiMessage } from "@/lib/chat/map-api-message";
+import type { ApiAttachment } from "@/lib/chat/api-dtos";
 import type { Conversation, Message } from "@/lib/types/chat";
 
 export type ChatRealtimeSessionResult =
@@ -85,13 +87,17 @@ export type ListConversationsResult =
   | { ok: true; conversations: Conversation[] }
   | { ok: false; error: string };
 
-export async function fetchConversationsListAction(): Promise<ListConversationsResult> {
+export async function fetchConversationsListAction(
+  type?: "direct" | "group",
+): Promise<ListConversationsResult> {
   const gate = await assertApiChatEnabled();
   if (!gate.ok) return { ok: false, error: gate.error };
 
   try {
+    const path =
+      type !== undefined ? `/conversations?type=${encodeURIComponent(type)}` : "/conversations";
     const { conversations } = await apiFetchJson<{ conversations: ApiConversationListItem[] }>(
-      "/conversations",
+      path,
     );
     return { ok: true, conversations: conversations.map(mapConversationListItem) };
   } catch (e) {
@@ -287,6 +293,7 @@ export async function initChatUploadAction(input: {
   uploadType: "image" | "file" | "voice" | "video" | "other";
   width?: number;
   height?: number;
+  durationSeconds?: number;
 }): Promise<ChatUploadInitResult> {
   const gate = await assertApiChatEnabled();
   if (!gate.ok) return { ok: false, error: gate.error };
@@ -304,6 +311,7 @@ export async function initChatUploadAction(input: {
         uploadType: input.uploadType,
         ...(input.width !== undefined ? { width: input.width } : {}),
         ...(input.height !== undefined ? { height: input.height } : {}),
+        ...(input.durationSeconds !== undefined ? { durationSeconds: input.durationSeconds } : {}),
       }),
     });
 
@@ -334,7 +342,7 @@ export async function initChatUploadAction(input: {
 }
 
 export type CompleteChatUploadResult =
-  | { ok: true; attachmentId: string }
+  | { ok: true; attachmentId: string; publicReadUrl: string }
   | { ok: false; error: string };
 
 export async function completeChatUploadAction(
@@ -344,15 +352,32 @@ export async function completeChatUploadAction(
   if (!gate.ok) return { ok: false, error: gate.error };
 
   try {
-    const done = await apiFetchJson<{ attachment: { id: string } }>(
+    const done = await apiFetchJson<{ attachment: ApiAttachment }>(
       `/uploads/${uploadSessionId}/complete`,
       { method: "POST" },
     );
-    return { ok: true, attachmentId: done.attachment.id };
+    const publicReadUrl = attachmentReadUrl(gate.base, done.attachment);
+    return { ok: true, attachmentId: done.attachment.id, publicReadUrl };
   } catch (e) {
     return {
       ok: false,
       error: e instanceof Error ? e.message : "Không hoàn tất upload.",
+    };
+  }
+}
+
+export type HideMessageSelfResult = { ok: true } | { ok: false; error: string };
+
+export async function hideChatMessageForSelfAction(messageId: string): Promise<HideMessageSelfResult> {
+  const gate = await assertApiChatEnabled();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  try {
+    await apiFetchJson(`/messages/${messageId}/hide-self`, { method: "POST", body: "{}" });
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Không ẩn được tin nhắn.",
     };
   }
 }
@@ -399,6 +424,51 @@ export async function sendChatMessageWithAttachmentsAction(input: {
     return {
       ok: false,
       error: e instanceof Error ? e.message : "Không gửi được tệp đính kèm.",
+    };
+  }
+}
+
+export type MessageReactionMutationResult =
+  | { ok: true; summary: ApiMessageWithReceipt["reactions"] }
+  | { ok: false; error: string };
+
+export async function addChatMessageReactionAction(
+  messageId: string,
+  reaction: string,
+): Promise<MessageReactionMutationResult> {
+  const gate = await assertApiChatEnabled();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  try {
+    const res = await apiFetchJson<{ summary: ApiMessageWithReceipt["reactions"]; alreadyExists?: boolean }>(
+      `/messages/${messageId}/reactions`,
+      { method: "POST", body: JSON.stringify({ reaction }) },
+    );
+    return { ok: true, summary: res.summary };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Không gửi được cảm xúc.",
+    };
+  }
+}
+
+export async function removeChatMessageReactionAction(
+  messageId: string,
+  reaction: string,
+): Promise<MessageReactionMutationResult> {
+  const gate = await assertApiChatEnabled();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  const encoded = encodeURIComponent(reaction);
+  try {
+    const res = await apiFetchJson<{ summary: ApiMessageWithReceipt["reactions"] }>(
+      `/messages/${messageId}/reactions/${encoded}`,
+      { method: "DELETE" },
+    );
+    return { ok: true, summary: res.summary };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Không xóa được cảm xúc.",
     };
   }
 }
