@@ -43,7 +43,10 @@ export type MessageListHandle = {
   scrollToMessage: (messageId: string) => void;
 };
 
-export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
+export const MessageList = forwardRef<
+  MessageListHandle,
+  MessageListProps
+>(function MessageList(
   {
     messages,
     threadKey,
@@ -62,6 +65,8 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   ref,
 ) {
   const listRef = useRef<FlatList<MessageFeedItem>>(null);
+  const feed = useMemo(() => buildMessageFeed(messages), [messages]);
+
   useImperativeHandle(
     ref,
     () => ({
@@ -87,7 +92,6 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   const contentHeightRef = useRef(0);
   const loadOlderCooldownRef = useRef<number>(0);
 
-  const feed = useMemo(() => buildMessageFeed(messages), [messages]);
   const reactionSignature = useMemo(
     () =>
       messages
