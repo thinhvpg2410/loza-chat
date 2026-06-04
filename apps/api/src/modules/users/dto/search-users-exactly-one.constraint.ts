@@ -15,9 +15,7 @@ type SearchQueryShape = {
 };
 
 @ValidatorConstraint({ name: 'SearchUsersExactlyOne', async: false })
-export class SearchUsersExactlyOneConstraint
-  implements ValidatorConstraintInterface
-{
+export class SearchUsersExactlyOneConstraint implements ValidatorConstraintInterface {
   validate(_: unknown, args: ValidationArguments): boolean {
     const o = args.object as SearchQueryShape;
     const n = [

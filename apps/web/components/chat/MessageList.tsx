@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { Message, MessageReaction } from "@/lib/types/chat";
 import { formatMessageDateSeparator } from "@/lib/format-message-date";
 import { getGroupPosition } from "@/lib/message-grouping";
@@ -43,9 +43,11 @@ export function MessageList({
   const [visibleStart, setVisibleStart] = useState(() =>
     sorted.length > 300 ? sorted.length - 220 : 0,
   );
-  useEffect(() => {
+  const [prevMessages, setPrevMessages] = useState(messages);
+  if (messages !== prevMessages) {
+    setPrevMessages(messages);
     setVisibleStart(sorted.length > 300 ? sorted.length - 220 : 0);
-  }, [messages]);
+  }
   const visibleSorted = useMemo(
     () => sorted.slice(Math.max(0, Math.min(visibleStart, sorted.length))),
     [sorted, visibleStart],

@@ -26,6 +26,10 @@ import { MessagesService } from './messages.service';
     MessageDomainEventsService,
     ConversationRateLimitService,
   ],
-  exports: [MessagesService, MessageReceiptsService, MessageDomainEventsService],
+  exports: [
+    MessagesService,
+    MessageReceiptsService,
+    MessageDomainEventsService,
+  ],
 })
 export class MessagesModule {}

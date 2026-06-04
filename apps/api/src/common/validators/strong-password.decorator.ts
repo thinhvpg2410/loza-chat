@@ -1,8 +1,4 @@
-import {
-  registerDecorator,
-  ValidationArguments,
-  ValidationOptions,
-} from 'class-validator';
+import { registerDecorator, ValidationOptions } from 'class-validator';
 
 function isStrongPasswordValue(value: unknown): boolean {
   if (typeof value !== 'string') {
@@ -34,10 +30,10 @@ export function IsStrongPassword(validationOptions?: ValidationOptions) {
       propertyName,
       options: validationOptions,
       validator: {
-        validate(value: unknown, _args: ValidationArguments) {
+        validate(value: unknown) {
           return isStrongPasswordValue(value);
         },
-        defaultMessage(_args: ValidationArguments) {
+        defaultMessage() {
           return 'Password must be 8–128 characters and include uppercase, lowercase, a number, and a special character';
         },
       },

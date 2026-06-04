@@ -69,9 +69,7 @@ export class DevicesService {
     return rows.map((d) => ({
       ...d,
       isCurrent:
-        trimmed !== undefined &&
-        trimmed.length > 0 &&
-        d.deviceId === trimmed,
+        trimmed !== undefined && trimmed.length > 0 && d.deviceId === trimmed,
     }));
   }
 

@@ -111,6 +111,20 @@ export function GroupsWorkspace() {
 
   const conversationIds = useMemo(() => groups.map((g) => g.id), [groups]);
 
+  const [prevSelectedId, setPrevSelectedId] = useState<string | null>(null);
+  const [prevCanModerate, setPrevCanModerate] = useState(false);
+
+  if (selectedId !== prevSelectedId || permissions.canModerateMembers !== prevCanModerate) {
+    setPrevSelectedId(selectedId);
+    setPrevCanModerate(permissions.canModerateMembers);
+    if (!selectedId || !permissions.canModerateMembers) {
+      setJoinQueue([]);
+    }
+    if (!selectedId) {
+      setDetail(null);
+    }
+  }
+
   const refreshList = useCallback(async () => {
     const r = await fetchConversationsListAction("group");
     if (!r.ok) {
@@ -161,9 +175,10 @@ export function GroupsWorkspace() {
 
   useEffect(() => {
     let cancelled = false;
-    setListLoading(true);
-    void refreshList().finally(() => {
-      if (!cancelled) setListLoading(false);
+    queueMicrotask(() => {
+      void refreshList().finally(() => {
+        if (!cancelled) setListLoading(false);
+      });
     });
     return () => {
       cancelled = true;
@@ -185,21 +200,19 @@ export function GroupsWorkspace() {
   }, [createOpen, addMemberOpen]);
 
   useEffect(() => {
-    if (!selectedId) {
-      setDetail(null);
-      setJoinQueue([]);
-      return;
-    }
+    if (!selectedId) return;
     let cancelled = false;
-    setDetailLoading(true);
-    void fetchGroupDetailAction(selectedId).then((r) => {
-      if (cancelled) return;
-      setDetailLoading(false);
-      if (r.ok) setDetail(r.group);
-      else {
-        setDetail(null);
-        setActionError(r.error);
-      }
+    queueMicrotask(() => {
+      setDetailLoading(true);
+      void fetchGroupDetailAction(selectedId).then((r) => {
+        if (cancelled) return;
+        setDetailLoading(false);
+        if (r.ok) setDetail(r.group);
+        else {
+          setDetail(null);
+          setActionError(r.error);
+        }
+      });
     });
     return () => {
       cancelled = true;
@@ -207,17 +220,16 @@ export function GroupsWorkspace() {
   }, [selectedId]);
 
   useEffect(() => {
-    if (!selectedId || !permissions.canModerateMembers) {
-      setJoinQueue([]);
-      return;
-    }
+    if (!selectedId || !permissions.canModerateMembers) return;
     let cancelled = false;
-    setJoinQueueLoading(true);
-    void fetchGroupJoinQueueAction(selectedId).then((r) => {
-      if (cancelled) return;
-      setJoinQueueLoading(false);
-      if (r.ok) setJoinQueue(r.items);
-      else setJoinQueue([]);
+    queueMicrotask(() => {
+      setJoinQueueLoading(true);
+      void fetchGroupJoinQueueAction(selectedId).then((r) => {
+        if (cancelled) return;
+        setJoinQueueLoading(false);
+        if (r.ok) setJoinQueue(r.items);
+        else setJoinQueue([]);
+      });
     });
     return () => {
       cancelled = true;

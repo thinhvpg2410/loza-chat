@@ -16,11 +16,13 @@ export function assertE164Phone(phone: string): string {
   return t;
 }
 
-export function parseLoginIdentifier(identifier: string): {
-  kind: 'email';
-  email: string;
-  phoneNumber: null;
-} | { kind: 'phone'; email: null; phoneNumber: string } {
+export function parseLoginIdentifier(identifier: string):
+  | {
+      kind: 'email';
+      email: string;
+      phoneNumber: null;
+    }
+  | { kind: 'phone'; email: null; phoneNumber: string } {
   const trimmed = identifier.trim();
   if (trimmed.length === 0) {
     throw new BadRequestException('identifier is required');

@@ -151,11 +151,15 @@ export class TokenService {
     try {
       decoded = await this.jwtService.verifyAsync(token, { secret });
     } catch {
-      throw new UnauthorizedException(AuthErrorMessage.DEVICE_VERIFICATION_EXPIRED);
+      throw new UnauthorizedException(
+        AuthErrorMessage.DEVICE_VERIFICATION_EXPIRED,
+      );
     }
     const p = this.parseLoginDeviceChallengePayload(decoded);
     if (!p) {
-      throw new UnauthorizedException(AuthErrorMessage.DEVICE_VERIFICATION_EXPIRED);
+      throw new UnauthorizedException(
+        AuthErrorMessage.DEVICE_VERIFICATION_EXPIRED,
+      );
     }
     return p;
   }
@@ -191,10 +195,8 @@ export class TokenService {
         : typeof o.deviceName === 'string'
           ? o.deviceName
           : null;
-    const otpPhone =
-      typeof o.otpPhone === 'string' ? o.otpPhone : null;
-    const otpEmail =
-      typeof o.otpEmail === 'string' ? o.otpEmail : null;
+    const otpPhone = typeof o.otpPhone === 'string' ? o.otpPhone : null;
+    const otpEmail = typeof o.otpEmail === 'string' ? o.otpEmail : null;
     if (o.otpChannel === 'phone') {
       if (!otpPhone || otpPhone.length === 0) {
         return null;

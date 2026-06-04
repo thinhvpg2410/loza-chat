@@ -213,7 +213,7 @@ export default function GroupInfoScreen() {
   const avatarUrl = USE_API_MOCK ? mockAvatarUrl : (apiDetail?.avatarUrl ?? avatarP);
 
   const members = USE_API_MOCK ? mockMembers : (apiDetail?.members ?? []).map(mapDtoToRow);
-  const pendingDtos = !USE_API_MOCK && apiDetail ? apiDetail.pendingMembers : [];
+  const pendingDtos = useMemo(() => (!USE_API_MOCK && apiDetail ? apiDetail.pendingMembers : []), [apiDetail]);
 
   const memberIds = useMemo(() => new Set(members.map((m) => m.id)), [members]);
   const pendingIds = useMemo(() => new Set(pendingDtos.map((p) => p.userId)), [pendingDtos]);
@@ -228,7 +228,7 @@ export default function GroupInfoScreen() {
       }));
     }
     return apiFriends.filter((f) => !memberIds.has(f.id) && !pendingIds.has(f.id));
-  }, [USE_API_MOCK, apiFriends, memberIds, pendingIds]);
+  }, [apiFriends, memberIds, pendingIds]);
 
   const canAddMembersApi = useMemo(() => {
     if (USE_API_MOCK || !apiDetail) return false;
@@ -282,7 +282,7 @@ export default function GroupInfoScreen() {
     } catch (e) {
       Alert.alert("Thêm thành viên", getApiErrorMessage(e));
     }
-  }, [USE_API_MOCK, addSelected, id, refreshApiDetail]);
+  }, [addSelected, id, refreshApiDetail]);
 
   const onRemoveMemberMock = useCallback((memberId: string) => {
     setMockMembers((prev) => prev.filter((m) => m.id !== memberId));
@@ -410,7 +410,7 @@ export default function GroupInfoScreen() {
         }
       })();
     },
-    [USE_API_MOCK, id, refreshApiDetail],
+    [id, refreshApiDetail],
   );
 
   const onReject = useCallback(
@@ -425,7 +425,7 @@ export default function GroupInfoScreen() {
         }
       })();
     },
-    [USE_API_MOCK, id, refreshApiDetail],
+    [id, refreshApiDetail],
   );
 
   const otherActiveMemberCount = useMemo(() => {
@@ -497,7 +497,7 @@ export default function GroupInfoScreen() {
         },
       },
     ]);
-  }, [USE_API_MOCK, apiDetail, id, otherActiveMemberCount, router, viewerId]);
+  }, [apiDetail, id, otherActiveMemberCount, router, viewerId]);
 
   const dissolveGroup = useCallback(() => {
     if (USE_API_MOCK || apiDetail?.myRole !== "owner") return;
@@ -522,7 +522,7 @@ export default function GroupInfoScreen() {
         },
       ],
     );
-  }, [USE_API_MOCK, apiDetail?.myRole, id, router]);
+  }, [apiDetail?.myRole, id, router]);
 
   const onSearch = useCallback(() => {
     Alert.alert("Tìm trong nhóm", "Kết nối tìm kiếm khi có API.");
@@ -532,7 +532,7 @@ export default function GroupInfoScreen() {
     if (USE_API_MOCK || !permissions?.canRenameGroup) return;
     setRenameDraft(title);
     setRenameOpen(true);
-  }, [USE_API_MOCK, permissions?.canRenameGroup, title]);
+  }, [permissions?.canRenameGroup, title]);
 
   const applyRenameGroup = useCallback(async () => {
     if (USE_API_MOCK || !id) return;
@@ -555,7 +555,7 @@ export default function GroupInfoScreen() {
     } finally {
       setTitleBusy(false);
     }
-  }, [USE_API_MOCK, apiDetail?.title, id, renameDraft]);
+  }, [apiDetail?.title, id, renameDraft]);
 
   const changeGroupAvatar = useCallback(async () => {
     if (USE_API_MOCK || !id || !permissions?.canEditGroupAvatar) return;
@@ -592,7 +592,7 @@ export default function GroupInfoScreen() {
     } finally {
       setAvatarBusy(false);
     }
-  }, [USE_API_MOCK, id, permissions?.canEditGroupAvatar, refreshApiDetail]);
+  }, [id, permissions?.canEditGroupAvatar, refreshApiDetail]);
 
   const showAddControl = USE_API_MOCK || canAddMembersApi;
 

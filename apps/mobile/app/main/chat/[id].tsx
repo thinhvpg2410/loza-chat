@@ -393,7 +393,7 @@ export default function ChatRoomScreen() {
   const messagesRef = useRef<ChatRoomMessage[]>(messages);
   messagesRef.current = messages;
   const offlineQueueRef = useRef<
-    Array<{ localId: string; body: string; replyToMessageId?: string; attempts: number }>
+    { localId: string; body: string; replyToMessageId?: string; attempts: number }[]
   >([]);
   const messageListRef = useRef<MessageListHandle | null>(null);
 
@@ -1211,7 +1211,7 @@ export default function ChatRoomScreen() {
         Alert.alert("Camera", "Placeholder — tích hợp camera sau.");
       }
     },
-    [alertCannotSend, canSendInThread, displayName, fetchConversations, id, pickFile, pickPhoto, replyingTo?.id, viewerId, voiceRecording],
+    [alertCannotSend, canSendInThread, displayName, fetchConversations, id, pickFile, pickPhoto, replyingTo?.id, viewerId, voiceRecording, stopVoiceRecording, voiceRecordingDurationSec],
   );
 
   const toggleVoiceRecording = useCallback(() => {

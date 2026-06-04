@@ -38,8 +38,9 @@ export class UsersService {
   ) {}
 
   getMe(user: AuthenticatedUser): PublicUser {
-    const { tokenDeviceId: _omit, ...rest } = user;
-    return rest;
+    const rest: Partial<AuthenticatedUser> = { ...user };
+    delete rest.tokenDeviceId;
+    return rest as PublicUser;
   }
 
   async isUsernameAvailable(
@@ -55,7 +56,10 @@ export class UsersService {
     return { available: !taken };
   }
 
-  async updateProfile(userId: string, dto: UpdateProfileDto): Promise<PublicUser> {
+  async updateProfile(
+    userId: string,
+    dto: UpdateProfileDto,
+  ): Promise<PublicUser> {
     const hasField =
       dto.displayName !== undefined ||
       dto.avatarUrl !== undefined ||
@@ -129,7 +133,10 @@ export class UsersService {
       throw new BadRequestException('Avatar must be an image MIME type');
     }
 
-    const avatarUrl = publicMediaUrlForStorageKey(this.config, session.storageKey);
+    const avatarUrl = publicMediaUrlForStorageKey(
+      this.config,
+      session.storageKey,
+    );
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: { avatarUrl },

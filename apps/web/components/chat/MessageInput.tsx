@@ -113,10 +113,12 @@ export function MessageInput({
 
   useEffect(() => {
     if (mentionItems.length === 0) {
-      setActiveMentionIndex(0);
+      queueMicrotask(() => setActiveMentionIndex(0));
       return;
     }
-    setActiveMentionIndex((prev) => Math.max(0, Math.min(prev, mentionItems.length - 1)));
+    queueMicrotask(() => {
+      setActiveMentionIndex((prev) => Math.max(0, Math.min(prev, mentionItems.length - 1)));
+    });
   }, [mentionItems.length]);
 
   const mentionWindowStart = useMemo(() => {
@@ -171,7 +173,7 @@ export function MessageInput({
         resize();
       });
     },
-    [mentionQuery, onChange, resize, value],
+    [mentionQuery, onChange, resize, value, setCaretIndex],
   );
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {

@@ -53,8 +53,8 @@ export function ActionMenu({
   useEffect(() => {
     if (!open) return;
     const firstEnabled = items.findIndex((item) => !item.disabled);
-    setActiveIndex(firstEnabled >= 0 ? firstEnabled : 0);
     queueMicrotask(() => {
+      setActiveIndex(firstEnabled >= 0 ? firstEnabled : 0);
       if (firstEnabled >= 0) itemRefs.current[firstEnabled]?.focus();
     });
     const onDoc = (e: MouseEvent) => {

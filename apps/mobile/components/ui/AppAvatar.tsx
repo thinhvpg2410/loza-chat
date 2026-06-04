@@ -1,5 +1,5 @@
 import { Image } from "expo-image";
-import { StyleSheet, View, type ViewStyle } from "react-native";
+import { View, type ViewStyle } from "react-native";
 
 import { AppText } from "@ui/AppText";
 import { avatarSizes, colors, radius, type AvatarSizeName } from "@theme";

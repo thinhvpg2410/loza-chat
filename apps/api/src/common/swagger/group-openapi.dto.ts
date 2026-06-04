@@ -1,5 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConversationMemberRole, ConversationMemberStatus } from '@prisma/client';
+import {
+  ConversationMemberRole,
+  ConversationMemberStatus,
+} from '@prisma/client';
 import { PublicUserProfileOpenApiDto } from './public-user-profile.dto';
 
 export class GroupSettingsOpenApiDto {

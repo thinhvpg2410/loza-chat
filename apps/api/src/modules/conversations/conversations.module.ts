@@ -9,11 +9,7 @@ import { ConversationsController } from './conversations.controller';
 import { ConversationsService } from './conversations.service';
 
 @Module({
-  imports: [
-    AuthModule,
-    FriendsModule,
-    forwardRef(() => MessagesModule),
-  ],
+  imports: [AuthModule, FriendsModule, forwardRef(() => MessagesModule)],
   controllers: [ConversationsController],
   providers: [
     ConversationsService,

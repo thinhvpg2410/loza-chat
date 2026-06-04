@@ -36,6 +36,30 @@ export function EditGroupProfileModal({
   const [localError, setLocalError] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
+  const [prevOpen, setPrevOpen] = useState(open);
+  const [prevInitialTitle, setPrevInitialTitle] = useState(initialTitle);
+  const [prevInitialAvatarUrl, setPrevInitialAvatarUrl] = useState(initialAvatarUrl);
+
+  if (open !== prevOpen || initialTitle !== prevInitialTitle || initialAvatarUrl !== prevInitialAvatarUrl) {
+    setPrevOpen(open);
+    setPrevInitialTitle(initialTitle);
+    setPrevInitialAvatarUrl(initialAvatarUrl);
+    setTitle(initialTitle);
+    setAvatarFile(null);
+    setAvatarPreviewUrl(null);
+    setRemoveAvatar(false);
+    setLocalError(null);
+    setUploadingAvatar(false);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (avatarPreviewUrl) {
+        URL.revokeObjectURL(avatarPreviewUrl);
+      }
+    };
+  }, [avatarPreviewUrl]);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -45,32 +69,7 @@ export function EditGroupProfileModal({
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose, isSubmitting, uploadingAvatar]);
 
-  useEffect(() => {
-    if (!open) {
-      setTitle(initialTitle);
-      setAvatarFile(null);
-      setAvatarPreviewUrl(null);
-      setRemoveAvatar(false);
-      setLocalError(null);
-      setUploadingAvatar(false);
-      return;
-    }
-    setTitle(initialTitle);
-    setAvatarFile(null);
-    setAvatarPreviewUrl(null);
-    setRemoveAvatar(false);
-    setLocalError(null);
-  }, [open, initialTitle]);
-
-  useEffect(() => {
-    if (!avatarFile) {
-      setAvatarPreviewUrl(null);
-      return;
-    }
-    const url = URL.createObjectURL(avatarFile);
-    setAvatarPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [avatarFile]);
+  // Resets are handled during render. Preview cleanup is managed by useEffect.
 
   if (!open) return null;
 
@@ -141,6 +140,7 @@ export function EditGroupProfileModal({
                       setLocalError(null);
                       setRemoveAvatar(false);
                       setAvatarFile(f);
+                      setAvatarPreviewUrl(f ? URL.createObjectURL(f) : null);
                     }}
                   />
                   {previewForAvatar ? (
@@ -160,6 +160,7 @@ export function EditGroupProfileModal({
                       onClick={() => {
                         setLocalError(null);
                         setAvatarFile(null);
+                        setAvatarPreviewUrl(null);
                         setRemoveAvatar(true);
                       }}
                     >
@@ -173,6 +174,7 @@ export function EditGroupProfileModal({
                       disabled={isSubmitting || uploadingAvatar}
                       onClick={() => {
                         setAvatarFile(null);
+                        setAvatarPreviewUrl(null);
                         setRemoveAvatar(false);
                       }}
                     >

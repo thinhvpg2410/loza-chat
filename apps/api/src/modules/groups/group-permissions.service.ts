@@ -1,8 +1,5 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
-import {
-  ConversationMemberRole,
-  ConversationType,
-} from '@prisma/client';
+import { ConversationMemberRole, ConversationType } from '@prisma/client';
 import type { ParsedGroupSettings } from './group-settings.util';
 
 @Injectable()
@@ -19,15 +16,23 @@ export class GroupPermissionsService {
 
   assertCanManageGroupContent(actorRole: ConversationMemberRole | null): void {
     const r = this.normalizeRole(actorRole);
-    if (r !== ConversationMemberRole.owner && r !== ConversationMemberRole.admin) {
+    if (
+      r !== ConversationMemberRole.owner &&
+      r !== ConversationMemberRole.admin
+    ) {
       throw new ForbiddenException('Insufficient permissions');
     }
   }
 
   assertCanUpdateGroupSettings(actorRole: ConversationMemberRole | null): void {
     const r = this.normalizeRole(actorRole);
-    if (r !== ConversationMemberRole.owner && r !== ConversationMemberRole.admin) {
-      throw new ForbiddenException('Only the group owner or admins can change group settings');
+    if (
+      r !== ConversationMemberRole.owner &&
+      r !== ConversationMemberRole.admin
+    ) {
+      throw new ForbiddenException(
+        'Only the group owner or admins can change group settings',
+      );
     }
   }
 
@@ -39,10 +44,15 @@ export class GroupPermissionsService {
       return;
     }
     const r = this.normalizeRole(actorRole);
-    if (r === ConversationMemberRole.owner || r === ConversationMemberRole.admin) {
+    if (
+      r === ConversationMemberRole.owner ||
+      r === ConversationMemberRole.admin
+    ) {
       return;
     }
-    throw new ForbiddenException('Only group owners and admins can send messages');
+    throw new ForbiddenException(
+      'Only group owners and admins can send messages',
+    );
   }
 
   assertMayAddMembers(
@@ -67,8 +77,13 @@ export class GroupPermissionsService {
 
   assertCanEditAvatar(actorRole: ConversationMemberRole | null): void {
     const r = this.normalizeRole(actorRole);
-    if (r !== ConversationMemberRole.owner && r !== ConversationMemberRole.admin) {
-      throw new ForbiddenException('Only the group owner or admins can change the avatar');
+    if (
+      r !== ConversationMemberRole.owner &&
+      r !== ConversationMemberRole.admin
+    ) {
+      throw new ForbiddenException(
+        'Only the group owner or admins can change the avatar',
+      );
     }
   }
 
@@ -99,7 +114,9 @@ export class GroupPermissionsService {
 
   assertOwnerMayAssignRoles(actorRole: ConversationMemberRole | null): void {
     if (this.normalizeRole(actorRole) !== ConversationMemberRole.owner) {
-      throw new ForbiddenException('Only the group owner can change member roles');
+      throw new ForbiddenException(
+        'Only the group owner can change member roles',
+      );
     }
   }
 }

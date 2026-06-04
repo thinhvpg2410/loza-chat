@@ -125,7 +125,11 @@ export class MessagesService {
       return null;
     }
     const lifecycle = (metadata as Record<string, unknown>).messageLifecycle;
-    if (!lifecycle || typeof lifecycle !== 'object' || Array.isArray(lifecycle)) {
+    if (
+      !lifecycle ||
+      typeof lifecycle !== 'object' ||
+      Array.isArray(lifecycle)
+    ) {
       return null;
     }
     const mode = (lifecycle as Record<string, unknown>).deletionMode;
@@ -140,7 +144,7 @@ export class MessagesService {
   ): Prisma.InputJsonValue {
     const base =
       existing && typeof existing === 'object' && !Array.isArray(existing)
-        ? ({ ...(existing as Prisma.JsonObject) } as Prisma.JsonObject)
+        ? ({ ...existing } as Prisma.JsonObject)
         : ({} as Prisma.JsonObject);
 
     base.messageLifecycle = {
@@ -196,10 +200,14 @@ export class MessagesService {
     }
     const displayName = (identity.displayName ?? '').trim().toLowerCase();
     if (displayName) {
-      const ascii = displayName.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const ascii = displayName
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
       const compact = ascii.replace(/[^a-z0-9]+/g, '');
       const dot = ascii.replace(/[^a-z0-9]+/g, '.').replace(/^\.+|\.+$/g, '');
-      const underscore = ascii.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+      const underscore = ascii
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
       const hyphen = ascii.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
       if (compact) {
         tokens.add(compact);
@@ -294,7 +302,9 @@ export class MessagesService {
           username: row.user.username,
           displayName: row.user.displayName,
         });
-        const matched = [...tokens].some((token) => normalizedHandles.has(token));
+        const matched = [...tokens].some((token) =>
+          normalizedHandles.has(token),
+        );
         if (matched && row.userId !== senderId) {
           mentionUserIds.add(row.userId);
         }
@@ -342,8 +352,14 @@ export class MessagesService {
   ): Promise<{
     message: MessageView;
   }> {
-    await this.conversations.assertMaySendDirectMessage(senderId, dto.conversationId);
-    await this.groupPostPolicy.assertUserMaySendMessage(senderId, dto.conversationId);
+    await this.conversations.assertMaySendDirectMessage(
+      senderId,
+      dto.conversationId,
+    );
+    await this.groupPostPolicy.assertUserMaySendMessage(
+      senderId,
+      dto.conversationId,
+    );
     const result = await this.prisma.$transaction(async (tx) => {
       await this.rateLimit.assertAndConsume(
         senderId,
@@ -351,7 +367,11 @@ export class MessagesService {
         'text',
         tx,
       );
-      await this.membership.requireActiveMemberTx(tx, senderId, dto.conversationId);
+      await this.membership.requireActiveMemberTx(
+        tx,
+        senderId,
+        dto.conversationId,
+      );
 
       if (dto.replyToMessageId) {
         const parent = await tx.message.findFirst({
@@ -471,8 +491,14 @@ export class MessagesService {
     forwardMeta?: ForwardedMessageMeta,
   ): Promise<{ message: MessageView }> {
     await this.stickers.requireSendableSticker(dto.stickerId);
-    await this.conversations.assertMaySendDirectMessage(senderId, dto.conversationId);
-    await this.groupPostPolicy.assertUserMaySendMessage(senderId, dto.conversationId);
+    await this.conversations.assertMaySendDirectMessage(
+      senderId,
+      dto.conversationId,
+    );
+    await this.groupPostPolicy.assertUserMaySendMessage(
+      senderId,
+      dto.conversationId,
+    );
     const result = await this.prisma.$transaction(async (tx) => {
       await this.rateLimit.assertAndConsume(
         senderId,
@@ -480,7 +506,11 @@ export class MessagesService {
         'text',
         tx,
       );
-      await this.membership.requireActiveMemberTx(tx, senderId, dto.conversationId);
+      await this.membership.requireActiveMemberTx(
+        tx,
+        senderId,
+        dto.conversationId,
+      );
 
       if (dto.replyToMessageId) {
         const parent = await tx.message.findFirst({
@@ -621,8 +651,14 @@ export class MessagesService {
     const content =
       dto.content !== undefined && dto.content.length > 0 ? dto.content : null;
 
-    await this.conversations.assertMaySendDirectMessage(senderId, dto.conversationId);
-    await this.groupPostPolicy.assertUserMaySendMessage(senderId, dto.conversationId);
+    await this.conversations.assertMaySendDirectMessage(
+      senderId,
+      dto.conversationId,
+    );
+    await this.groupPostPolicy.assertUserMaySendMessage(
+      senderId,
+      dto.conversationId,
+    );
     const result = await this.prisma.$transaction(async (tx) => {
       await this.rateLimit.assertAndConsume(
         senderId,
@@ -630,7 +666,11 @@ export class MessagesService {
         dto.type === MessageType.voice ? 'voice' : 'text',
         tx,
       );
-      await this.membership.requireActiveMemberTx(tx, senderId, dto.conversationId);
+      await this.membership.requireActiveMemberTx(
+        tx,
+        senderId,
+        dto.conversationId,
+      );
 
       if (dto.replyToMessageId) {
         const parent = await tx.message.findFirst({
@@ -861,7 +901,9 @@ export class MessagesService {
     await this.membership.requireActiveMember(actorId, source.conversationId);
 
     if (source.deletedAt) {
-      throw new BadRequestException('Cannot forward a recalled/deleted message');
+      throw new BadRequestException(
+        'Cannot forward a recalled/deleted message',
+      );
     }
 
     const targetConversation = await this.prisma.conversation.findUnique({
@@ -909,7 +951,11 @@ export class MessagesService {
 
     if (source.attachments.length > 0) {
       const clonedAttachmentIds = await this.prisma.$transaction(async (tx) => {
-        await this.membership.requireActiveMemberTx(tx, actorId, targetConversationId);
+        await this.membership.requireActiveMemberTx(
+          tx,
+          actorId,
+          targetConversationId,
+        );
 
         const created: string[] = [];
         for (const att of source.attachments) {
@@ -949,7 +995,9 @@ export class MessagesService {
     }
 
     if (!source.content || source.content.trim().length === 0) {
-      throw new BadRequestException('Source message has no forwardable payload');
+      throw new BadRequestException(
+        'Source message has no forwardable payload',
+      );
     }
 
     return this.sendTextMessage(
@@ -981,7 +1029,11 @@ export class MessagesService {
         throw new NotFoundException('Message not found');
       }
 
-      await this.membership.requireActiveMemberTx(tx, actorId, message.conversationId);
+      await this.membership.requireActiveMemberTx(
+        tx,
+        actorId,
+        message.conversationId,
+      );
 
       let allowModeratorRecall = false;
       if (message.senderId !== actorId) {
@@ -1025,7 +1077,9 @@ export class MessagesService {
                   );
                 }
                 if (message.type === MessageType.system) {
-                  throw new BadRequestException('System messages cannot be recalled');
+                  throw new BadRequestException(
+                    'System messages cannot be recalled',
+                  );
                 }
                 allowModeratorRecall = true;
               }
@@ -1033,7 +1087,9 @@ export class MessagesService {
           }
         }
         if (!allowModeratorRecall) {
-          throw new ForbiddenException('Only the sender can perform this action');
+          throw new ForbiddenException(
+            'Only the sender can perform this action',
+          );
         }
       }
 
@@ -1231,7 +1287,11 @@ export class MessagesService {
       throw new NotFoundException('Message not found');
     }
     await this.membership.requireActiveMember(userId, message.conversationId);
-    await this.rateLimit.assertAndConsume(userId, message.conversationId, 'reaction');
+    await this.rateLimit.assertAndConsume(
+      userId,
+      message.conversationId,
+      'reaction',
+    );
 
     const existing = await this.prisma.messageReaction.findUnique({
       where: {
@@ -1284,7 +1344,11 @@ export class MessagesService {
       throw new NotFoundException('Message not found');
     }
     await this.membership.requireActiveMember(userId, message.conversationId);
-    await this.rateLimit.assertAndConsume(userId, message.conversationId, 'reaction');
+    await this.rateLimit.assertAndConsume(
+      userId,
+      message.conversationId,
+      'reaction',
+    );
 
     const existing = await this.prisma.messageReaction.findUnique({
       where: {
@@ -1317,7 +1381,10 @@ export class MessagesService {
   async listMessagesMentioningUser(
     viewerId: string,
     opts?: { conversationId?: string; limit?: number; cursor?: string },
-  ): Promise<{ messages: MessageWithReceiptStateView[]; nextCursor: string | null }> {
+  ): Promise<{
+    messages: MessageWithReceiptStateView[];
+    nextCursor: string | null;
+  }> {
     const take = Math.max(1, Math.min(opts?.limit ?? 30, 100));
     const cursor = opts?.cursor ? decodeMessageCursor(opts.cursor) : null;
     const rows = await this.prisma.$queryRaw<
@@ -1351,7 +1418,10 @@ export class MessagesService {
       },
     });
     const messageById = new Map(messageRows.map((m) => [m.id, m]));
-    const reactions = await this.buildReactionSummariesForMessages(viewerId, messageIds);
+    const reactions = await this.buildReactionSummariesForMessages(
+      viewerId,
+      messageIds,
+    );
     const messages = page
       .map((r: { messageId: string }) => {
         const row = messageById.get(r.messageId);
@@ -1479,8 +1549,14 @@ export class MessagesService {
               publicMediaUrlForStorageKey(this.config, a.storageKey),
             ),
           ),
-      sticker: row.deletedAt ? null : row.sticker ? toStickerPublicDto(row.sticker) : null,
-      reactions: row.deletedAt ? { counts: [], mine: [] } : reactionSummary ?? { counts: [], mine: [] },
+      sticker: row.deletedAt
+        ? null
+        : row.sticker
+          ? toStickerPublicDto(row.sticker)
+          : null,
+      reactions: row.deletedAt
+        ? { counts: [], mine: [] }
+        : (reactionSummary ?? { counts: [], mine: [] }),
     };
   }
 
@@ -1495,7 +1571,11 @@ export class MessagesService {
     status: 'answered' | 'missed' | 'cancelled' | 'busy';
     durationSeconds: number;
   }): Promise<void> {
-    const content = buildCallMessageContent(opts.callType, opts.status, opts.durationSeconds);
+    const content = buildCallMessageContent(
+      opts.callType,
+      opts.status,
+      opts.durationSeconds,
+    );
     const { randomUUID } = await import('crypto');
     const row = await this.prisma.message.create({
       data: {
@@ -1521,7 +1601,11 @@ export class MessagesService {
       data: { lastMessageId: row.id },
     });
     const message = this.toMessageView(row);
-    this.domainEvents.emit({ type: 'message.created', conversationId: opts.conversationId, message });
+    this.domainEvents.emit({
+      type: 'message.created',
+      conversationId: opts.conversationId,
+      message,
+    });
   }
 }
 
@@ -1544,7 +1628,9 @@ function buildCallMessageContent(
 }
 
 function formatDuration(seconds: number): string {
-  const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+  const m = Math.floor(seconds / 60)
+    .toString()
+    .padStart(2, '0');
   const s = (seconds % 60).toString().padStart(2, '0');
   return `${m}:${s}`;
 }

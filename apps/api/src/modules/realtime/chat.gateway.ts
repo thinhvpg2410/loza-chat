@@ -38,7 +38,11 @@ import {
   CallIceCandidateDto,
   CallEndDto,
 } from './dto/call-signal.dto';
-import { CallService, callDurationSeconds, resolveCallEndStatus } from './call.service';
+import {
+  CallService,
+  callDurationSeconds,
+  resolveCallEndStatus,
+} from './call.service';
 import { PresenceService } from './presence.service';
 import { conversationRoomId, userDirectRoomId } from './realtime.constants';
 import { SocketAuthService } from './socket-auth.service';
@@ -199,19 +203,21 @@ export class ChatGateway
    * {@link handleConnection}).
    */
   afterInit(server: Server): void {
-    server.use(async (socket, next) => {
-      try {
-        const ctx = await this.socketAuth.authenticateHandshake(socket.handshake);
-        const data = socket.data as ChatSocketData;
-        data.user = ctx.user;
-        data.deviceId = ctx.deviceId;
-        data.correlationId = ctx.correlationId;
-        data.conversationRooms = new Set<string>();
-        next();
-      } catch (err) {
-        this.logger.debug(`Socket auth failed: ${String(err)}`);
-        next(new Error('Unauthorized'));
-      }
+    server.use((socket, next) => {
+      this.socketAuth
+        .authenticateHandshake(socket.handshake)
+        .then((ctx) => {
+          const data = socket.data as ChatSocketData;
+          data.user = ctx.user;
+          data.deviceId = ctx.deviceId;
+          data.correlationId = ctx.correlationId;
+          data.conversationRooms = new Set<string>();
+          next();
+        })
+        .catch((err) => {
+          this.logger.debug(`Socket auth failed: ${String(err)}`);
+          next(new Error('Unauthorized'));
+        });
     });
   }
 
@@ -490,8 +496,10 @@ export class ChatGateway
         return { ok: false };
       }
 
-      const membership = await this.membership.requireActiveMember(user.id, dto.conversationId);
-      const memberIds = await this.membership.listActiveMemberUserIds(dto.conversationId);
+      await this.membership.requireActiveMember(user.id, dto.conversationId);
+      const memberIds = await this.membership.listActiveMemberUserIds(
+        dto.conversationId,
+      );
       const invitedIds = memberIds.filter((id) => id !== user.id);
       const isGroup = memberIds.length > 2;
 
@@ -524,46 +532,64 @@ export class ChatGateway
 
       return { ok: true };
     } catch (err) {
-      this.emitStructuredError(client, 'call:initiate', err, this.correlationIdFromPayload(body));
+      this.emitStructuredError(
+        client,
+        'call:initiate',
+        err,
+        this.correlationIdFromPayload(body),
+      );
       return { ok: false };
     }
   }
 
   @SubscribeMessage('call:answer')
-  async onCallAnswer(
+  onCallAnswer(
     @ConnectedSocket() client: Socket,
     @MessageBody() body: unknown,
-  ): Promise<{ ok: boolean }> {
+  ): { ok: boolean } {
     try {
       const user = this.requireUser(client);
       const dto = parseWsPayload(CallAnswerDto, body);
 
       const call = this.calls.getCall(dto.callId);
       if (!call) {
-        client.emit('call:ended', { callId: dto.callId, reason: 'call_not_found' });
+        client.emit('call:ended', {
+          callId: dto.callId,
+          reason: 'call_not_found',
+        });
         return { ok: false };
       }
 
       if (!dto.accepted) {
         const result = this.calls.rejectCall(dto.callId, user.id);
         // Notify initiator that this person declined
-        this.server.to(userDirectRoomId(call.initiatorId)).emit('call:peer_declined', {
-          callId: dto.callId,
-          peerId: user.id,
-          callEnded: result === 'ended',
-        });
+        this.server
+          .to(userDirectRoomId(call.initiatorId))
+          .emit('call:peer_declined', {
+            callId: dto.callId,
+            peerId: user.id,
+            callEnded: result === 'ended',
+          });
         return { ok: true };
       }
 
       if (this.calls.isUserBusy(user.id)) {
-        this.server.to(userDirectRoomId(call.initiatorId)).emit('call:peer_declined', {
-          callId: dto.callId,
-          peerId: user.id,
-          reason: 'busy',
-          callEnded: true,
-        });
+        this.server
+          .to(userDirectRoomId(call.initiatorId))
+          .emit('call:peer_declined', {
+            callId: dto.callId,
+            peerId: user.id,
+            reason: 'busy',
+            callEnded: true,
+          });
         this.calls.endCall(dto.callId);
-        this.persistCallMessage(call.conversationId, call.initiatorId, call.callType, 'busy', 0);
+        this.persistCallMessage(
+          call.conversationId,
+          call.initiatorId,
+          call.callType,
+          'busy',
+          0,
+        );
         return { ok: false };
       }
 
@@ -590,7 +616,11 @@ export class ChatGateway
       // Build participant info list for the new joiner
       const existingParticipants = updatedCall.participants
         .filter((p) => p.userId !== user.id)
-        .map((p) => ({ userId: p.userId, displayName: p.displayName, avatarUrl: p.avatarUrl }));
+        .map((p) => ({
+          userId: p.userId,
+          displayName: p.displayName,
+          avatarUrl: p.avatarUrl,
+        }));
 
       // Notify ALL existing participants that this peer joined
       // They will each create an RTCPeerConnection offer to the new joiner
@@ -615,7 +645,12 @@ export class ChatGateway
 
       return { ok: true };
     } catch (err) {
-      this.emitStructuredError(client, 'call:answer', err, this.correlationIdFromPayload(body));
+      this.emitStructuredError(
+        client,
+        'call:answer',
+        err,
+        this.correlationIdFromPayload(body),
+      );
       return { ok: false };
     }
   }
@@ -642,7 +677,12 @@ export class ChatGateway
       });
       return { ok: true };
     } catch (err) {
-      this.emitStructuredError(client, 'call:offer', err, this.correlationIdFromPayload(body));
+      this.emitStructuredError(
+        client,
+        'call:offer',
+        err,
+        this.correlationIdFromPayload(body),
+      );
       return { ok: false };
     }
   }
@@ -669,7 +709,12 @@ export class ChatGateway
       });
       return { ok: true };
     } catch (err) {
-      this.emitStructuredError(client, 'call:answer_sdp', err, this.correlationIdFromPayload(body));
+      this.emitStructuredError(
+        client,
+        'call:answer_sdp',
+        err,
+        this.correlationIdFromPayload(body),
+      );
       return { ok: false };
     }
   }
@@ -696,17 +741,22 @@ export class ChatGateway
       });
       return { ok: true };
     } catch (err) {
-      this.emitStructuredError(client, 'call:ice_candidate', err, this.correlationIdFromPayload(body));
+      this.emitStructuredError(
+        client,
+        'call:ice_candidate',
+        err,
+        this.correlationIdFromPayload(body),
+      );
       return { ok: false };
     }
   }
 
   /** Leave a group call without ending it for others. */
   @SubscribeMessage('call:leave')
-  async onCallLeave(
+  onCallLeave(
     @ConnectedSocket() client: Socket,
     @MessageBody() body: unknown,
-  ): Promise<{ ok: boolean }> {
+  ): { ok: boolean } {
     try {
       const user = this.requireUser(client);
       const dto = parseWsPayload(CallEndDto, body);
@@ -714,7 +764,10 @@ export class ChatGateway
       const call = this.calls.getCall(dto.callId);
       if (!call) return { ok: false };
 
-      const peerSocketIds = this.calls.getParticipantSocketIds(dto.callId, user.id);
+      const peerSocketIds = this.calls.getParticipantSocketIds(
+        dto.callId,
+        user.id,
+      );
       const durationSeconds = callDurationSeconds(call);
       const status = resolveCallEndStatus(call);
       const remaining = this.calls.leaveCall(dto.callId, user.id);
@@ -732,22 +785,33 @@ export class ChatGateway
             endedBy: user.id,
           });
         }
-        this.persistCallMessage(call.conversationId, call.initiatorId, call.callType, status, durationSeconds);
+        this.persistCallMessage(
+          call.conversationId,
+          call.initiatorId,
+          call.callType,
+          status,
+          durationSeconds,
+        );
       }
 
       return { ok: true };
     } catch (err) {
-      this.emitStructuredError(client, 'call:leave', err, this.correlationIdFromPayload(body));
+      this.emitStructuredError(
+        client,
+        'call:leave',
+        err,
+        this.correlationIdFromPayload(body),
+      );
       return { ok: false };
     }
   }
 
   /** End the entire call for all participants (1-1 hang up or host force-end). */
   @SubscribeMessage('call:end')
-  async onCallEnd(
+  onCallEnd(
     @ConnectedSocket() client: Socket,
     @MessageBody() body: unknown,
-  ): Promise<{ ok: boolean }> {
+  ): { ok: boolean } {
     try {
       const user = this.requireUser(client);
       const dto = parseWsPayload(CallEndDto, body);
@@ -755,7 +819,10 @@ export class ChatGateway
       const call = this.calls.getCall(dto.callId);
       if (!call) return { ok: false };
 
-      const participantSocketIds = this.calls.getParticipantSocketIds(dto.callId, user.id);
+      const participantSocketIds = this.calls.getParticipantSocketIds(
+        dto.callId,
+        user.id,
+      );
       const pendingIds = [...call.pendingUserIds];
       const durationSeconds = callDurationSeconds(call);
       const status = resolveCallEndStatus(call);
@@ -770,11 +837,22 @@ export class ChatGateway
         this.server.to(userDirectRoomId(uid)).emit('call:ended', payload);
       }
 
-      this.persistCallMessage(call.conversationId, call.initiatorId, call.callType, status, durationSeconds);
+      this.persistCallMessage(
+        call.conversationId,
+        call.initiatorId,
+        call.callType,
+        status,
+        durationSeconds,
+      );
 
       return { ok: true };
     } catch (err) {
-      this.emitStructuredError(client, 'call:end', err, this.correlationIdFromPayload(body));
+      this.emitStructuredError(
+        client,
+        'call:end',
+        err,
+        this.correlationIdFromPayload(body),
+      );
       return { ok: false };
     }
   }
@@ -787,7 +865,13 @@ export class ChatGateway
     durationSeconds: number,
   ): void {
     void this.messages
-      .createCallMessage({ conversationId, senderId, callType, status, durationSeconds })
+      .createCallMessage({
+        conversationId,
+        senderId,
+        callType,
+        status,
+        durationSeconds,
+      })
       .catch((err) => this.logger.error('Failed to persist call message', err));
   }
 
@@ -902,11 +986,13 @@ export class ChatGateway
       return;
     }
     for (const row of staleRows) {
-      this.server.to(conversationRoomId(row.conversationId)).emit('typing:update', {
-        conversationId: row.conversationId,
-        userId: row.userId,
-        isTyping: false,
-      });
+      this.server
+        .to(conversationRoomId(row.conversationId))
+        .emit('typing:update', {
+          conversationId: row.conversationId,
+          userId: row.userId,
+          isTyping: false,
+        });
     }
   }
 }

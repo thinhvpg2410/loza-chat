@@ -85,7 +85,9 @@ export class FriendsService {
     targetUserIds: string[],
   ): Promise<Map<string, RelationshipStatus>> {
     const map = new Map<string, RelationshipStatus>();
-    const unique = [...new Set(targetUserIds)].filter((id) => id && id !== viewerId);
+    const unique = [...new Set(targetUserIds)].filter(
+      (id) => id && id !== viewerId,
+    );
     if (unique.length === 0) {
       return map;
     }
@@ -101,7 +103,9 @@ export class FriendsService {
     for (const id of unique) {
       if (blocks.some((b) => b.blockerId === viewerId && b.blockedId === id)) {
         map.set(id, 'blocked_by_me');
-      } else if (blocks.some((b) => b.blockerId === id && b.blockedId === viewerId)) {
+      } else if (
+        blocks.some((b) => b.blockerId === id && b.blockedId === viewerId)
+      ) {
         map.set(id, 'blocked_me');
       }
     }

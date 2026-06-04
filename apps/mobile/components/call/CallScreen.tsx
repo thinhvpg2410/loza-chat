@@ -1,18 +1,15 @@
-import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Modal,
-  Platform,
   StyleSheet,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { RTCView, type MediaStream } from "react-native-webrtc";
+import { RTCView } from "react-native-webrtc";
 
 import { AppAvatar } from "@ui/AppAvatar";
 import { AppText } from "@ui/AppText";
-import { colors } from "@theme";
 import { useCall } from "@/features/call/call-context";
 import { CallControls } from "./CallControls";
 
@@ -59,16 +56,17 @@ export function CallScreen() {
     }
   }, [visible, fadeAnim]);
 
+  const isActive = callState.phase === "active";
+  const startedAt = isActive ? callState.startedAt : null;
+  const duration = useCallDuration(startedAt);
+
   if (!visible) return null;
 
-  const isActive = callState.phase === "active";
   const isGroup = callState.isGroup;
   const callType = callState.callType;
   const title = isActive ? callState.conversationTitle : callState.conversationTitle;
   const avatarUrl = isActive ? callState.conversationAvatarUrl : callState.conversationAvatarUrl;
   const participants = isActive ? callState.participants : [];
-  const startedAt = isActive ? callState.startedAt : null;
-  const duration = useCallDuration(startedAt);
 
   const hasRemoteVideo = remoteStreams.length > 0 && callType === "video";
   const hasLocalVideo = callType === "video" && !!localStream && !isCameraOff;

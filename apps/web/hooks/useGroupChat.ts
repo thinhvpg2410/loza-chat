@@ -17,7 +17,10 @@ type UseGroupChatOptions = {
 export function useGroupChat(opts: UseGroupChatOptions): void {
   const { realtime, conversationId, isGroup, onGroupEvent } = opts;
   const cbRef = useRef(onGroupEvent);
-  cbRef.current = onGroupEvent;
+
+  useEffect(() => {
+    cbRef.current = onGroupEvent;
+  }, [onGroupEvent]);
 
   useEffect(() => {
     if (!realtime?.subscribeGroupRoom || !isGroup || !conversationId) return;

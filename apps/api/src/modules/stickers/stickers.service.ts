@@ -82,9 +82,7 @@ export class StickersService {
         slug: pack.slug,
         description: pack.description,
         thumbnailUrl: pack.thumbnailUrl,
-        stickers: pack.stickers.map((s) =>
-          toStickerPublicDto({ ...s, pack }),
-        ),
+        stickers: pack.stickers.map((s) => toStickerPublicDto({ ...s, pack })),
       },
     };
   }

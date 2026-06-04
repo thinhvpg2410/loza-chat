@@ -53,7 +53,8 @@ export class ConversationsController {
 
   @Post('direct')
   @ApiOperation({
-    summary: 'Create or return the direct conversation with another user (idempotent)',
+    summary:
+      'Create or return the direct conversation with another user (idempotent)',
     description:
       'Requires an active target user and no block in either direction. Non-friends may open a thread; clients typically show a stranger warning banner. Returns the same conversation id for a given pair.',
   })

@@ -26,7 +26,9 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       where: { id: payload.sub },
     });
     if (!user || !user.isActive) {
-      throw new UnauthorizedException(AuthErrorMessage.INVALID_OR_EXPIRED_SESSION);
+      throw new UnauthorizedException(
+        AuthErrorMessage.INVALID_OR_EXPIRED_SESSION,
+      );
     }
     return {
       ...toPublicUser(user),

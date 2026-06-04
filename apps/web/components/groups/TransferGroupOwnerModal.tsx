@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { IconClose } from "@/components/chat/icons";
 import { Avatar } from "@/components/common/Avatar";
 import type { GroupMember } from "@/lib/types/social";
@@ -27,10 +27,16 @@ export function TransferGroupOwnerModal({
   );
   const [pick, setPick] = useState(() => candidates[0]?.userId ?? "");
 
-  useEffect(() => {
-    if (!open) return;
-    setPick(candidates[0]?.userId ?? "");
-  }, [open, candidates]);
+  const [prevOpen, setPrevOpen] = useState(open);
+  const [prevCandidates, setPrevCandidates] = useState(candidates);
+
+  if (open !== prevOpen || candidates !== prevCandidates) {
+    setPrevOpen(open);
+    setPrevCandidates(candidates);
+    if (open) {
+      setPick(candidates[0]?.userId ?? "");
+    }
+  }
 
   if (!open) return null;
 

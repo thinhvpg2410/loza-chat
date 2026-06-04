@@ -140,7 +140,11 @@ export class UploadsService {
       expectedContentType: session.mimeType,
       expectedSizeBytes: session.fileSize,
     });
-    this.rules.assertMimeAndSize(session.uploadType, session.mimeType, session.fileSize);
+    this.rules.assertMimeAndSize(
+      session.uploadType,
+      session.mimeType,
+      session.fileSize,
+    );
 
     const meta = session.metadataJson as
       | { width?: number; height?: number; durationSeconds?: number }
@@ -179,7 +183,10 @@ export class UploadsService {
       return attachment;
     });
 
-    const publicUrl = publicMediaUrlForStorageKey(this.config, result.storageKey);
+    const publicUrl = publicMediaUrlForStorageKey(
+      this.config,
+      result.storageKey,
+    );
     return { attachment: toAttachmentPublicDto(result, publicUrl) };
   }
 
@@ -193,7 +200,9 @@ export class UploadsService {
   ): Promise<void> {
     const storageCfg = this.config.get('storage', { infer: true });
     if (!storageCfg.mock) {
-      throw new BadRequestException('Mock upload is only available when STORAGE_MOCK=true');
+      throw new BadRequestException(
+        'Mock upload is only available when STORAGE_MOCK=true',
+      );
     }
 
     const session = await this.prisma.uploadSession.findUnique({

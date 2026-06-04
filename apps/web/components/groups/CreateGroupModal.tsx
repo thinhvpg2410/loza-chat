@@ -38,6 +38,26 @@ export function CreateGroupModal({
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [prevOpen, setPrevOpen] = useState(open);
+
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    setName("");
+    setQuery("");
+    setSelectedIds([]);
+    setAvatarFile(null);
+    setAvatarPreviewUrl(null);
+    setLocalError(null);
+    setUploadingAvatar(false);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (avatarPreviewUrl) {
+        URL.revokeObjectURL(avatarPreviewUrl);
+      }
+    };
+  }, [avatarPreviewUrl]);
 
   useEffect(() => {
     if (!open) return;
@@ -48,27 +68,8 @@ export function CreateGroupModal({
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose, isSubmitting, uploadingAvatar]);
 
-  useEffect(() => {
-    if (!open) {
-      setName("");
-      setQuery("");
-      setSelectedIds([]);
-      setAvatarFile(null);
-      setAvatarPreviewUrl(null);
-      setLocalError(null);
-      setUploadingAvatar(false);
-    }
-  }, [open]);
-
-  useEffect(() => {
-    if (!avatarFile) {
-      setAvatarPreviewUrl(null);
-      return;
-    }
-    const url = URL.createObjectURL(avatarFile);
-    setAvatarPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [avatarFile]);
+  // State reset is handled during render when open prop changes.
+  // Preview cleanup is handled by useEffect for avatarPreviewUrl.
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -142,6 +143,7 @@ export function CreateGroupModal({
                   e.target.value = "";
                   setLocalError(null);
                   setAvatarFile(f);
+                  setAvatarPreviewUrl(f ? URL.createObjectURL(f) : null);
                 }}
               />
               {avatarPreviewUrl ? (
@@ -158,7 +160,10 @@ export function CreateGroupModal({
                   type="button"
                   className="mt-1 text-[12px] font-medium text-red-600 hover:underline"
                   disabled={isSubmitting || uploadingAvatar}
-                  onClick={() => setAvatarFile(null)}
+                  onClick={() => {
+                    setAvatarFile(null);
+                    setAvatarPreviewUrl(null);
+                  }}
                 >
                   Bỏ ảnh
                 </button>
