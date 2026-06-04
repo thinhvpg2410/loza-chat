@@ -5,7 +5,7 @@ export type MessageSenderRole = "me" | "peer";
 
 export type OutgoingDeliveryState = "sending" | "sent" | "delivered" | "seen";
 
-export type MessageKind = "text" | "image" | "file" | "sticker" | "groupEvent";
+export type MessageKind = "text" | "image" | "file" | "sticker" | "groupEvent" | "call";
 
 export type ReplyReference = {
   id: string;
@@ -51,6 +51,10 @@ export type ChatRoomMessage = {
   reactions?: MessageReaction[];
   isRemoved?: boolean;
   removalMode?: "recalled" | "deleted";
+  /** kind === "call" */
+  callType?: "voice" | "video";
+  callStatus?: "answered" | "missed" | "cancelled" | "busy";
+  callDurationSeconds?: number;
 };
 
 export type MessageFeedItem =

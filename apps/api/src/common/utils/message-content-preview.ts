@@ -41,6 +41,8 @@ export function messageContentPreview(
       return '[Attachment]';
     case MessageType.sticker:
       return '[Sticker]';
+    case MessageType.call:
+      return content && content.trim().length > 0 ? truncate(content.trim(), MAX_PREVIEW_LEN) : '[Call]';
     case MessageType.text:
     default:
       return null;
