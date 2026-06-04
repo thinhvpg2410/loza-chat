@@ -7,7 +7,6 @@ import { colors, spacing } from "@theme";
 type AppSectionHeaderProps = {
   title: string;
   right?: ReactNode;
-  /** Denser section label (e.g. friends list) */
   compact?: boolean;
 };
 
@@ -19,13 +18,19 @@ export function AppSectionHeader({ title, right, compact }: AppSectionHeaderProp
         alignItems: "center",
         justifyContent: "space-between",
         paddingHorizontal: spacing.md,
-        paddingVertical: compact ? spacing.xs : spacing.sm,
+        paddingVertical: compact ? spacing.xs : 10,
         backgroundColor: colors.surface,
-        borderBottomWidth: 1,
-        borderBottomColor: colors.border,
       }}
     >
-      <AppText variant="caption" color="textSecondary" style={{ fontWeight: "600", letterSpacing: 0.2 }}>
+      <AppText
+        variant="micro"
+        style={{
+          fontWeight: "600",
+          color: colors.textSecondary,
+          letterSpacing: 0.4,
+          textTransform: "uppercase",
+        }}
+      >
         {title}
       </AppText>
       {right ? <View style={{ flexShrink: 0 }}>{right}</View> : null}

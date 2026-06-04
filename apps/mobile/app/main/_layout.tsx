@@ -3,6 +3,9 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, AppState, type AppStateStatus, View } from "react-native";
 
 import { USE_API_MOCK } from "@/constants/env";
+import { CallProvider } from "@/features/call/call-context";
+import { CallScreen } from "@components/call/CallScreen";
+import { IncomingCallModal } from "@components/call/IncomingCallModal";
 import { connectChatSocket, isChatSocketConfigured } from "@/services/socket/socket";
 import { useAuthStore } from "@/store/authStore";
 import { useChatStore } from "@/store/chatStore";
@@ -61,12 +64,16 @@ export default function MainLayout() {
   }
 
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        contentStyle: { backgroundColor: colors.background },
-        animation: "slide_from_right",
-      }}
-    />
+    <CallProvider>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.background },
+          animation: "slide_from_right",
+        }}
+      />
+      <IncomingCallModal />
+      <CallScreen />
+    </CallProvider>
   );
 }

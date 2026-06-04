@@ -145,88 +145,40 @@ export default function FriendsTabScreen() {
 
       <ChatSearchBar value={query} onChangeText={setQuery} placeholder="Tìm bạn" />
 
-      <View style={{ paddingHorizontal: spacing.md, paddingBottom: spacing.xs, flexDirection: "row", gap: spacing.sm }}>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => router.push("/main/friends/add")}
-          style={({ pressed }) => ({
-            opacity: pressed ? 0.75 : 1,
-            alignItems: "center",
-            width: 64,
-          })}
-        >
-          <View
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 999,
-              backgroundColor: colors.primaryMuted,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Ionicons name="person-add-outline" size={18} color={colors.primary} />
-          </View>
-          <AppText variant="micro" color="textSecondary" style={{ marginTop: 4, textAlign: "center" }}>
-            Thêm bạn
-          </AppText>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => router.push("/main/friends/requests")}
-          style={({ pressed }) => ({
-            opacity: pressed ? 0.75 : 1,
-            alignItems: "center",
-            width: 64,
-          })}
-        >
-          <View
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 999,
-              backgroundColor: colors.surface,
-              alignItems: "center",
-              justifyContent: "center",
-              borderWidth: 1,
-              borderColor: colors.border,
-            }}
-          >
-            <Ionicons name="mail-unread-outline" size={18} color={colors.primary} />
-          </View>
-          <AppText variant="micro" color="textSecondary" style={{ marginTop: 4, textAlign: "center" }}>
-            Lời mời
-          </AppText>
-        </Pressable>
-        {!USE_API_MOCK ? (
+      <View style={{ paddingHorizontal: spacing.md, paddingBottom: spacing.sm, flexDirection: "row", gap: spacing.sm }}>
+        {([
+          { key: "add", icon: "person-add-outline" as const, label: "Thêm bạn", primary: true, route: "/main/friends/add" },
+          { key: "requests", icon: "mail-unread-outline" as const, label: "Lời mời", primary: false, route: "/main/friends/requests" },
+          ...(!USE_API_MOCK ? [{ key: "blocked", icon: "ban-outline" as const, label: "Đã chặn", primary: false, route: "/main/friends/blocked" }] : []),
+        ] as { key: string; icon: React.ComponentProps<typeof Ionicons>["name"]; label: string; primary: boolean; route: string }[]).map((item) => (
           <Pressable
+            key={item.key}
             accessibilityRole="button"
-            onPress={() => router.push("/main/friends/blocked")}
+            onPress={() => router.push(item.route as never)}
             style={({ pressed }) => ({
-              opacity: pressed ? 0.75 : 1,
+              opacity: pressed ? 0.72 : 1,
               alignItems: "center",
-              width: 64,
+              flex: 1,
+              maxWidth: 80,
             })}
           >
             <View
               style={{
-                width: 44,
-                height: 44,
-                borderRadius: 999,
-                backgroundColor: colors.surface,
+                width: 46,
+                height: 46,
+                borderRadius: 23,
+                backgroundColor: item.primary ? colors.primaryMuted : colors.surface,
                 alignItems: "center",
                 justifyContent: "center",
-                borderWidth: 1,
-                borderColor: colors.border,
               }}
             >
-              <Ionicons name="ban-outline" size={18} color={colors.primary} />
+              <Ionicons name={item.icon} size={19} color={item.primary ? colors.primary : colors.textSecondary} />
             </View>
-            <AppText variant="micro" color="textSecondary" style={{ marginTop: 4, textAlign: "center" }}>
-              Đã chặn
+            <AppText variant="micro" style={{ marginTop: 5, textAlign: "center", color: colors.textSecondary, fontWeight: "500" }}>
+              {item.label}
             </AppText>
           </Pressable>
-        ) : null}
+        ))}
       </View>
 
       {showListError ? (

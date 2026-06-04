@@ -19,28 +19,32 @@ export function EmptyState({ icon = "file-tray-outline", title, description }: E
       style={{
         alignItems: "center",
         justifyContent: "center",
-        paddingHorizontal: spacing.lg,
-        paddingVertical: spacing.xxl,
+        paddingHorizontal: spacing.xl,
+        paddingVertical: spacing.xxxl,
       }}
     >
       <View
         style={{
           marginBottom: spacing.md,
-          width: 56,
-          height: 56,
+          width: 68,
+          height: 68,
           borderRadius: radius.full,
           backgroundColor: colors.surface,
           alignItems: "center",
           justifyContent: "center",
         }}
       >
-        <Ionicons name={icon} size={28} color={colors.textMuted} />
+        <Ionicons name={icon} size={32} color={colors.textMuted} />
       </View>
-      <AppText variant="subhead" style={{ fontWeight: "600", color: colors.text, textAlign: "center" }}>
+      <AppText variant="headline" style={{ fontWeight: "600", color: colors.text, textAlign: "center" }}>
         {title}
       </AppText>
       {description ? (
-        <AppText variant="caption" color="textSecondary" style={{ marginTop: spacing.xs, textAlign: "center", lineHeight: 18 }}>
+        <AppText
+          variant="subhead"
+          color="textSecondary"
+          style={{ marginTop: spacing.xs, textAlign: "center", lineHeight: 20 }}
+        >
           {description}
         </AppText>
       ) : null}

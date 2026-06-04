@@ -30,6 +30,15 @@ import { MessageReceiptSocketDto } from './dto/message-receipt-socket.dto';
 import { MessageSendSocketDto } from './dto/message-send-socket.dto';
 import { PresenceHeartbeatDto } from './dto/presence-heartbeat.dto';
 import { TypingSocketDto } from './dto/typing-socket.dto';
+import { CallInitiateDto } from './dto/call-initiate.dto';
+import { CallAnswerDto } from './dto/call-answer.dto';
+import {
+  CallOfferDto,
+  CallAnswerSdpDto,
+  CallIceCandidateDto,
+  CallEndDto,
+} from './dto/call-signal.dto';
+import { CallService } from './call.service';
 import { PresenceService } from './presence.service';
 import { conversationRoomId, userDirectRoomId } from './realtime.constants';
 import { SocketAuthService } from './socket-auth.service';
@@ -85,6 +94,7 @@ export class ChatGateway
     private readonly friends: FriendsService,
     private readonly groupDomainEvents: GroupDomainEventsService,
     private readonly messageDomainEvents: MessageDomainEventsService,
+    private readonly calls: CallService,
   ) {}
 
   onModuleInit(): void {
@@ -463,6 +473,302 @@ export class ChatGateway
       return { ok: false };
     }
   }
+
+  // ──────────────────────────── WebRTC Call Signaling ────────────────────────────
+
+  @SubscribeMessage('call:initiate')
+  async onCallInitiate(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: unknown,
+  ): Promise<{ ok: boolean }> {
+    try {
+      const user = this.requireUser(client);
+      const dto = parseWsPayload(CallInitiateDto, body);
+
+      if (this.calls.isUserBusy(user.id)) {
+        client.emit('call:busy', { callId: dto.callId });
+        return { ok: false };
+      }
+
+      const membership = await this.membership.requireActiveMember(user.id, dto.conversationId);
+      const memberIds = await this.membership.listActiveMemberUserIds(dto.conversationId);
+      const invitedIds = memberIds.filter((id) => id !== user.id);
+      const isGroup = memberIds.length > 2;
+
+      this.calls.createCall({
+        callId: dto.callId,
+        conversationId: dto.conversationId,
+        callType: dto.callType,
+        isGroup,
+        initiatorId: user.id,
+        initiatorSocketId: client.id,
+        initiatorDisplayName: user.displayName || user.username || '',
+        initiatorAvatarUrl: user.avatarUrl ?? null,
+        invitedUserIds: invitedIds,
+      });
+
+      const payload = {
+        callId: dto.callId,
+        conversationId: dto.conversationId,
+        callType: dto.callType,
+        isGroup,
+        callerId: user.id,
+        callerName: user.displayName || user.username || '',
+        callerAvatarUrl: user.avatarUrl ?? null,
+        totalInvited: invitedIds.length,
+      };
+
+      for (const uid of invitedIds) {
+        this.server.to(userDirectRoomId(uid)).emit('call:incoming', payload);
+      }
+
+      return { ok: true };
+    } catch (err) {
+      this.emitStructuredError(client, 'call:initiate', err, this.correlationIdFromPayload(body));
+      return { ok: false };
+    }
+  }
+
+  @SubscribeMessage('call:answer')
+  async onCallAnswer(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: unknown,
+  ): Promise<{ ok: boolean }> {
+    try {
+      const user = this.requireUser(client);
+      const dto = parseWsPayload(CallAnswerDto, body);
+
+      const call = this.calls.getCall(dto.callId);
+      if (!call) {
+        client.emit('call:ended', { callId: dto.callId, reason: 'call_not_found' });
+        return { ok: false };
+      }
+
+      if (!dto.accepted) {
+        const result = this.calls.rejectCall(dto.callId, user.id);
+        // Notify initiator that this person declined
+        this.server.to(userDirectRoomId(call.initiatorId)).emit('call:peer_declined', {
+          callId: dto.callId,
+          peerId: user.id,
+          callEnded: result === 'ended',
+        });
+        return { ok: true };
+      }
+
+      if (this.calls.isUserBusy(user.id)) {
+        this.server.to(userDirectRoomId(call.initiatorId)).emit('call:peer_declined', {
+          callId: dto.callId,
+          peerId: user.id,
+          reason: 'busy',
+        });
+        return { ok: false };
+      }
+
+      if (this.calls.isCallFull(dto.callId)) {
+        client.emit('call:ended', { callId: dto.callId, reason: 'call_full' });
+        return { ok: false };
+      }
+
+      const result = this.calls.joinCall(
+        dto.callId,
+        user.id,
+        client.id,
+        user.displayName || user.username || '',
+        user.avatarUrl ?? null,
+      );
+
+      if (!result) {
+        client.emit('call:ended', { callId: dto.callId, reason: 'call_ended' });
+        return { ok: false };
+      }
+
+      const { call: updatedCall, existingSocketIds } = result;
+
+      // Build participant info list for the new joiner
+      const existingParticipants = updatedCall.participants
+        .filter((p) => p.userId !== user.id)
+        .map((p) => ({ userId: p.userId, displayName: p.displayName, avatarUrl: p.avatarUrl }));
+
+      // Notify ALL existing participants that this peer joined
+      // They will each create an RTCPeerConnection offer to the new joiner
+      const peerJoinedPayload = {
+        callId: dto.callId,
+        peerId: user.id,
+        peerDisplayName: user.displayName || user.username || '',
+        peerAvatarUrl: user.avatarUrl ?? null,
+      };
+      for (const sid of existingSocketIds) {
+        this.server.to(sid).emit('call:peer_joined', peerJoinedPayload);
+      }
+
+      // Tell the new joiner who is already in the call
+      client.emit('call:joined', {
+        callId: dto.callId,
+        conversationId: updatedCall.conversationId,
+        callType: updatedCall.callType,
+        isGroup: updatedCall.isGroup,
+        existingParticipants,
+      });
+
+      return { ok: true };
+    } catch (err) {
+      this.emitStructuredError(client, 'call:answer', err, this.correlationIdFromPayload(body));
+      return { ok: false };
+    }
+  }
+
+  @SubscribeMessage('call:offer')
+  onCallOffer(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: unknown,
+  ): { ok: boolean } {
+    try {
+      const user = this.requireUser(client);
+      const dto = parseWsPayload(CallOfferDto, body);
+
+      const call = this.calls.getCall(dto.callId);
+      if (!call) return { ok: false };
+
+      const target = call.participants.find((p) => p.userId === dto.to);
+      if (!target) return { ok: false };
+
+      this.server.to(target.socketId).emit('call:offer', {
+        callId: dto.callId,
+        from: user.id,
+        sdp: dto.sdp,
+      });
+      return { ok: true };
+    } catch (err) {
+      this.emitStructuredError(client, 'call:offer', err, this.correlationIdFromPayload(body));
+      return { ok: false };
+    }
+  }
+
+  @SubscribeMessage('call:answer_sdp')
+  onCallAnswerSdp(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: unknown,
+  ): { ok: boolean } {
+    try {
+      const user = this.requireUser(client);
+      const dto = parseWsPayload(CallAnswerSdpDto, body);
+
+      const call = this.calls.getCall(dto.callId);
+      if (!call) return { ok: false };
+
+      const target = call.participants.find((p) => p.userId === dto.to);
+      if (!target) return { ok: false };
+
+      this.server.to(target.socketId).emit('call:answer_sdp', {
+        callId: dto.callId,
+        from: user.id,
+        sdp: dto.sdp,
+      });
+      return { ok: true };
+    } catch (err) {
+      this.emitStructuredError(client, 'call:answer_sdp', err, this.correlationIdFromPayload(body));
+      return { ok: false };
+    }
+  }
+
+  @SubscribeMessage('call:ice_candidate')
+  onCallIceCandidate(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: unknown,
+  ): { ok: boolean } {
+    try {
+      const user = this.requireUser(client);
+      const dto = parseWsPayload(CallIceCandidateDto, body);
+
+      const call = this.calls.getCall(dto.callId);
+      if (!call) return { ok: false };
+
+      const target = call.participants.find((p) => p.userId === dto.to);
+      if (!target) return { ok: false };
+
+      this.server.to(target.socketId).emit('call:ice_candidate', {
+        callId: dto.callId,
+        from: user.id,
+        candidate: dto.candidate,
+      });
+      return { ok: true };
+    } catch (err) {
+      this.emitStructuredError(client, 'call:ice_candidate', err, this.correlationIdFromPayload(body));
+      return { ok: false };
+    }
+  }
+
+  /** Leave a group call without ending it for others. */
+  @SubscribeMessage('call:leave')
+  onCallLeave(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: unknown,
+  ): { ok: boolean } {
+    try {
+      const user = this.requireUser(client);
+      const dto = parseWsPayload(CallEndDto, body);
+
+      const call = this.calls.getCall(dto.callId);
+      if (!call) return { ok: false };
+
+      const peerSocketIds = this.calls.getParticipantSocketIds(dto.callId, user.id);
+      const remaining = this.calls.leaveCall(dto.callId, user.id);
+
+      const payload = { callId: dto.callId, peerId: user.id };
+      for (const sid of peerSocketIds) {
+        this.server.to(sid).emit('call:peer_left', payload);
+      }
+
+      // If no participants remain, the call was ended by leaveCall
+      if (!remaining) {
+        for (const uid of call.pendingUserIds) {
+          this.server.to(userDirectRoomId(uid)).emit('call:ended', {
+            callId: dto.callId,
+            endedBy: user.id,
+          });
+        }
+      }
+
+      return { ok: true };
+    } catch (err) {
+      this.emitStructuredError(client, 'call:leave', err, this.correlationIdFromPayload(body));
+      return { ok: false };
+    }
+  }
+
+  /** End the entire call for all participants (1-1 hang up or host force-end). */
+  @SubscribeMessage('call:end')
+  onCallEnd(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: unknown,
+  ): { ok: boolean } {
+    try {
+      const user = this.requireUser(client);
+      const dto = parseWsPayload(CallEndDto, body);
+
+      const call = this.calls.getCall(dto.callId);
+      if (!call) return { ok: false };
+
+      const participantSocketIds = this.calls.getParticipantSocketIds(dto.callId, user.id);
+      const pendingIds = [...call.pendingUserIds];
+      this.calls.endCall(dto.callId);
+
+      const payload = { callId: dto.callId, endedBy: user.id };
+      for (const sid of participantSocketIds) {
+        this.server.to(sid).emit('call:ended', payload);
+      }
+      for (const uid of pendingIds) {
+        this.server.to(userDirectRoomId(uid)).emit('call:ended', payload);
+      }
+
+      return { ok: true };
+    } catch (err) {
+      this.emitStructuredError(client, 'call:end', err, this.correlationIdFromPayload(body));
+      return { ok: false };
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
 
   private requireUser(client: Socket): User {
     const u = (client.data as ChatSocketData).user;

@@ -1,16 +1,25 @@
+"use client";
+
 import type { Conversation } from "@/lib/types/chat";
-import { IconChevronDown, IconMore, IconPhone, IconSidebar, IconVideo } from "@/components/chat/icons";
+import { IconChevronDown, IconMore, IconSidebar } from "@/components/chat/icons";
 import { Avatar } from "@/components/common/Avatar";
+import { CallHeaderButtons } from "@/components/call/CallHeaderButtons";
 
 type ChatHeaderProps = {
   conversation: Conversation | null;
-  /** When set (e.g. typing), replaces the default presence line under the title. */
   statusOverride?: string | null;
-  /** Nút “Thêm” (group chat: mở thông tin nhóm). */
   onMoreClick?: () => void;
+  viewerDisplayName?: string;
+  viewerAvatarUrl?: string | null;
 };
 
-export function ChatHeader({ conversation, statusOverride = null, onMoreClick }: ChatHeaderProps) {
+export function ChatHeader({
+  conversation,
+  statusOverride = null,
+  onMoreClick,
+  viewerDisplayName = "",
+  viewerAvatarUrl,
+}: ChatHeaderProps) {
   if (!conversation) {
     return (
       <header className="flex h-[52px] shrink-0 items-center border-b border-[var(--zalo-border)] bg-white px-3">
@@ -42,7 +51,9 @@ export function ChatHeader({ conversation, statusOverride = null, onMoreClick }:
         <IconSidebar className="h-5 w-5" />
         <span className="sr-only">Menu</span>
       </button>
+
       <Avatar name={conversation.title} size="sm" src={conversation.avatarUrl} />
+
       <div className="min-w-0 flex-1">
         <button
           type="button"
@@ -53,23 +64,13 @@ export function ChatHeader({ conversation, statusOverride = null, onMoreClick }:
         </button>
         <p className={subline.className}>{subline.text}</p>
       </div>
+
       <div className="flex shrink-0 items-center gap-0">
-        <button
-          type="button"
-          className="rounded-full p-2 text-[var(--zalo-text-muted)] transition hover:bg-black/[0.05] hover:text-[var(--zalo-blue)]"
-          title="Gọi thoại"
-        >
-          <IconPhone className="h-5 w-5" />
-          <span className="sr-only">Gọi thoại</span>
-        </button>
-        <button
-          type="button"
-          className="rounded-full p-2 text-[var(--zalo-text-muted)] transition hover:bg-black/[0.05] hover:text-[var(--zalo-blue)]"
-          title="Gọi video"
-        >
-          <IconVideo className="h-5 w-5" />
-          <span className="sr-only">Gọi video</span>
-        </button>
+        <CallHeaderButtons
+          conversation={conversation}
+          viewerDisplayName={viewerDisplayName}
+          viewerAvatarUrl={viewerAvatarUrl}
+        />
         <button
           type="button"
           className="rounded-full p-2 text-[var(--zalo-text-muted)] transition hover:bg-black/[0.05] hover:text-[var(--zalo-text)]"

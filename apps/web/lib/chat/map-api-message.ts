@@ -239,8 +239,9 @@ function snippetFromMessage(m: Message): string {
  * Merge quote snippet + peer display name from messages already in the thread.
  */
 export function enrichMessageReplyFromThread(msg: Message, thread: Message[]): Message {
-  if (msg.kind === "system" || !msg.replyTo) return msg;
-  const parent = thread.find((m) => m.id === msg.replyTo.messageId);
+  const replyTo = msg.replyTo;
+  if (msg.kind === "system" || !replyTo) return msg;
+  const parent = thread.find((m) => m.id === replyTo.messageId);
   if (!parent || parent.kind === "system") return msg;
   const snippet = snippetFromMessage(parent);
   const isOwn = parent.isOwn;
@@ -250,7 +251,7 @@ export function enrichMessageReplyFromThread(msg: Message, thread: Message[]): M
   return {
     ...msg,
     replyTo: {
-      messageId: msg.replyTo.messageId,
+      messageId: replyTo.messageId,
       snippet,
       isOwn,
       ...(peerSenderName ? { peerSenderName } : {}),

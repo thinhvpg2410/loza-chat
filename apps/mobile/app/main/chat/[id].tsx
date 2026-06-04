@@ -89,6 +89,7 @@ import { appStorage } from "@/storage/appStorage";
 import { buildDocumentPreviewEmbedUrl, isDocumentPreviewable } from "@/lib/document-preview-url";
 import { useAuthStore } from "@/store/authStore";
 import { useChatStore } from "@/store/chatStore";
+import { useCallSafe } from "@/features/call/call-context";
 import { AppText } from "@ui/AppText";
 import { colors } from "@theme";
 
@@ -173,6 +174,7 @@ export default function ChatRoomScreen() {
   const viewerId = useAuthStore((s) => s.user?.id ?? "");
   const fetchConversations = useChatStore((s) => s.fetchConversations);
   const conversations = useChatStore((s) => s.conversations);
+  const callCtx = useCallSafe();
 
   const params = useLocalSearchParams<{
     id?: string;
@@ -1376,7 +1378,7 @@ export default function ChatRoomScreen() {
   }, [focusMessageId, messages]);
 
   return (
-    <SafeAreaView edges={["top", "left", "right"]} style={{ flex: 1, backgroundColor: colors.chatRoomBackground }}>
+    <SafeAreaView edges={["left", "right"]} style={{ flex: 1, backgroundColor: colors.chatRoomBackground }}>
       <ChatRoomHeader
         title={displayName}
         status={statusText}
@@ -1385,6 +1387,36 @@ export default function ChatRoomScreen() {
         isGroup={isGroup}
         onTitlePress={isGroup ? openGroupInfo : undefined}
         onMorePress={isGroup ? openGroupInfo : undefined}
+        onCallPress={
+          !isGroup && !USE_API_MOCK && callCtx
+            ? () => {
+                const callId = `call-${Date.now()}`;
+                void callCtx.initiateCall({
+                  callId,
+                  conversationId: id,
+                  callType: "voice",
+                  isGroup: false,
+                  conversationTitle: displayName,
+                  conversationAvatarUrl: displayAvatar,
+                });
+              }
+            : undefined
+        }
+        onVideoPress={
+          !isGroup && !USE_API_MOCK && callCtx
+            ? () => {
+                const callId = `call-${Date.now()}`;
+                void callCtx.initiateCall({
+                  callId,
+                  conversationId: id,
+                  callType: "video",
+                  isGroup: false,
+                  conversationTitle: displayName,
+                  conversationAvatarUrl: displayAvatar,
+                });
+              }
+            : undefined
+        }
       />
 
       <KeyboardAvoidingView
@@ -1419,60 +1451,45 @@ export default function ChatRoomScreen() {
         ) : (
           <>
             {!USE_API_MOCK && !isGroup && directSendGuard.bannerKind === "blocked_by_me" ? (
-              <View style={{ marginHorizontal: 12, marginBottom: 6, padding: 10, borderRadius: 8, backgroundColor: "#fee2e2" }}>
-                <AppText variant="caption" style={{ color: "#991b1b", textAlign: "center" }}>
+              <View style={styles.bannerDanger}>
+                <AppText variant="caption" style={[styles.bannerText, { color: colors.dangerText }]}>
                   Bạn đã chặn người này. Tin nhắn không được gửi đi.
                 </AppText>
               </View>
             ) : null}
             {!USE_API_MOCK && !isGroup && directSendGuard.bannerKind === "blocked_me" ? (
-              <View style={{ marginHorizontal: 12, marginBottom: 6, padding: 10, borderRadius: 8, backgroundColor: "#fee2e2" }}>
-                <AppText variant="caption" style={{ color: "#991b1b", textAlign: "center" }}>
+              <View style={styles.bannerDanger}>
+                <AppText variant="caption" style={[styles.bannerText, { color: colors.dangerText }]}>
                   Bạn đã bị chặn. Không thể gửi tin nhắn trong cuộc trò chuyện này.
                 </AppText>
               </View>
             ) : null}
             {!USE_API_MOCK && !isGroup && directSendGuard.bannerKind === "stranger" ? (
-              <View style={{ marginHorizontal: 12, marginBottom: 6, padding: 10, borderRadius: 8, backgroundColor: "#fef3c7" }}>
-                <AppText variant="caption" style={{ color: "#78350f", textAlign: "center" }}>
-                  Cảnh báo: {displayName} chưa là bạn bè hoặc chưa chấp nhận lời mời. Bạn vẫn có thể nhắn tin — hãy cẩn trọng với
-                  nội dung từ người lạ.
+              <View style={styles.bannerWarning}>
+                <AppText variant="caption" style={[styles.bannerText, { color: colors.warningText }]}>
+                  {displayName} chưa là bạn bè — hãy cẩn trọng với nội dung từ người lạ.
                 </AppText>
               </View>
             ) : null}
             {!USE_API_MOCK && isGroup && groupSendGuard.banner ? (
-              <View style={{ marginHorizontal: 12, marginBottom: 6, padding: 10, borderRadius: 8, backgroundColor: "#e0f2fe" }}>
-                <AppText variant="caption" style={{ color: "#075985", textAlign: "center" }}>
+              <View style={styles.bannerInfo}>
+                <AppText variant="caption" style={[styles.bannerText, { color: colors.infoText }]}>
                   {groupSendGuard.banner}
                 </AppText>
               </View>
             ) : null}
             {!USE_API_MOCK && socketStatus.state !== "connected" ? (
-              <View style={{ marginHorizontal: 12, marginBottom: 6, padding: 10, borderRadius: 8, backgroundColor: "#fff7ed" }}>
-                <AppText variant="caption" style={{ color: "#9a3412", textAlign: "center" }}>
+              <View style={styles.bannerOffline}>
+                <AppText variant="caption" style={[styles.bannerText, { color: colors.offlineText }]}>
                   {socketStatus.state === "reconnecting" || socketStatus.state === "connecting"
-                    ? socketStatus.detail ?? "Đang kết nối lại realtime..."
-                    : "Mất kết nối realtime. Tin nhắn sẽ được xếp hàng và gửi lại khi có mạng."}
+                    ? socketStatus.detail ?? "Đang kết nối lại..."
+                    : "Mất kết nối. Tin nhắn sẽ gửi lại khi có mạng."}
                 </AppText>
               </View>
             ) : null}
-            {!USE_API_MOCK ? (
-              <Pressable
-                style={{ marginHorizontal: 12, marginBottom: 6, padding: 8, borderRadius: 8, backgroundColor: "#f3f4f6" }}
-                onPress={() => {
-                  const next = !reduceAutoDownloadOnCellular;
-                  setReduceAutoDownloadOnCellular(next);
-                  void appStorage.setItem(CHAT_PREF_REDUCE_AUTO_DOWNLOAD_ON_CELLULAR, next ? "1" : "0");
-                }}
-              >
-                <AppText variant="caption" style={{ textAlign: "center", color: "#374151" }}>
-                  Tiết kiệm data 4G: {reduceAutoDownloadOnCellular ? "Bật" : "Tắt"}
-                </AppText>
-              </Pressable>
-            ) : null}
             {voiceDraftNotice ? (
-              <View style={{ marginHorizontal: 12, marginBottom: 6, padding: 10, borderRadius: 8, backgroundColor: "#eff6ff" }}>
-                <AppText variant="caption" style={{ color: "#1d4ed8", textAlign: "center" }}>
+              <View style={styles.bannerNotice}>
+                <AppText variant="caption" style={[styles.bannerText, { color: colors.noticeText }]}>
                   {voiceDraftNotice}
                 </AppText>
               </View>
@@ -1582,3 +1599,49 @@ export default function ChatRoomScreen() {
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  bannerDanger: {
+    marginHorizontal: 12,
+    marginBottom: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: colors.dangerSurface,
+  },
+  bannerWarning: {
+    marginHorizontal: 12,
+    marginBottom: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: colors.warningSurface,
+  },
+  bannerInfo: {
+    marginHorizontal: 12,
+    marginBottom: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: colors.infoSurface,
+  },
+  bannerOffline: {
+    marginHorizontal: 12,
+    marginBottom: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: colors.offlineSurface,
+  },
+  bannerNotice: {
+    marginHorizontal: 12,
+    marginBottom: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: colors.noticeSurface,
+  },
+  bannerText: {
+    textAlign: "center",
+  },
+});

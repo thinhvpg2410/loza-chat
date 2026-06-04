@@ -1,14 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
 import { Platform, Pressable, StyleSheet, View } from "react-native";
 
 import type { MockConversation } from "@/constants/mockData";
+import { AppAvatar } from "@ui/AppAvatar";
 import { AppText } from "@ui/AppText";
 import { UnreadBadge } from "./UnreadBadge";
 import { colors, hairlineBottomBorder, radius, spacing } from "@theme";
 
-/** Zalo-like: dense row, avatar balanced to 15px title */
-const AVATAR_SIZE = 40;
+const AVATAR_SIZE = 46; // matches avatarSizes.md from theme
 
 type ChatListItemProps = {
   item: MockConversation;
@@ -24,7 +23,7 @@ export function ChatListItem({ item, onPress }: ChatListItemProps) {
     <Pressable
       accessibilityRole="button"
       onPress={onPress}
-      android_ripple={{ color: "rgba(0,0,0,0.06)" }}
+      android_ripple={{ color: "rgba(0,0,0,0.05)" }}
       style={({ pressed }) => [
         styles.row,
         hairlineBottomBorder,
@@ -32,32 +31,33 @@ export function ChatListItem({ item, onPress }: ChatListItemProps) {
           backgroundColor:
             Platform.OS === "ios"
               ? pressed
-                ? "rgba(0,0,0,0.03)"
+                ? colors.surfaceSecondary
                 : colors.background
               : colors.background,
         },
       ]}
     >
-      <View style={styles.avatarWrap}>
-        <Image
-          source={{ uri: item.avatarUrl }}
-          style={styles.avatar}
-          contentFit="cover"
-          transition={160}
-        />
+      {/* Avatar container — fixed 48×48, clips badge overflow */}
+      <View style={styles.avatarOuter}>
+        <View style={styles.avatarClip}>
+          <AppAvatar uri={item.avatarUrl} name={item.name} size="md" />
+        </View>
         {isGroup ? (
           <View style={styles.groupBadge}>
-            <Ionicons name="people" size={9} color={colors.textInverse} />
+            <Ionicons name="people" size={8} color={colors.textInverse} />
           </View>
         ) : null}
-        {!isGroup && item.isOnline && !item.verified ? <View style={styles.onlineDot} /> : null}
+        {!isGroup && item.isOnline && !item.verified ? (
+          <View style={styles.onlineDot} />
+        ) : null}
         {!isGroup && item.verified ? (
           <View style={styles.verifiedBadge}>
-            <Ionicons name="checkmark" size={9} color={colors.textInverse} />
+            <Ionicons name="checkmark" size={8} color={colors.textInverse} />
           </View>
         ) : null}
       </View>
 
+      {/* Text body */}
       <View style={styles.body}>
         <View style={styles.topRow}>
           <AppText
@@ -65,29 +65,29 @@ export function ChatListItem({ item, onPress }: ChatListItemProps) {
             numberOfLines={1}
             style={[
               styles.name,
-              hasUnread ? { fontWeight: "700", color: colors.text } : { fontWeight: "600", color: colors.text },
+              { fontWeight: hasUnread ? "700" : "600" },
             ]}
           >
             {item.name}
           </AppText>
           <View style={styles.metaRight}>
             {item.isPinned ? (
-              <Ionicons name="pin" size={12} color={colors.textMuted} />
+              <Ionicons name="pin" size={11} color={colors.textMuted} />
             ) : null}
             {item.isMuted ? (
-              <Ionicons name="volume-mute-outline" size={12} color={colors.textMuted} />
+              <Ionicons name="volume-mute-outline" size={11} color={colors.textMuted} />
             ) : null}
             <AppText
               variant="micro"
               color="textPlaceholder"
               numberOfLines={1}
-              ellipsizeMode="tail"
               style={styles.time}
             >
               {item.time}
             </AppText>
           </View>
         </View>
+
         <View style={styles.bottomRow}>
           <AppText
             variant="caption"
@@ -96,13 +96,18 @@ export function ChatListItem({ item, onPress }: ChatListItemProps) {
             style={[
               styles.preview,
               {
-                color: previewMuted ? colors.textMuted : colors.textPlaceholder,
+                color: hasUnread
+                  ? colors.textSecondary
+                  : previewMuted
+                    ? colors.textMuted
+                    : colors.textPlaceholder,
                 fontWeight: hasUnread ? "500" : "400",
-                ...(Platform.OS === "android" ? { includeFontPadding: false } : {}),
               },
             ]}
           >
-            {isGroup && item.memberCount != null ? `${item.memberCount} · ${item.lastMessage}` : item.lastMessage}
+            {isGroup && item.memberCount != null
+              ? `${item.memberCount} thành viên · ${item.lastMessage}`
+              : item.lastMessage}
           </AppText>
           <UnreadBadge count={item.unreadCount ?? 0} />
         </View>
@@ -116,54 +121,61 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: spacing.md,
-    paddingVertical: 4,
-    minHeight: 52,
+    paddingVertical: 8,
+    minHeight: 68,
   },
-  avatarWrap: {
+  /** Outer container for avatar + badge — does NOT clip so badge is visible */
+  avatarOuter: {
+    width: AVATAR_SIZE + 6,
+    height: AVATAR_SIZE + 6,
+    marginRight: 8,
+    flexShrink: 0,
     position: "relative",
-    width: AVATAR_SIZE,
-    height: AVATAR_SIZE,
-    marginRight: spacing.sm,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  avatar: {
+  /** Inner container ensures avatar is always correctly clipped to circle */
+  avatarClip: {
     width: AVATAR_SIZE,
     height: AVATAR_SIZE,
     borderRadius: radius.full,
-    backgroundColor: colors.surfaceSecondary,
+    overflow: "hidden",
   },
   onlineDot: {
     position: "absolute",
-    right: 0,
-    bottom: 0,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    right: 2,
+    bottom: 2,
+    width: 11,
+    height: 11,
+    borderRadius: 6,
     backgroundColor: colors.success,
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: colors.background,
   },
   verifiedBadge: {
     position: "absolute",
-    right: -1,
-    bottom: -1,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
+    right: 1,
+    bottom: 1,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: "#F97316",
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: 2,
+    borderColor: colors.background,
   },
   groupBadge: {
     position: "absolute",
-    right: -1,
-    bottom: -1,
+    right: 1,
+    bottom: 1,
     width: 16,
     height: 16,
     borderRadius: 8,
     backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: colors.background,
   },
   body: {
@@ -179,32 +191,32 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: spacing.sm,
     minWidth: 0,
+    fontSize: 15,
+    color: colors.text,
   },
   metaRight: {
     flexDirection: "row",
     alignItems: "center",
     flexShrink: 0,
-    maxWidth: "38%",
+    maxWidth: "36%",
     gap: 3,
     justifyContent: "flex-end",
   },
   time: {
-    fontWeight: "400",
     textAlign: "right",
-    minWidth: 28,
+    minWidth: 30,
   },
   bottomRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginTop: 1,
+    marginTop: 2,
     gap: spacing.xs,
   },
   preview: {
     flex: 1,
     minWidth: 0,
-    fontSize: 12,
-    lineHeight: 16,
-    paddingVertical: 0,
+    fontSize: 13,
+    lineHeight: 17,
   },
 });

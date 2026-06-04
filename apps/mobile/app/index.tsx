@@ -49,10 +49,10 @@ export default function SplashScreen() {
         contentFit="contain"
         accessibilityLabel="Loza Chat"
       />
-      <AppText variant="headline" style={{ fontWeight: "700", color: colors.text, letterSpacing: -0.3 }}>
+      <AppText variant="display" style={{ fontWeight: "700", color: colors.text, letterSpacing: -0.5 }}>
         Loza Chat
       </AppText>
-      <AppText variant="micro" color="textMuted" style={{ marginTop: 6, letterSpacing: 0.2 }}>
+      <AppText variant="subhead" color="textMuted" style={{ marginTop: 6 }}>
         Nhắn tin gọn, ổn định
       </AppText>
       <View style={{ marginTop: spacing.xxl }}>

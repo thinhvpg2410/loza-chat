@@ -85,7 +85,7 @@ apiClient.interceptors.response.use(
     }
 
     const url = original.url ?? "";
-    if (url.includes("/auth/refresh") || url.includes("/auth/login")) {
+    if (url.includes("/auth/refresh") || url.includes("/auth/login") || url.includes("/auth/logout")) {
       return Promise.reject(error);
     }
 

@@ -1,39 +1,48 @@
-/**
- * Zalo-adjacent palette: soft blue primary, white/light gray surfaces, muted text.
- */
 export const colors = {
   primary: "#0B84FF",
   primaryPressed: "#0870D9",
   primaryMuted: "#E8F3FF",
+  primarySurface: "#F0F7FF",
 
   background: "#FFFFFF",
   surface: "#F5F6F8",
-  surfaceSecondary: "#EEF0F3",
+  surfaceSecondary: "#ECEEF1",
+  surfaceElevated: "#FFFFFF",
 
-  border: "#E6E8EB",
-  borderStrong: "#D8DCE0",
+  border: "#E4E6EB",
+  borderStrong: "#D1D5DB",
 
-  text: "#1A1A1A",
+  text: "#111827",
   textSecondary: "#6B7280",
   textMuted: "#9CA3AF",
-  textPlaceholder: "#B0B6BF",
+  textPlaceholder: "#C0C6D0",
   textInverse: "#FFFFFF",
 
   danger: "#EF4444",
+  dangerPressed: "#DC2626",
   success: "#22C55E",
   warning: "#F59E0B",
 
-  overlay: "rgba(0, 0, 0, 0.45)",
-  scrim: "rgba(0, 0, 0, 0.06)",
+  overlay: "rgba(0, 0, 0, 0.48)",
+  scrim: "rgba(0, 0, 0, 0.05)",
 
-  /** Chat room — Zalo-like soft surfaces */
-  chatRoomBackground: "#F0F2F5",
-  /** Incoming: clean white on room bg */
+  /** Chat room */
+  chatRoomBackground: "#EEF0F4",
   chatBubbleIncoming: "#FFFFFF",
-  /** Hairline around incoming bubble — lighter than `border` */
-  chatBubbleIncomingBorder: "#E6E9ED",
-  /** Outgoing: soft blue-gray (softer than saturated tint) */
-  chatBubbleOutgoing: "#E8F0FA",
+  chatBubbleIncomingBorder: "#E2E5EA",
+  chatBubbleOutgoing: "#DCE9FA",
+
+  /** Semantic surfaces for status banners */
+  dangerSurface: "#FEE2E2",
+  dangerText: "#991B1B",
+  warningSurface: "#FEF3C7",
+  warningText: "#78350F",
+  infoSurface: "#E0F2FE",
+  infoText: "#075985",
+  offlineSurface: "#FFF7ED",
+  offlineText: "#9A3412",
+  noticeSurface: "#EFF6FF",
+  noticeText: "#1D4ED8",
 } as const;
 
 export type ColorName = keyof typeof colors;

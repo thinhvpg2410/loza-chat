@@ -10,7 +10,7 @@ import {
 import { AppText } from "@ui/AppText";
 import { colors, radius, spacing } from "@theme";
 
-type ButtonVariant = "primary" | "secondary" | "outline" | "ghost";
+type ButtonVariant = "primary" | "secondary" | "outline" | "ghost" | "danger";
 type ButtonSize = "sm" | "md";
 
 type AppButtonProps = Omit<PressableProps, "children"> & {
@@ -18,7 +18,6 @@ type AppButtonProps = Omit<PressableProps, "children"> & {
   variant?: ButtonVariant;
   size?: ButtonSize;
   loading?: boolean;
-  /** Slightly shorter primary-style CTA (e.g. auth). */
   compact?: boolean;
 };
 
@@ -33,7 +32,7 @@ const sizeStyles: Record<ButtonSize, { container: ViewStyle; textVariant: "subhe
   },
   md: {
     container: {
-      minHeight: 44,
+      minHeight: 48,
       paddingVertical: spacing.sm,
       paddingHorizontal: spacing.lg,
     },
@@ -45,10 +44,12 @@ function variantStyles(variant: ButtonVariant): { container: ViewStyle; labelCol
   switch (variant) {
     case "primary":
       return {
-        container: {
-          backgroundColor: colors.primary,
-          borderWidth: 0,
-        },
+        container: { backgroundColor: colors.primary, borderWidth: 0 },
+        labelColor: "textInverse",
+      };
+    case "danger":
+      return {
+        container: { backgroundColor: colors.danger, borderWidth: 0 },
         labelColor: "textInverse",
       };
     case "secondary":
@@ -64,17 +65,14 @@ function variantStyles(variant: ButtonVariant): { container: ViewStyle; labelCol
       return {
         container: {
           backgroundColor: colors.background,
-          borderWidth: StyleSheet.hairlineWidth,
+          borderWidth: 1.5,
           borderColor: colors.primary,
         },
         labelColor: "primary",
       };
     case "ghost":
       return {
-        container: {
-          backgroundColor: "transparent",
-          borderWidth: 0,
-        },
+        container: { backgroundColor: "transparent", borderWidth: 0 },
         labelColor: "primary",
       };
   }
@@ -83,11 +81,9 @@ function variantStyles(variant: ButtonVariant): { container: ViewStyle; labelCol
 function spinnerColor(variant: ButtonVariant): string {
   switch (variant) {
     case "primary":
+    case "danger":
       return colors.textInverse;
-    case "secondary":
-      return colors.primary;
-    case "outline":
-    case "ghost":
+    default:
       return colors.primary;
   }
 }
@@ -107,7 +103,7 @@ export function AppButton({
   const sz = sizeStyles[size];
   const compactPad: ViewStyle =
     compact && size === "md"
-      ? { minHeight: 40, paddingVertical: spacing.xs, paddingHorizontal: spacing.md }
+      ? { minHeight: 44, paddingVertical: spacing.sm, paddingHorizontal: spacing.md }
       : {};
 
   return (
@@ -117,11 +113,10 @@ export function AppButton({
       style={({ pressed }) => {
         const base: StyleProp<ViewStyle> = [
           {
-            borderRadius: radius.lg,
+            borderRadius: radius.xxl,
             alignItems: "center",
             justifyContent: "center",
-            opacity: isDisabled ? 0.5 : 1,
-            ...(pressed && variant !== "ghost" ? { opacity: isDisabled ? 0.5 : 0.92 } : null),
+            opacity: isDisabled ? 0.46 : pressed ? 0.88 : 1,
           },
           vs.container,
           sz.container,
@@ -138,7 +133,7 @@ export function AppButton({
         <AppText
           variant={compact && size === "md" ? "subhead" : sz.textVariant}
           color={vs.labelColor}
-          style={{ fontWeight: "600" }}
+          style={{ fontWeight: "600", letterSpacing: 0.1 }}
         >
           {title}
         </AppText>

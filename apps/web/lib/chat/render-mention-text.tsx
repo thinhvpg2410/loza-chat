@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment, type ReactElement } from "react";
 
 const MENTION_TOKEN_REGEX = /(^|\s)(@[a-zA-Z0-9._-]{1,64})/g;
 
@@ -8,7 +8,7 @@ type MentionTextPalette = {
 };
 
 export function renderMentionText(content: string, palette: MentionTextPalette) {
-  const nodes: Array<string | JSX.Element> = [];
+  const nodes: Array<string | ReactElement> = [];
   let cursor = 0;
   let keyIndex = 0;
   for (const match of content.matchAll(MENTION_TOKEN_REGEX)) {

@@ -105,12 +105,12 @@ export const MessageBubble = memo(UnpackedMessageBubble);
 
 const styles = StyleSheet.create({
   press: {
-    paddingHorizontal: 5,
-    paddingVertical: 3,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
   },
   body: {
-    fontSize: 14,
-    lineHeight: 19,
+    fontSize: 15,
+    lineHeight: 21,
     fontWeight: "400",
     color: colors.text,
   },

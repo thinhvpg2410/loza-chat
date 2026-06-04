@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Text, TextInput, View } from "react-native";
+import { StyleSheet, Text, TextInput, View } from "react-native";
+
+import { colors, radius, spacing } from "@theme";
 
 const LENGTH = 6;
 
@@ -14,7 +16,6 @@ type OTPInputProps = {
   onComplete?: (code: string) => void;
   disabled?: boolean;
   error?: string;
-  /** Smaller cells + tighter gaps (auth / onboarding). */
   compact?: boolean;
 };
 
@@ -28,6 +29,7 @@ export function OTPInput({
 }: OTPInputProps) {
   const inputsRef = useRef<(TextInput | null)[]>([]);
   const [digits, setDigits] = useState<string[]>(() => codeToDigits(value));
+  const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
 
   useEffect(() => {
     setDigits(codeToDigits(value));
@@ -80,45 +82,97 @@ export function OTPInput({
     focusIndex(index - 1);
   };
 
-  const cellClass = compact
-    ? [
-        "h-8 w-8 flex-none rounded-md border bg-white p-0 text-center text-[15px] font-semibold leading-[18px] text-slate-900 dark:bg-slate-900 dark:text-slate-100",
-        error ? "border-red-500" : "border-slate-200 dark:border-slate-600",
-      ].join(" ")
-    : [
-        "h-12 flex-1 rounded-xl border bg-white text-center text-lg font-semibold text-slate-900 dark:bg-slate-900 dark:text-slate-100",
-        error ? "border-red-500" : "border-slate-200 dark:border-slate-600",
-      ].join(" ");
-
   return (
-    <View className="w-full">
-      <View
-        className={
-          compact ? "flex-row flex-wrap items-center justify-center gap-1" : "flex-row justify-between gap-2"
-        }
-      >
-        {digits.map((d, index) => (
-          <TextInput
-            key={index}
-            ref={(el) => {
-              inputsRef.current[index] = el;
-            }}
-            value={d}
-            onChangeText={(t) => handleChange(index, t)}
-            onKeyPress={({ nativeEvent }) => handleKeyPress(index, nativeEvent.key)}
-            keyboardType="number-pad"
-            maxLength={index === 0 ? LENGTH : 1}
-            editable={!disabled}
-            selectTextOnFocus
-            className={cellClass}
-          />
-        ))}
+    <View style={styles.root}>
+      <View style={compact ? styles.rowCompact : styles.rowDefault}>
+        {digits.map((d, index) => {
+          const isFocused = focusedIndex === index;
+          const hasError = Boolean(error);
+          return (
+            <TextInput
+              key={index}
+              ref={(el) => {
+                inputsRef.current[index] = el;
+              }}
+              value={d}
+              onChangeText={(t) => handleChange(index, t)}
+              onKeyPress={({ nativeEvent }) => handleKeyPress(index, nativeEvent.key)}
+              onFocus={() => setFocusedIndex(index)}
+              onBlur={() => setFocusedIndex(null)}
+              keyboardType="number-pad"
+              maxLength={index === 0 ? LENGTH : 1}
+              editable={!disabled}
+              selectTextOnFocus
+              style={[
+                compact ? styles.cellCompact : styles.cellDefault,
+                {
+                  borderColor: hasError
+                    ? colors.danger
+                    : isFocused
+                      ? colors.primary
+                      : colors.border,
+                  borderWidth: isFocused || hasError ? 1.5 : StyleSheet.hairlineWidth,
+                  opacity: disabled ? 0.5 : 1,
+                },
+              ]}
+            />
+          );
+        })}
       </View>
       {error ? (
-        <Text className={compact ? "mt-1.5 text-center text-xs text-red-500" : "mt-2 text-center text-sm text-red-500"}>
-          {error}
-        </Text>
+        <Text style={compact ? styles.errorCompact : styles.errorDefault}>{error}</Text>
       ) : null}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  root: {
+    width: "100%",
+  },
+  rowDefault: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
+  rowCompact: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
+  },
+  cellDefault: {
+    flex: 1,
+    height: 52,
+    borderRadius: radius.lg,
+    backgroundColor: colors.background,
+    textAlign: "center",
+    fontSize: 20,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  cellCompact: {
+    width: 40,
+    height: 44,
+    flexShrink: 0,
+    borderRadius: radius.md,
+    backgroundColor: colors.background,
+    textAlign: "center",
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  errorDefault: {
+    marginTop: spacing.sm,
+    textAlign: "center",
+    fontSize: 13,
+    color: colors.danger,
+  },
+  errorCompact: {
+    marginTop: spacing.xs,
+    textAlign: "center",
+    fontSize: 12,
+    color: colors.danger,
+  },
+});

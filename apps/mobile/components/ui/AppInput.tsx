@@ -15,9 +15,7 @@ type AppInputProps = TextInputProps & {
   label?: string;
   error?: string;
   containerStyle?: ViewStyle;
-  /** Tighter field for dense flows (e.g. auth). */
   compact?: boolean;
-  /** Nút/icon bên phải (ví dụ hiện/ẩn mật khẩu). */
   endAdornment?: ReactNode;
 };
 
@@ -42,6 +40,8 @@ export function AppInput({
       ? colors.primary
       : colors.border;
 
+  const borderWidth = focused || hasError ? 1.5 : StyleSheet.hairlineWidth;
+
   const inputShellStyle = [
     compact ? styles.inputCompact : styles.input,
     compact ? typography.subhead : typography.body,
@@ -58,7 +58,7 @@ export function AppInput({
         <AppText
           variant={compact ? "micro" : "caption"}
           color="textSecondary"
-          style={{ marginBottom: compact ? 4 : spacing.xs }}
+          style={{ marginBottom: compact ? 5 : spacing.xs, fontWeight: "500" }}
         >
           {label}
         </AppText>
@@ -70,6 +70,7 @@ export function AppInput({
             compact ? styles.inputRowCompact : styles.inputRowDefault,
             {
               borderColor,
+              borderWidth,
               backgroundColor: editable ? colors.background : colors.surface,
             },
           ]}
@@ -94,12 +95,7 @@ export function AppInput({
         <TextInput
           editable={editable}
           placeholderTextColor={colors.textPlaceholder}
-          style={[
-            inputShellStyle,
-            {
-              borderColor,
-            },
-          ]}
+          style={[inputShellStyle, { borderColor, borderWidth }]}
           onBlur={(e) => {
             setFocused(false);
             onBlur?.(e);
@@ -122,32 +118,29 @@ export function AppInput({
 
 const styles = StyleSheet.create({
   input: {
-    minHeight: 44,
+    minHeight: 48,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radius.lg,
   },
   inputCompact: {
-    minHeight: 40,
+    minHeight: 44,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
-    borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radius.lg,
   },
   inputRow: {
     flexDirection: "row",
     alignItems: "center",
-    borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radius.lg,
     minWidth: 0,
   },
   inputRowDefault: {
-    minHeight: 44,
+    minHeight: 48,
     paddingRight: spacing.xs,
   },
   inputRowCompact: {
-    minHeight: 40,
+    minHeight: 44,
     paddingRight: spacing.xs,
   },
   inputInRow: {

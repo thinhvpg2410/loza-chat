@@ -11,7 +11,8 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "Ứng dụng cần camera để quét mã QR đăng nhập web."
+        "NSCameraUsageDescription": "Ứng dụng cần camera để quét mã QR đăng nhập web và gọi video.",
+      "NSMicrophoneUsageDescription": "Ứng dụng cần micro để gọi thoại và gọi video."
       }
     },
     "android": {
@@ -39,7 +40,7 @@
         "expo-camera",
         {
           "cameraPermission": "Ứng dụng cần camera để quét mã QR đăng nhập web.",
-          "recordAudioAndroid": false
+          "recordAudioAndroid": true
         }
       ],
       [
@@ -58,7 +59,7 @@
       "@react-native-community/datetimepicker"
     ],
     "experiments": {
-      "reactCompiler": true
+      "reactCompiler": false
     }
   }
 }

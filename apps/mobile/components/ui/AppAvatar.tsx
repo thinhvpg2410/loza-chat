@@ -36,11 +36,9 @@ export function AppAvatar({ uri, name = "", size = "md", style }: AppAvatarProps
     height: dim,
     borderRadius: radius.full,
     overflow: "hidden",
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceSecondary,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
   };
 
   if (uri) {
@@ -59,12 +57,14 @@ export function AppAvatar({ uri, name = "", size = "md", style }: AppAvatarProps
   const initials = initialsFromName(name);
   const bg = pickBg(name || initials);
 
+  const textVariant = dim <= 30 ? "micro" : dim <= 40 ? "caption" : "subhead";
+
   return (
-    <View style={[base, { backgroundColor: bg, borderWidth: 0 }, style]}>
+    <View style={[base, { backgroundColor: bg }, style]}>
       <AppText
-        variant={size === "xs" || size === "sm" ? "caption" : "subhead"}
+        variant={textVariant}
         color="textInverse"
-        style={{ fontWeight: "600" }}
+        style={{ fontWeight: "700", letterSpacing: -0.3 }}
       >
         {initials}
       </AppText>

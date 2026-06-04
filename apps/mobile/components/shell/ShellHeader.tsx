@@ -4,14 +4,13 @@ import { View } from "react-native";
 import { AppText } from "@ui/AppText";
 import { colors, headerSeparator, spacing } from "@theme";
 
-const HEADER_MIN_HEIGHT = 44;
+const HEADER_MIN_HEIGHT = 46;
 
 type ShellHeaderProps = {
   title: string;
   subtitle?: string;
   left?: ReactNode;
   right?: ReactNode;
-  /** Extra bottom padding under title row */
   bottomPadding?: number;
 };
 
@@ -37,7 +36,7 @@ export function ShellHeader({ title, subtitle, left, right, bottomPadding = spac
       >
         <View style={{ width: 72, alignItems: "flex-start", justifyContent: "center" }}>{left}</View>
         <View style={{ flex: 1, alignItems: "center", paddingHorizontal: spacing.xs }}>
-          <AppText variant="headline" numberOfLines={1} style={{ fontWeight: "600", color: colors.text }}>
+          <AppText variant="title" numberOfLines={1} style={{ fontWeight: "700", color: colors.text }}>
             {title}
           </AppText>
           {subtitle ? (
