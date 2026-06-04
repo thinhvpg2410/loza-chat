@@ -1483,4 +1483,68 @@ export class MessagesService {
       reactions: row.deletedAt ? { counts: [], mine: [] } : reactionSummary ?? { counts: [], mine: [] },
     };
   }
+
+  /**
+   * Persist a call-result message and broadcast it as a new chat message.
+   * Called by ChatGateway after every call ends (answered, cancelled, missed).
+   */
+  async createCallMessage(opts: {
+    conversationId: string;
+    senderId: string;
+    callType: 'voice' | 'video';
+    status: 'answered' | 'missed' | 'cancelled' | 'busy';
+    durationSeconds: number;
+  }): Promise<void> {
+    const content = buildCallMessageContent(opts.callType, opts.status, opts.durationSeconds);
+    const { randomUUID } = await import('crypto');
+    const row = await this.prisma.message.create({
+      data: {
+        conversationId: opts.conversationId,
+        senderId: opts.senderId,
+        clientMessageId: randomUUID(),
+        type: MessageType.call,
+        content,
+        metadataJson: {
+          callType: opts.callType,
+          status: opts.status,
+          durationSeconds: opts.durationSeconds,
+        },
+      },
+      include: {
+        sender: true,
+        attachments: { orderBy: { sortOrder: 'asc' } },
+        sticker: { include: { pack: true } },
+      },
+    });
+    await this.prisma.conversation.update({
+      where: { id: opts.conversationId },
+      data: { lastMessageId: row.id },
+    });
+    const message = this.toMessageView(row);
+    this.domainEvents.emit({ type: 'message.created', conversationId: opts.conversationId, message });
+  }
+}
+
+function buildCallMessageContent(
+  callType: 'voice' | 'video',
+  status: 'answered' | 'missed' | 'cancelled' | 'busy',
+  durationSeconds: number,
+): string {
+  const typeLabel = callType === 'video' ? 'Gọi video' : 'Gọi thoại';
+  switch (status) {
+    case 'answered':
+      return `${typeLabel} · ${formatDuration(durationSeconds)}`;
+    case 'missed':
+      return `${typeLabel} nhỡ`;
+    case 'cancelled':
+      return `${typeLabel} đã huỷ`;
+    case 'busy':
+      return `${typeLabel} · Đang bận`;
+  }
+}
+
+function formatDuration(seconds: number): string {
+  const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+  const s = (seconds % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
 }

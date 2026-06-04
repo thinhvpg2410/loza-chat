@@ -1,6 +1,7 @@
 import { attachmentReadUrl } from "@/lib/chat/attachment-public-url";
 import type { ApiMessageWithReceipt } from "@/lib/chat/api-dtos";
 import type {
+  CallMessage,
   FileMessage,
   ImageMessage,
   Message,
@@ -133,6 +134,22 @@ function mapContentOnly(row: ApiMessageWithReceipt, apiBaseUrl: string): Message
         isOwn: baseOwn,
         ...peerSenderFields(row),
         ...receipt,
+        reactions,
+      };
+      return m;
+    }
+    case "call": {
+      const meta = (row.metadataJson ?? {}) as Record<string, unknown>;
+      const m: CallMessage = {
+        kind: "call",
+        id: row.id,
+        conversationId: row.conversationId,
+        callType: (meta.callType as "voice" | "video") ?? "voice",
+        status: (meta.status as "answered" | "missed" | "cancelled" | "busy") ?? "cancelled",
+        durationSeconds: typeof meta.durationSeconds === "number" ? meta.durationSeconds : 0,
+        sentAt,
+        createdAt,
+        isOwn: baseOwn,
         reactions,
       };
       return m;

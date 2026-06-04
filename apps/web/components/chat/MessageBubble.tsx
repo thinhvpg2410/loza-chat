@@ -12,7 +12,7 @@ import { StickerMessage } from "@/components/chat/StickerMessage";
 import { buildDocumentPreviewEmbedUrl, isDocumentPreviewable } from "@/lib/document-preview-url";
 import { groupSpacingClass } from "@/lib/message-grouping";
 import { renderMentionText } from "@/lib/chat/render-mention-text";
-import type { Message, MessageGroupPosition, MessageReaction } from "@/lib/types/chat";
+import type { CallMessage as CallMessageType, Message, MessageGroupPosition, MessageReaction } from "@/lib/types/chat";
 
 type MessageBubbleProps = {
   message: Message;
@@ -58,6 +58,10 @@ export function MessageBubble({
         </span>
       </div>
     );
+  }
+
+  if (message.kind === "call") {
+    return <CallMessageBubble message={message} />;
   }
 
   const isOwn = message.isOwn;
@@ -292,6 +296,75 @@ export function MessageBubble({
       {!isOwn ? actionsSlot : null}
 
       {isOwn ? <div className="w-9 shrink-0" aria-hidden /> : null}
+    </div>
+  );
+}
+
+// ── Call message bubble ───────────────────────────────────────────────────────
+
+function formatCallDuration(seconds: number): string {
+  const m = Math.floor(seconds / 60).toString().padStart(2, "0");
+  const s = (seconds % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+function CallMessageBubble({ message }: { message: CallMessageType }) {
+  const { callType, status, durationSeconds, isOwn, sentAt } = message;
+
+  const icon =
+    status === "missed" || status === "busy"
+      ? callType === "video"
+        ? "📵"
+        : "📵"
+      : callType === "video"
+        ? "📹"
+        : "📞";
+
+  const label = (() => {
+    switch (status) {
+      case "answered":
+        return `${callType === "video" ? "Gọi video" : "Gọi thoại"} · ${formatCallDuration(durationSeconds)}`;
+      case "missed":
+        return `${callType === "video" ? "Gọi video" : "Gọi thoại"} nhỡ`;
+      case "cancelled":
+        return `${callType === "video" ? "Gọi video" : "Gọi thoại"} đã huỷ`;
+      case "busy":
+        return `${callType === "video" ? "Gọi video" : "Gọi thoại"} · Đang bận`;
+    }
+  })();
+
+  const isMissed = status === "missed" || status === "busy";
+
+  return (
+    <div className={`flex items-end gap-2 py-0.5 ${isOwn ? "flex-row-reverse" : "flex-row"}`}>
+      {!isOwn && <div className="w-9 shrink-0" aria-hidden />}
+      <div
+        className={`flex items-center gap-2 rounded-2xl px-3 py-2 text-sm ${
+          isOwn
+            ? "rounded-br-sm bg-[var(--zalo-blue)] text-white"
+            : "rounded-bl-sm bg-white ring-1 ring-black/[0.06]"
+        }`}
+        style={{ minWidth: 160 }}
+      >
+        <span className="text-base leading-none">{icon}</span>
+        <div className="flex min-w-0 flex-col">
+          <span
+            className={`font-medium leading-snug ${
+              isMissed
+                ? isOwn
+                  ? "text-white/80"
+                  : "text-[var(--zalo-danger,#ef4444)]"
+                : ""
+            }`}
+          >
+            {label}
+          </span>
+          <span className={`mt-0.5 text-[10px] leading-none ${isOwn ? "text-white/60" : "text-[var(--zalo-text-muted)]"}`}>
+            {sentAt}
+          </span>
+        </div>
+      </div>
+      {isOwn && <div className="w-9 shrink-0" aria-hidden />}
     </div>
   );
 }

@@ -19,6 +19,7 @@ function previewLineFromApi(m: ApiMessageWithReceipt): string {
   if (m.type === "sticker") return m.sticker?.code ?? m.sticker?.name ?? "🎭 Sticker";
   if (m.type === "voice") return "🎤 Ghi âm";
   if (m.type === "video") return "🎬 Video";
+  if (m.type === "call") return m.content?.trim() || "📞 Cuộc gọi";
   return "";
 }
 
@@ -50,6 +51,8 @@ function resolveKind(m: ApiMessageWithReceipt): MessageKind {
       return "image";
     case "sticker":
       return "sticker";
+    case "call":
+      return "call";
     case "file":
     case "voice":
     case "video":
@@ -114,6 +117,17 @@ export function mapApiMessageToChatRoom(
       groupEventDetail: groupEv.detail,
       reactions: [],
       replyTo,
+    };
+  }
+
+  if (kind === "call") {
+    const meta = (m.metadataJson ?? {}) as Record<string, unknown>;
+    return {
+      ...base,
+      kind: "call",
+      callType: (meta.callType as "voice" | "video") ?? "voice",
+      callStatus: (meta.status as "answered" | "missed" | "cancelled" | "busy") ?? "cancelled",
+      callDurationSeconds: typeof meta.durationSeconds === "number" ? meta.durationSeconds : 0,
     };
   }
 

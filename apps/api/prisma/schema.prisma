@@ -45,6 +45,7 @@ enum MessageType {
   other
   system
   sticker
+  call
 }
 
 enum UploadSessionStatus {

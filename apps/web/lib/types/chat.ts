@@ -88,7 +88,14 @@ export type SystemMessage = MessageCommon & {
   body: string;
 };
 
-export type Message = TextMessage | ImageMessage | FileMessage | StickerMessage | SystemMessage;
+export type CallMessage = MessageCommon & {
+  kind: "call";
+  callType: "voice" | "video";
+  status: "answered" | "missed" | "cancelled" | "busy";
+  durationSeconds: number;
+};
+
+export type Message = TextMessage | ImageMessage | FileMessage | StickerMessage | SystemMessage | CallMessage;
 
 export type ConversationThread = {
   conversation: Conversation;

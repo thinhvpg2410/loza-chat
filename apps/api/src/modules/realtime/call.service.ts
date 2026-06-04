@@ -24,6 +24,21 @@ export interface CallState {
   pendingUserIds: Set<string>;
   status: CallStatus;
   startedAt: Date;
+  /** Set when ≥2 participants join (call becomes active). Used for duration. */
+  activeAt: Date | null;
+}
+
+export type CallEndStatus = 'answered' | 'missed' | 'cancelled' | 'busy';
+
+export function resolveCallEndStatus(call: CallState): CallEndStatus {
+  if (call.status === 'active') return 'answered';
+  // Ringing but ended — no one picked up or caller cancelled
+  return 'cancelled';
+}
+
+export function callDurationSeconds(call: CallState): number {
+  if (!call.activeAt) return 0;
+  return Math.round((Date.now() - call.activeAt.getTime()) / 1000);
 }
 
 @Injectable()
@@ -61,6 +76,7 @@ export class CallService {
       pendingUserIds: new Set(opts.invitedUserIds),
       status: 'ringing',
       startedAt: new Date(),
+      activeAt: null,
     };
     this.calls.set(opts.callId, call);
     this.userActiveCall.set(opts.initiatorId, opts.callId);
@@ -114,6 +130,7 @@ export class CallService {
 
     if (call.status === 'ringing' && call.participants.length >= 2) {
       call.status = 'active';
+      call.activeAt = new Date();
     }
 
     this.userActiveCall.set(userId, callId);

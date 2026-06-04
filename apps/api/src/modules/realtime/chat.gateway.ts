@@ -38,7 +38,7 @@ import {
   CallIceCandidateDto,
   CallEndDto,
 } from './dto/call-signal.dto';
-import { CallService } from './call.service';
+import { CallService, callDurationSeconds, resolveCallEndStatus } from './call.service';
 import { PresenceService } from './presence.service';
 import { conversationRoomId, userDirectRoomId } from './realtime.constants';
 import { SocketAuthService } from './socket-auth.service';
@@ -560,7 +560,10 @@ export class ChatGateway
           callId: dto.callId,
           peerId: user.id,
           reason: 'busy',
+          callEnded: true,
         });
+        this.calls.endCall(dto.callId);
+        this.persistCallMessage(call.conversationId, call.initiatorId, call.callType, 'busy', 0);
         return { ok: false };
       }
 
@@ -700,10 +703,10 @@ export class ChatGateway
 
   /** Leave a group call without ending it for others. */
   @SubscribeMessage('call:leave')
-  onCallLeave(
+  async onCallLeave(
     @ConnectedSocket() client: Socket,
     @MessageBody() body: unknown,
-  ): { ok: boolean } {
+  ): Promise<{ ok: boolean }> {
     try {
       const user = this.requireUser(client);
       const dto = parseWsPayload(CallEndDto, body);
@@ -712,6 +715,8 @@ export class ChatGateway
       if (!call) return { ok: false };
 
       const peerSocketIds = this.calls.getParticipantSocketIds(dto.callId, user.id);
+      const durationSeconds = callDurationSeconds(call);
+      const status = resolveCallEndStatus(call);
       const remaining = this.calls.leaveCall(dto.callId, user.id);
 
       const payload = { callId: dto.callId, peerId: user.id };
@@ -719,7 +724,7 @@ export class ChatGateway
         this.server.to(sid).emit('call:peer_left', payload);
       }
 
-      // If no participants remain, the call was ended by leaveCall
+      // If no participants remain, the call was ended by leaveCall — persist message
       if (!remaining) {
         for (const uid of call.pendingUserIds) {
           this.server.to(userDirectRoomId(uid)).emit('call:ended', {
@@ -727,6 +732,7 @@ export class ChatGateway
             endedBy: user.id,
           });
         }
+        this.persistCallMessage(call.conversationId, call.initiatorId, call.callType, status, durationSeconds);
       }
 
       return { ok: true };
@@ -738,10 +744,10 @@ export class ChatGateway
 
   /** End the entire call for all participants (1-1 hang up or host force-end). */
   @SubscribeMessage('call:end')
-  onCallEnd(
+  async onCallEnd(
     @ConnectedSocket() client: Socket,
     @MessageBody() body: unknown,
-  ): { ok: boolean } {
+  ): Promise<{ ok: boolean }> {
     try {
       const user = this.requireUser(client);
       const dto = parseWsPayload(CallEndDto, body);
@@ -751,6 +757,9 @@ export class ChatGateway
 
       const participantSocketIds = this.calls.getParticipantSocketIds(dto.callId, user.id);
       const pendingIds = [...call.pendingUserIds];
+      const durationSeconds = callDurationSeconds(call);
+      const status = resolveCallEndStatus(call);
+
       this.calls.endCall(dto.callId);
 
       const payload = { callId: dto.callId, endedBy: user.id };
@@ -761,11 +770,25 @@ export class ChatGateway
         this.server.to(userDirectRoomId(uid)).emit('call:ended', payload);
       }
 
+      this.persistCallMessage(call.conversationId, call.initiatorId, call.callType, status, durationSeconds);
+
       return { ok: true };
     } catch (err) {
       this.emitStructuredError(client, 'call:end', err, this.correlationIdFromPayload(body));
       return { ok: false };
     }
+  }
+
+  private persistCallMessage(
+    conversationId: string,
+    senderId: string,
+    callType: 'voice' | 'video',
+    status: 'answered' | 'missed' | 'cancelled' | 'busy',
+    durationSeconds: number,
+  ): void {
+    void this.messages
+      .createCallMessage({ conversationId, senderId, callType, status, durationSeconds })
+      .catch((err) => this.logger.error('Failed to persist call message', err));
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

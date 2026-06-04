@@ -114,6 +114,18 @@ function previewLine(m: ChatRoomMessage): string {
       return m.stickerEmoji ?? "🎭 Sticker";
     case "groupEvent":
       return m.groupEventBadge ?? "Sự kiện nhóm";
+    case "call": {
+      const t = m.callType === "video" ? "Gọi video" : "Gọi thoại";
+      if (m.callStatus === "answered") {
+        const dur = m.callDurationSeconds ?? 0;
+        const mm = Math.floor(dur / 60).toString().padStart(2, "0");
+        const ss = (dur % 60).toString().padStart(2, "0");
+        return `📞 ${t} · ${mm}:${ss}`;
+      }
+      if (m.callStatus === "missed") return `📵 ${t} nhỡ`;
+      if (m.callStatus === "busy") return `📵 ${t} · Đang bận`;
+      return `📞 ${t} đã huỷ`;
+    }
     default:
       return "";
   }
