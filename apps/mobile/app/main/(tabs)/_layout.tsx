@@ -45,11 +45,12 @@ export default function MainTabsLayout() {
   const friendsTabBadge =
     friendsTabBadgeCount > 0 ? (friendsTabBadgeCount > 99 ? "99+" : friendsTabBadgeCount) : undefined;
 
+  const TAB_HEIGHT = 52;
   const tabBarStyle = [
     styles.tabBar,
     {
-      height: 44 + insets.bottom,
-      paddingBottom: Math.max(insets.bottom, 2),
+      height: TAB_HEIGHT + insets.bottom,
+      paddingBottom: insets.bottom || 4,
     },
   ];
 
@@ -62,7 +63,6 @@ export default function MainTabsLayout() {
         tabBarStyle,
         tabBarLabelStyle: styles.tabLabel,
         tabBarItemStyle: styles.tabItem,
-        tabBarIconStyle: styles.tabIcon,
         tabBarHideOnKeyboard: true,
         sceneStyle: { backgroundColor: colors.background },
       }}
@@ -72,7 +72,7 @@ export default function MainTabsLayout() {
         options={{
           title: "Tin nhắn",
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "chatbubbles" : "chatbubbles-outline"} size={20} color={color} />
+            <Ionicons name={focused ? "chatbubbles" : "chatbubbles-outline"} size={22} color={color} />
           ),
           tabBarBadge: totalUnread > 0 ? (totalUnread > 99 ? "99+" : totalUnread) : undefined,
           tabBarBadgeStyle: styles.badge,
@@ -83,7 +83,7 @@ export default function MainTabsLayout() {
         options={{
           title: "Bạn bè",
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "people" : "people-outline"} size={20} color={color} />
+            <Ionicons name={focused ? "people" : "people-outline"} size={22} color={color} />
           ),
           tabBarBadge: friendsTabBadge,
           tabBarBadgeStyle: styles.badge,
@@ -94,7 +94,7 @@ export default function MainTabsLayout() {
         options={{
           title: "Khám phá",
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "compass" : "compass-outline"} size={20} color={color} />
+            <Ionicons name={focused ? "compass" : "compass-outline"} size={22} color={color} />
           ),
         }}
       />
@@ -103,7 +103,7 @@ export default function MainTabsLayout() {
         options={{
           title: "Cá nhân",
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "person" : "person-outline"} size={20} color={color} />
+            <Ionicons name={focused ? "person-circle" : "person-circle-outline"} size={22} color={color} />
           ),
         }}
       />
@@ -116,20 +116,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
-    paddingTop: 2,
+    paddingTop: 5,
   },
   tabLabel: {
-    fontSize: 10,
-    fontWeight: "600",
-    marginBottom: 0,
-    marginTop: 0,
+    fontSize: 11,
+    fontWeight: "500",
+    marginTop: -2,
   },
   tabItem: {
-    paddingTop: 0,
-    paddingBottom: 0,
-  },
-  tabIcon: {
-    marginBottom: -1,
+    paddingTop: 2,
   },
   badge: {
     backgroundColor: colors.danger,

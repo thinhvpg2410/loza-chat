@@ -7,6 +7,7 @@ import {
   ChatRealtimeProvider,
   type GroupRoomEvent,
 } from "@/components/chat/chat-realtime-context";
+import { CallProviderWrapper } from "@/components/call/CallProviderWrapper";
 import { ConversationList } from "@/components/chat/ConversationList";
 import type { ApiMessageWithReceipt } from "@/lib/chat/api-dtos";
 import { listPreviewFromApiMessage } from "@/lib/chat/list-preview-from-api";
@@ -219,7 +220,7 @@ export function ChatWorkspace({
         onRemoteMessageUpdatedForList={onRemoteMessageUpdatedForList}
         onGroupRoomEvent={onGroupRoomEvent}
       >
-        {shell}
+        <CallProviderWrapper>{shell}</CallProviderWrapper>
       </ChatRealtimeProvider>
     );
   }

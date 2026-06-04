@@ -5,6 +5,7 @@ import type { ApiConversationMemberProgress, ApiMessageView } from "@/services/c
 import { createCorrelationId } from "@/services/telemetry/correlation";
 import { useChatStore } from "@/store/chatStore";
 import { trackClientError } from "@/services/telemetry/telemetry";
+import { setCallSocket } from "@/services/socket/call-socket";
 
 export type TypingUpdatePayload = {
   conversationId: string;
@@ -150,6 +151,7 @@ export function connectChatSocket(accessToken?: string): () => void {
     reconnectionDelayMax: 12_000,
     randomizationFactor: 0.5,
   });
+  setCallSocket(socket);
   emitSocketStatus("connecting");
 
   socket.on("connect", () => {
@@ -337,6 +339,7 @@ export function connectChatSocket(accessToken?: string): () => void {
     socket?.off("group.member_role_updated");
     socket?.disconnect();
     socket = null;
+    setCallSocket(null);
     emitSocketStatus("idle");
   };
 }

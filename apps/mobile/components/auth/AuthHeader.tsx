@@ -15,9 +15,9 @@ export function AuthHeader({ title, subtitle, showBack = true }: AuthHeaderProps
   const router = useRouter();
 
   return (
-    <View style={{ marginBottom: spacing.md }}>
+    <View style={{ marginBottom: spacing.lg }}>
       {showBack ? (
-        <View style={{ marginBottom: spacing.xs, marginLeft: -spacing.xs }}>
+        <View style={{ marginBottom: spacing.sm, marginLeft: -spacing.xs }}>
           <AppIconButton
             name="chevron-back"
             size="sm"
@@ -30,11 +30,18 @@ export function AuthHeader({ title, subtitle, showBack = true }: AuthHeaderProps
           />
         </View>
       ) : null}
-      <AppText variant="headline" style={{ color: colors.text, fontWeight: "600", letterSpacing: -0.2 }}>
+      <AppText
+        variant="display"
+        style={{ color: colors.text, fontWeight: "700", letterSpacing: -0.5 }}
+      >
         {title}
       </AppText>
       {subtitle ? (
-        <AppText variant="caption" color="textSecondary" style={{ marginTop: spacing.xs, lineHeight: 18 }}>
+        <AppText
+          variant="subhead"
+          color="textSecondary"
+          style={{ marginTop: spacing.xs, lineHeight: 20 }}
+        >
           {subtitle}
         </AppText>
       ) : null}

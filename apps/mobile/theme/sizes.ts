@@ -1,12 +1,9 @@
-/**
- * Avatar and icon presets for list rows, headers, and chat bubbles.
- */
 export const avatarSizes = {
-  xs: 28,
-  sm: 36,
-  md: 44,
-  lg: 52,
-  xl: 64,
+  xs: 30,
+  sm: 38,
+  md: 46,
+  lg: 56,
+  xl: 72,
 } as const;
 
 export const iconSizes = {

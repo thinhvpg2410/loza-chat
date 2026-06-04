@@ -13,7 +13,14 @@ import type { ApiAttachment } from "@/lib/chat/api-dtos";
 import type { Conversation, Message } from "@/lib/types/chat";
 
 export type ChatRealtimeSessionResult =
-  | { ok: true; apiBaseUrl: string; accessToken: string; viewerUserId: string }
+  | {
+      ok: true;
+      apiBaseUrl: string;
+      accessToken: string;
+      viewerUserId: string;
+      viewerDisplayName: string;
+      viewerAvatarUrl: string | null;
+    }
   | { ok: false; error: string };
 
 /** Supplies Socket.IO auth + viewer id (server reads httpOnly cookie). */
@@ -31,11 +38,25 @@ export async function getChatRealtimeSessionAction(): Promise<ChatRealtimeSessio
   if (!viewerUserId) {
     return { ok: false, error: "Không đọc được phiên đăng nhập." };
   }
+
+  // Fetch viewer display name and avatar for call UI
+  let viewerDisplayName = "";
+  let viewerAvatarUrl: string | null = null;
+  try {
+    const { user } = await apiFetchJson<{ user: { displayName?: string; avatarUrl?: string | null } }>("/users/me");
+    viewerDisplayName = user.displayName ?? "";
+    viewerAvatarUrl = user.avatarUrl ?? null;
+  } catch {
+    // Non-critical — call UI will show empty name
+  }
+
   return {
     ok: true,
     apiBaseUrl: session.baseUrl,
     accessToken: token,
     viewerUserId,
+    viewerDisplayName,
+    viewerAvatarUrl,
   };
 }
 

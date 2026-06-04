@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { io, type Socket } from "socket.io-client";
 import { getChatRealtimeSessionAction } from "@/features/chat/chat-actions";
 import type { ApiMessageWithReceipt } from "@/lib/chat/api-dtos";
@@ -43,6 +43,8 @@ export type ChatRealtimeContextValue = {
   /** True after first successful Socket.IO connect for this session (false on disconnect). */
   socketConnected: boolean;
   viewerUserId: string;
+  viewerDisplayName: string;
+  viewerAvatarUrl: string | null;
   apiBaseUrl: string;
   registerRoom: (conversationId: string, handlers: RoomRealtimeHandlers) => () => void;
   /** Subscribe to normalized group room events (also receives provider `onGroupRoomEvent`). */
@@ -51,6 +53,8 @@ export type ChatRealtimeContextValue = {
   stopTyping: (conversationId: string) => void;
   emitSeen: (conversationId: string, messageId: string) => void;
   emitDelivered: (conversationId: string, messageId: string) => void;
+  /** Raw socket ref — used by CallProvider for WebRTC signaling. */
+  socketRef: RefObject<Socket | null>;
 };
 
 const ChatRealtimeContext = createContext<ChatRealtimeContextValue | null>(null);
@@ -86,6 +90,8 @@ export function ChatRealtimeProvider({
     apiBaseUrl: string;
     accessToken: string;
     viewerUserId: string;
+    viewerDisplayName: string;
+    viewerAvatarUrl: string | null;
   } | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
@@ -126,6 +132,8 @@ export function ChatRealtimeProvider({
         apiBaseUrl: r.apiBaseUrl,
         accessToken: r.accessToken,
         viewerUserId: r.viewerUserId,
+        viewerDisplayName: r.viewerDisplayName,
+        viewerAvatarUrl: r.viewerAvatarUrl,
       });
       setConnectionError(null);
     });
@@ -484,6 +492,8 @@ export function ChatRealtimeProvider({
           connectionError,
           socketConnected: false,
           viewerUserId: "",
+          viewerDisplayName: "",
+          viewerAvatarUrl: null,
           apiBaseUrl: "",
           registerRoom: () => () => {},
           subscribeGroupRoom: () => () => {},
@@ -491,6 +501,7 @@ export function ChatRealtimeProvider({
           stopTyping: () => {},
           emitSeen: () => {},
           emitDelivered: () => {},
+          socketRef,
         };
       }
       return null;
@@ -500,6 +511,8 @@ export function ChatRealtimeProvider({
       connectionError,
       socketConnected,
       viewerUserId: session.viewerUserId,
+      viewerDisplayName: session.viewerDisplayName,
+      viewerAvatarUrl: session.viewerAvatarUrl,
       apiBaseUrl: session.apiBaseUrl,
       registerRoom,
       subscribeGroupRoom,
@@ -507,6 +520,7 @@ export function ChatRealtimeProvider({
       stopTyping,
       emitSeen,
       emitDelivered,
+      socketRef,
     };
   }, [
     session,
@@ -519,6 +533,7 @@ export function ChatRealtimeProvider({
     stopTyping,
     emitSeen,
     emitDelivered,
+    socketRef,
   ]);
 
   /* useMemo result; false positive from react-hooks/refs (name matched ref heuristic). */

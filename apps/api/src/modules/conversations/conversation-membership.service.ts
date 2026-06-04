@@ -112,6 +112,17 @@ export class ConversationMembershipService {
     this.assertGroupNotDissolved(conv);
   }
 
+  async listActiveMemberUserIds(conversationId: string): Promise<string[]> {
+    const members = await this.prisma.conversationMember.findMany({
+      where: {
+        conversationId,
+        status: ConversationMemberStatus.active,
+      },
+      select: { userId: true },
+    });
+    return members.map((m) => m.userId);
+  }
+
   private assertGroupNotDissolved(
     conv: { type: ConversationType; dissolvedAt: Date | null } | null,
   ): void {

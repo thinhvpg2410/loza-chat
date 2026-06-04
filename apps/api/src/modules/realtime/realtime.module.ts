@@ -5,6 +5,7 @@ import { FriendsModule } from '../friends/friends.module';
 import { GroupsModule } from '../groups/groups.module';
 import { MessagesModule } from '../messages/messages.module';
 import { ChatGateway } from './chat.gateway';
+import { CallService } from './call.service';
 import { PresenceService } from './presence.service';
 import { SocketAuthService } from './socket-auth.service';
 import { TypingStateService } from './typing-state.service';
@@ -19,6 +20,7 @@ import { TypingStateService } from './typing-state.service';
   ],
   providers: [
     ChatGateway,
+    CallService,
     SocketAuthService,
     PresenceService,
     TypingStateService,

@@ -6,7 +6,7 @@ import { AppText } from "@ui/AppText";
 import { AppAvatar } from "@ui/AppAvatar";
 import { colors, headerSeparator, spacing } from "@theme";
 
-const HEADER_ROW = 40;
+const HEADER_ROW = 44;
 
 type ChatRoomHeaderProps = {
   title: string;
@@ -88,7 +88,7 @@ export function ChatRoomHeader({
                 onPress={onCallPress ?? (() => {})}
                 style={({ pressed }) => [styles.iconHit, pressed && styles.pressed]}
               >
-                <Ionicons name="call-outline" size={20} color={colors.primary} />
+                <Ionicons name="call-outline" size={22} color={colors.primary} />
               </Pressable>
               <Pressable
                 accessibilityRole="button"
@@ -97,7 +97,7 @@ export function ChatRoomHeader({
                 onPress={onVideoPress ?? (() => {})}
                 style={({ pressed }) => [styles.iconHit, pressed && styles.pressed]}
               >
-                <Ionicons name="videocam-outline" size={20} color={colors.primary} />
+                <Ionicons name="videocam-outline" size={22} color={colors.primary} />
               </Pressable>
             </>
           ) : null}
@@ -108,7 +108,7 @@ export function ChatRoomHeader({
             onPress={onMorePress ?? (() => {})}
             style={({ pressed }) => [styles.iconHit, pressed && styles.pressed]}
           >
-            <Ionicons name="ellipsis-horizontal" size={20} color={colors.primary} />
+            <Ionicons name="ellipsis-horizontal" size={22} color={colors.primary} />
           </Pressable>
         </View>
       </View>
@@ -163,7 +163,7 @@ const styles = StyleSheet.create({
     gap: 0,
   },
   iconHit: {
-    width: 34,
+    width: 38,
     height: HEADER_ROW,
     alignItems: "center",
     justifyContent: "center",
