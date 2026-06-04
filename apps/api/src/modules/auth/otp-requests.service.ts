@@ -216,6 +216,20 @@ export class OtpRequestsService {
   }
 
   private generateSixDigitOtp(): string {
+    const fixed = this.config.get<string | undefined>('otp.fixedCode');
+    if (fixed) {
+      const nodeEnv = this.config.get<string>('nodeEnv', 'development');
+      if (nodeEnv === 'production') {
+        this.logger.warn(
+          'OTP_FIXED_CODE is set but NODE_ENV=production — ignoring fixed code for security.',
+        );
+      } else {
+        this.logger.warn(
+          `[DEV/STAGING] OTP_FIXED_CODE is active — all OTPs are fixed to "${fixed}".`,
+        );
+        return fixed;
+      }
+    }
     return String(Math.floor(100000 + Math.random() * 900000));
   }
 }

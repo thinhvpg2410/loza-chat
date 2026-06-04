@@ -1,7 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
-import { apiFetchJson } from "@/lib/api/server";
+import { apiFetchJson, getApiPublicUrl } from "@/lib/api/server";
 import { LOZA_ACCESS_COOKIE } from "@/lib/auth/constants";
 import { decodeJwtSub } from "@/lib/auth/decode-jwt-sub";
 import { getWebApiSession } from "@/lib/auth/web-api-session";
@@ -52,7 +52,7 @@ export async function getChatRealtimeSessionAction(): Promise<ChatRealtimeSessio
 
   return {
     ok: true,
-    apiBaseUrl: session.baseUrl,
+    apiBaseUrl: getApiPublicUrl() ?? session.baseUrl,
     accessToken: token,
     viewerUserId,
     viewerDisplayName,

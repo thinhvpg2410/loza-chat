@@ -24,6 +24,11 @@ export type AppConfiguration = {
     maxResendsPerActiveCode: number;
     /** Minimum seconds between OTP resends for the same active code */
     resendCooldownSeconds: number;
+    /**
+     * When set, every OTP request returns this fixed code instead of a random one.
+     * Use ONLY in development/staging — never in production.
+     */
+    fixedCode: string | undefined;
   };
   storage: {
     mock: boolean;
@@ -86,6 +91,7 @@ export default (): AppConfiguration => ({
       process.env.OTP_RESEND_COOLDOWN_SECONDS ?? '60',
       10,
     ),
+    fixedCode: process.env.OTP_FIXED_CODE?.trim() || undefined,
   },
   storage: {
     mock: process.env.STORAGE_MOCK === 'true',

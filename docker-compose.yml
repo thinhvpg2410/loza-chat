@@ -33,6 +33,11 @@ services:
       API_PUBLIC_BASE_URL: ${API_PUBLIC_BASE_URL:-http://localhost:3000}
       STORAGE_MOCK: ${STORAGE_MOCK:-true}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001}
+      TURN_SERVER_URL: ${TURN_SERVER_URL:-}
+      TURN_USERNAME: ${TURN_USERNAME:-}
+      TURN_CREDENTIAL: ${TURN_CREDENTIAL:-}
+      # Dev/staging only — remove or leave blank in production
+      OTP_FIXED_CODE: ${OTP_FIXED_CODE:-}
     ports:
       - "3000:3000"
     healthcheck:
@@ -52,15 +57,34 @@ services:
     build:
       context: ./apps/web
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_TURN_USERNAME: ${NEXT_PUBLIC_TURN_USERNAME:-}
+        NEXT_PUBLIC_TURN_CREDENTIAL: ${NEXT_PUBLIC_TURN_CREDENTIAL:-}
+        NEXT_PUBLIC_QR_LOGIN_URL_PREFIX: ${NEXT_PUBLIC_QR_LOGIN_URL_PREFIX:-mobile://qr-login?session=}
     restart: unless-stopped
     depends_on:
       api:
         condition: service_healthy
     environment:
+      # Internal Docker URL for server-side (SSR/Server Actions) calls to the API
       LOZA_API_BASE_URL: http://api:3000
+      # Public URL the browser uses for Socket.IO and media (must be reachable from the client)
+      LOZA_API_PUBLIC_URL: ${API_PUBLIC_BASE_URL:-http://localhost:3000}
       NODE_ENV: production
     ports:
       - "3001:3000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000').then((r)=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
 
 volumes:
   postgres_data:
