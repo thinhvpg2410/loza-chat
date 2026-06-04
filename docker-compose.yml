@@ -31,7 +31,7 @@ services:
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-change-me-access-secret-min-32-chars-dev}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-me-refresh-secret-min-32-chars-dev}
       API_PUBLIC_BASE_URL: ${API_PUBLIC_BASE_URL:-http://localhost}
-      STORAGE_MOCK: ${STORAGE_MOCK:-true}
+      STORAGE_MOCK: "true"
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
       TURN_SERVER_URL: ${TURN_SERVER_URL:-}
       TURN_USERNAME: ${TURN_USERNAME:-}
