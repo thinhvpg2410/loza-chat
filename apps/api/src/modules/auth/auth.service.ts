@@ -156,7 +156,10 @@ export class AuthService {
       );
     }
 
-    const passwordHash = await bcrypt.hash(dto.password, PASSWORD_BCRYPT_ROUNDS);
+    const passwordHash = await bcrypt.hash(
+      dto.password,
+      PASSWORD_BCRYPT_ROUNDS,
+    );
 
     if (proof.channel === 'email') {
       return this.createUserWithSession(
@@ -234,7 +237,7 @@ export class AuthService {
     const displayName =
       data.displayName?.trim() ||
       (data.email
-        ? data.email.split('@')[0] ?? 'User'
+        ? (data.email.split('@')[0] ?? 'User')
         : `User ${data.phoneNumber!.slice(-4)}`);
 
     const refreshRaw = this.tokens.generateRefreshToken();
@@ -359,11 +362,12 @@ export class AuthService {
     };
   }
 
-  async verifyLoginDeviceOtp(dto: VerifyLoginDeviceOtpDto): Promise<LoginResult> {
-    const challenge =
-      await this.tokens.verifyLoginDeviceChallengeToken(
-        dto.deviceVerificationToken,
-      );
+  async verifyLoginDeviceOtp(
+    dto: VerifyLoginDeviceOtpDto,
+  ): Promise<LoginResult> {
+    const challenge = await this.tokens.verifyLoginDeviceChallengeToken(
+      dto.deviceVerificationToken,
+    );
 
     const user = await this.prisma.user.findUnique({
       where: { id: challenge.userId },
@@ -462,7 +466,8 @@ export class AuthService {
     deviceOptions: { markTrusted?: boolean },
   ): Promise<LoginSessionPayload> {
     const { deviceRow, refreshRaw } = await this.prisma.$transaction(
-      async (tx) => this.openPasswordSessionWithTx(tx, user, dto, deviceOptions),
+      async (tx) =>
+        this.openPasswordSessionWithTx(tx, user, dto, deviceOptions),
     );
 
     const accessToken = await this.tokens.signAccessToken(user.id, {
@@ -546,10 +551,7 @@ export class AuthService {
         where: {
           id: row.id,
           status: {
-            in: [
-              QrLoginSessionStatus.pending,
-              QrLoginSessionStatus.scanned,
-            ],
+            in: [QrLoginSessionStatus.pending, QrLoginSessionStatus.scanned],
           },
         },
         data: { status: QrLoginSessionStatus.expired },
@@ -557,10 +559,7 @@ export class AuthService {
       return { status: 'expired', expiresAt: row.expiresAt };
     }
 
-    if (
-      row.status === QrLoginSessionStatus.approved &&
-      row.expiresAt <= now
-    ) {
+    if (row.status === QrLoginSessionStatus.approved && row.expiresAt <= now) {
       await this.prisma.qrLoginSession.updateMany({
         where: {
           id: row.id,
@@ -667,7 +666,10 @@ export class AuthService {
     return { status: 'scanned', expiresAt: row.expiresAt };
   }
 
-  async qrScan(actorUserId: string, sessionToken: string): Promise<{ ok: true }> {
+  async qrScan(
+    actorUserId: string,
+    sessionToken: string,
+  ): Promise<{ ok: true }> {
     this.assertQrSessionTokenFormat(sessionToken);
 
     const row = await this.prisma.qrLoginSession.findUnique({
@@ -684,10 +686,7 @@ export class AuthService {
         where: {
           id: row.id,
           status: {
-            in: [
-              QrLoginSessionStatus.pending,
-              QrLoginSessionStatus.scanned,
-            ],
+            in: [QrLoginSessionStatus.pending, QrLoginSessionStatus.scanned],
           },
         },
         data: { status: QrLoginSessionStatus.expired },
@@ -699,7 +698,9 @@ export class AuthService {
       if (row.scannedByUserId === actorUserId) {
         return { ok: true };
       }
-      throw new ConflictException('This QR code was scanned by another account');
+      throw new ConflictException(
+        'This QR code was scanned by another account',
+      );
     }
 
     if (row.status !== QrLoginSessionStatus.pending) {
@@ -718,7 +719,10 @@ export class AuthService {
     return { ok: true };
   }
 
-  async qrApprove(actorUserId: string, sessionToken: string): Promise<{ ok: true }> {
+  async qrApprove(
+    actorUserId: string,
+    sessionToken: string,
+  ): Promise<{ ok: true }> {
     this.assertQrSessionTokenFormat(sessionToken);
 
     await this.prisma.$transaction(async (tx) => {
@@ -736,10 +740,7 @@ export class AuthService {
           where: {
             id: row.id,
             status: {
-              in: [
-                QrLoginSessionStatus.pending,
-                QrLoginSessionStatus.scanned,
-              ],
+              in: [QrLoginSessionStatus.pending, QrLoginSessionStatus.scanned],
             },
           },
           data: { status: QrLoginSessionStatus.expired },
@@ -754,7 +755,9 @@ export class AuthService {
       }
 
       if (row.scannedByUserId !== actorUserId) {
-        throw new ForbiddenException('Only the account that scanned can approve');
+        throw new ForbiddenException(
+          'Only the account that scanned can approve',
+        );
       }
 
       const user = await tx.user.findUnique({ where: { id: actorUserId } });
@@ -793,7 +796,10 @@ export class AuthService {
     return { ok: true };
   }
 
-  async qrReject(actorUserId: string, sessionToken: string): Promise<{ ok: true }> {
+  async qrReject(
+    actorUserId: string,
+    sessionToken: string,
+  ): Promise<{ ok: true }> {
     this.assertQrSessionTokenFormat(sessionToken);
 
     const row = await this.prisma.qrLoginSession.findUnique({
@@ -810,10 +816,7 @@ export class AuthService {
         where: {
           id: row.id,
           status: {
-            in: [
-              QrLoginSessionStatus.pending,
-              QrLoginSessionStatus.scanned,
-            ],
+            in: [QrLoginSessionStatus.pending, QrLoginSessionStatus.scanned],
           },
         },
         data: { status: QrLoginSessionStatus.expired },

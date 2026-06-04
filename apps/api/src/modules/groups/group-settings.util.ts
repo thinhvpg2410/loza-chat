@@ -29,7 +29,10 @@ export function parseGroupSettings(
     return typeof v === 'boolean' ? v : def;
   };
   return {
-    onlyAdminsCanPost: bool('onlyAdminsCanPost', DEFAULT_GROUP_SETTINGS.onlyAdminsCanPost),
+    onlyAdminsCanPost: bool(
+      'onlyAdminsCanPost',
+      DEFAULT_GROUP_SETTINGS.onlyAdminsCanPost,
+    ),
     joinApprovalRequired: bool(
       'joinApprovalRequired',
       DEFAULT_GROUP_SETTINGS.joinApprovalRequired,

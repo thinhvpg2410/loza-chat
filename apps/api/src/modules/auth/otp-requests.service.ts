@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
-import { OtpPurpose, type OtpPurposeValue } from '../../common/constants/otp-purpose';
+import { type OtpPurposeValue } from '../../common/constants/otp-purpose';
 import { normalizeEmail } from '../../common/utils/contact-identifiers';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthErrorMessage } from './auth-errors';
@@ -45,7 +45,7 @@ export class OtpRequestsService {
       );
     }
     if (hasEmail) {
-      return { phoneNumber: null, email: normalizeEmail(email!) };
+      return { phoneNumber: null, email: normalizeEmail(email) };
     }
     const E164_PHONE = /^\+[1-9]\d{6,14}$/;
     const p = phoneNumber!.trim();
@@ -153,7 +153,7 @@ export class OtpRequestsService {
 
     const nodeEnv = this.config.get<string>('nodeEnv', 'development');
     const dest =
-      contact.email !== null ? contact.email : contact.phoneNumber ?? '';
+      contact.email !== null ? contact.email : (contact.phoneNumber ?? '');
     if (nodeEnv === 'development') {
       this.logger.log(`[DEV ONLY] OTP for ${purpose} ${dest}: ${plainOtp}`);
     }
@@ -216,6 +216,20 @@ export class OtpRequestsService {
   }
 
   private generateSixDigitOtp(): string {
+    const fixed = this.config.get<string | undefined>('otp.fixedCode');
+    if (fixed) {
+      const nodeEnv = this.config.get<string>('nodeEnv', 'development');
+      if (nodeEnv === 'production') {
+        this.logger.warn(
+          'OTP_FIXED_CODE is set but NODE_ENV=production — ignoring fixed code for security.',
+        );
+      } else {
+        this.logger.warn(
+          `[DEV/STAGING] OTP_FIXED_CODE is active — all OTPs are fixed to "${fixed}".`,
+        );
+        return fixed;
+      }
+    }
     return String(Math.floor(100000 + Math.random() * 900000));
   }
 }

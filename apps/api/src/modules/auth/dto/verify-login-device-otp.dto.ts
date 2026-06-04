@@ -3,7 +3,8 @@ import { IsString, Matches, MinLength } from 'class-validator';
 
 export class VerifyLoginDeviceOtpDto {
   @ApiProperty({
-    description: 'JWT from POST /auth/login when requiresDeviceVerification is true',
+    description:
+      'JWT from POST /auth/login when requiresDeviceVerification is true',
   })
   @IsString()
   @MinLength(20)

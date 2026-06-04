@@ -24,7 +24,8 @@ export class ConversationRateLimitService {
     tx?: Prisma.TransactionClient,
   ): Promise<void> {
     const policy = ACTION_POLICIES[action];
-    const windowStartSec = Math.floor(Date.now() / 1000 / policy.windowSec) * policy.windowSec;
+    const windowStartSec =
+      Math.floor(Date.now() / 1000 / policy.windowSec) * policy.windowSec;
     const db = tx ?? this.prisma;
     await db.$executeRaw`
       INSERT INTO "conversation_spam_rate_limits"

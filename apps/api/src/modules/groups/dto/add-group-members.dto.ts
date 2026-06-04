@@ -1,10 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import {
-  ArrayMaxSize,
-  ArrayMinSize,
-  IsArray,
-  IsUUID,
-} from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsUUID } from 'class-validator';
 
 const MAX_ADD_BATCH = 50;
 

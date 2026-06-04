@@ -1,4 +1,8 @@
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { AppConfiguration } from '../../config/configuration';
 import type {
@@ -32,11 +36,11 @@ export class MockObjectStorageService extends ObjectStoragePort {
       );
     }
     const port = this.config.get('port', { infer: true });
-    const raw = (this.config.get('apiPublicBaseUrl', { infer: true }) ?? '').trim();
+    const raw = (
+      this.config.get('apiPublicBaseUrl', { infer: true }) ?? ''
+    ).trim();
     const base =
-      raw.length > 0
-        ? raw.replace(/\/$/, '')
-        : `http://127.0.0.1:${port}`;
+      raw.length > 0 ? raw.replace(/\/$/, '') : `http://127.0.0.1:${port}`;
     const url = `${base}/uploads/mock-upload/${uploadSessionId}`;
     this.logger.debug(`Mock presigned PUT -> ${url} (key=${params.key})`);
     return Promise.resolve({

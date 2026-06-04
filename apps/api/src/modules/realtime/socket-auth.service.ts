@@ -26,7 +26,9 @@ export class SocketAuthService {
   ): Promise<SocketAuthContext> {
     const token = this.extractBearerToken(handshake);
     if (!token) {
-      throw new UnauthorizedException(AuthErrorMessage.INVALID_OR_EXPIRED_SESSION);
+      throw new UnauthorizedException(
+        AuthErrorMessage.INVALID_OR_EXPIRED_SESSION,
+      );
     }
 
     let payload: AccessTokenPayload;
@@ -35,14 +37,18 @@ export class SocketAuthService {
         secret: this.config.getOrThrow<string>('jwt.accessSecret'),
       });
     } catch {
-      throw new UnauthorizedException(AuthErrorMessage.INVALID_OR_EXPIRED_SESSION);
+      throw new UnauthorizedException(
+        AuthErrorMessage.INVALID_OR_EXPIRED_SESSION,
+      );
     }
 
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
     });
     if (!user || !user.isActive) {
-      throw new UnauthorizedException(AuthErrorMessage.INVALID_OR_EXPIRED_SESSION);
+      throw new UnauthorizedException(
+        AuthErrorMessage.INVALID_OR_EXPIRED_SESSION,
+      );
     }
     const correlationId = this.extractCorrelationId(handshake) ?? undefined;
 

@@ -30,8 +30,14 @@ import type { TransferGroupOwnershipDto } from './dto/transfer-group-ownership.d
 import type { UpdateGroupDto } from './dto/update-group.dto';
 import type { UpdateGroupMemberRoleDto } from './dto/update-group-member-role.dto';
 import type { UpdateGroupSettingsDto } from './dto/update-group-settings.dto';
-import { parseGroupSettings, mergeGroupSettingsPatch } from './group-settings.util';
-import type { GroupDetailView, GroupMemberView } from './types/group-detail.view';
+import {
+  parseGroupSettings,
+  mergeGroupSettingsPatch,
+} from './group-settings.util';
+import type {
+  GroupDetailView,
+  GroupMemberView,
+} from './types/group-detail.view';
 import type { GroupSettingsView } from './types/group-settings.view';
 
 type Tx = Prisma.TransactionClient;
@@ -53,7 +59,10 @@ export class GroupsService {
     params: {
       conversationId: string;
       actorUserId: string;
-      action: 'member_role_updated' | 'ownership_transferred' | 'group_dissolved';
+      action:
+        | 'member_role_updated'
+        | 'ownership_transferred'
+        | 'group_dissolved';
       targetUserId?: string;
       payload?: Prisma.JsonObject;
     },
@@ -68,7 +77,7 @@ export class GroupsService {
           ${params.actorUserId},
           ${params.action},
           ${params.targetUserId ?? null},
-          ${params.payload ? (params.payload as Prisma.JsonObject) : null}::jsonb,
+          ${params.payload ? params.payload : null}::jsonb,
           NOW()
         )
     `;
@@ -248,7 +257,10 @@ export class GroupsService {
     conversationId: string,
     dto: UpdateGroupSettingsDto,
   ): Promise<{ group: GroupDetailView }> {
-    const member = await this.membership.requireActiveMember(actorId, conversationId);
+    const member = await this.membership.requireActiveMember(
+      actorId,
+      conversationId,
+    );
     const conv = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
     });
@@ -297,7 +309,9 @@ export class GroupsService {
       payload: {},
     });
 
-    return { group: await this.getGroupDetailForMember(actorId, conversationId) };
+    return {
+      group: await this.getGroupDetailForMember(actorId, conversationId),
+    };
   }
 
   async updateGroup(
@@ -309,7 +323,10 @@ export class GroupsService {
       throw new BadRequestException('Provide title and/or avatarUrl');
     }
 
-    const member = await this.membership.requireActiveMember(actorId, conversationId);
+    const member = await this.membership.requireActiveMember(
+      actorId,
+      conversationId,
+    );
 
     const conv = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
@@ -328,8 +345,7 @@ export class GroupsService {
       this.permissions.assertCanEditAvatar(actorRole);
     }
 
-    const titleTrim =
-      dto.title !== undefined ? dto.title.trim() : undefined;
+    const titleTrim = dto.title !== undefined ? dto.title.trim() : undefined;
     if (titleTrim !== undefined && !titleTrim) {
       throw new BadRequestException('Title cannot be empty');
     }
@@ -404,7 +420,10 @@ export class GroupsService {
     conversationId: string,
     dto: AddGroupMembersDto,
   ): Promise<{ group: GroupDetailView }> {
-    const member = await this.membership.requireActiveMember(actorId, conversationId);
+    const member = await this.membership.requireActiveMember(
+      actorId,
+      conversationId,
+    );
 
     const conv = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
@@ -461,7 +480,9 @@ export class GroupsService {
       if (status === ConversationMemberStatus.active) {
         activatedUserIds.push(...toInvite);
         const actorName = await this.displayName(tx, actorId);
-        const addedUsers = await tx.user.findMany({ where: { id: { in: toInvite } } });
+        const addedUsers = await tx.user.findMany({
+          where: { id: { in: toInvite } },
+        });
         const names = addedUsers.map((u) => u.displayName).filter(Boolean);
         const content = `${actorName} added ${this.joinDisplayNames(names)}`;
 
@@ -506,7 +527,10 @@ export class GroupsService {
     conversationId: string,
     targetUserId: string,
   ): Promise<{ group: GroupDetailView }> {
-    const actorMember = await this.membership.requireActiveMember(actorId, conversationId);
+    const actorMember = await this.membership.requireActiveMember(
+      actorId,
+      conversationId,
+    );
     const actorRole = this.permissions.normalizeRole(actorMember.role);
     if (
       actorRole !== ConversationMemberRole.owner &&
@@ -572,7 +596,9 @@ export class GroupsService {
       payload: {},
     });
 
-    return { group: await this.getGroupDetailForMember(actorId, conversationId) };
+    return {
+      group: await this.getGroupDetailForMember(actorId, conversationId),
+    };
   }
 
   async rejectMember(
@@ -580,7 +606,10 @@ export class GroupsService {
     conversationId: string,
     targetUserId: string,
   ): Promise<{ group: GroupDetailView }> {
-    const actorMember = await this.membership.requireActiveMember(actorId, conversationId);
+    const actorMember = await this.membership.requireActiveMember(
+      actorId,
+      conversationId,
+    );
     const actorRole = this.permissions.normalizeRole(actorMember.role);
     if (
       actorRole !== ConversationMemberRole.owner &&
@@ -623,7 +652,9 @@ export class GroupsService {
       payload: {},
     });
 
-    return { group: await this.getGroupDetailForMember(actorId, conversationId) };
+    return {
+      group: await this.getGroupDetailForMember(actorId, conversationId),
+    };
   }
 
   async updateMemberRole(
@@ -632,7 +663,10 @@ export class GroupsService {
     targetUserId: string,
     dto: UpdateGroupMemberRoleDto,
   ): Promise<{ group: GroupDetailView }> {
-    const actorMember = await this.membership.requireActiveMember(actorId, conversationId);
+    const actorMember = await this.membership.requireActiveMember(
+      actorId,
+      conversationId,
+    );
     this.permissions.assertOwnerMayAssignRoles(actorMember.role);
 
     const conv = await this.prisma.conversation.findUnique({
@@ -651,8 +685,13 @@ export class GroupsService {
     if (target.status !== ConversationMemberStatus.active) {
       throw new BadRequestException('Can only change roles for active members');
     }
-    if (this.permissions.normalizeRole(target.role) === ConversationMemberRole.owner) {
-      throw new BadRequestException('Use transfer ownership to change the group owner');
+    if (
+      this.permissions.normalizeRole(target.role) ===
+      ConversationMemberRole.owner
+    ) {
+      throw new BadRequestException(
+        'Use transfer ownership to change the group owner',
+      );
     }
 
     const nextRole = dto.role;
@@ -692,7 +731,9 @@ export class GroupsService {
       payload: {},
     });
 
-    return { group: await this.getGroupDetailForMember(actorId, conversationId) };
+    return {
+      group: await this.getGroupDetailForMember(actorId, conversationId),
+    };
   }
 
   async transferOwnership(
@@ -700,9 +741,17 @@ export class GroupsService {
     conversationId: string,
     dto: TransferGroupOwnershipDto,
   ): Promise<{ group: GroupDetailView }> {
-    const actorMember = await this.membership.requireActiveMember(actorId, conversationId);
-    if (this.permissions.normalizeRole(actorMember.role) !== ConversationMemberRole.owner) {
-      throw new ForbiddenException('Only the group owner can transfer ownership');
+    const actorMember = await this.membership.requireActiveMember(
+      actorId,
+      conversationId,
+    );
+    if (
+      this.permissions.normalizeRole(actorMember.role) !==
+      ConversationMemberRole.owner
+    ) {
+      throw new ForbiddenException(
+        'Only the group owner can transfer ownership',
+      );
     }
 
     if (dto.newOwnerUserId === actorId) {
@@ -779,16 +828,26 @@ export class GroupsService {
       payload: {},
     });
 
-    return { group: await this.getGroupDetailForMember(actorId, conversationId) };
+    return {
+      group: await this.getGroupDetailForMember(actorId, conversationId),
+    };
   }
 
   async dissolveGroup(
     actorId: string,
     conversationId: string,
   ): Promise<{ dissolved: true }> {
-    const member = await this.membership.requireActiveMember(actorId, conversationId);
-    if (this.permissions.normalizeRole(member.role) !== ConversationMemberRole.owner) {
-      throw new ForbiddenException('Only the group owner can dissolve the group');
+    const member = await this.membership.requireActiveMember(
+      actorId,
+      conversationId,
+    );
+    if (
+      this.permissions.normalizeRole(member.role) !==
+      ConversationMemberRole.owner
+    ) {
+      throw new ForbiddenException(
+        'Only the group owner can dissolve the group',
+      );
     }
 
     const conv = await this.prisma.conversation.findUnique({
@@ -810,10 +869,15 @@ export class GroupsService {
     targetUserId: string,
   ): Promise<{ group: GroupDetailView }> {
     if (actorId === targetUserId) {
-      throw new ForbiddenException('Use POST /groups/:id/leave to leave the group');
+      throw new ForbiddenException(
+        'Use POST /groups/:id/leave to leave the group',
+      );
     }
 
-    const actorMember = await this.membership.requireActiveMember(actorId, conversationId);
+    const actorMember = await this.membership.requireActiveMember(
+      actorId,
+      conversationId,
+    );
 
     const conv = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
@@ -851,7 +915,9 @@ export class GroupsService {
         conversationId,
         payload: {},
       });
-      return { group: await this.getGroupDetailForMember(actorId, conversationId) };
+      return {
+        group: await this.getGroupDetailForMember(actorId, conversationId),
+      };
     }
 
     this.permissions.assertActorCanRemoveMember(actorMember.role, target.role);
@@ -1066,7 +1132,9 @@ export class GroupsService {
         m.status === ConversationMemberStatus.active,
     );
     if (alreadyMember) {
-      throw new BadRequestException('You are already an active member of this group');
+      throw new BadRequestException(
+        'You are already an active member of this group',
+      );
     }
 
     const invitedPending = conv.members.some(
@@ -1091,7 +1159,10 @@ export class GroupsService {
       throw new BadRequestException('You already have a pending join request');
     }
 
-    await this.assertApplicantFriendsWithActiveMember(applicantId, conversationId);
+    await this.assertApplicantFriendsWithActiveMember(
+      applicantId,
+      conversationId,
+    );
 
     try {
       await this.prisma.groupJoinRequest.create({
@@ -1106,7 +1177,9 @@ export class GroupsService {
         err instanceof Prisma.PrismaClientKnownRequestError &&
         err.code === 'P2002'
       ) {
-        throw new BadRequestException('You already have a pending join request');
+        throw new BadRequestException(
+          'You already have a pending join request',
+        );
       }
       throw err;
     }
@@ -1275,7 +1348,9 @@ export class GroupsService {
       payload: {},
     });
 
-    return { group: await this.getGroupDetailForMember(actorId, conversationId) };
+    return {
+      group: await this.getGroupDetailForMember(actorId, conversationId),
+    };
   }
 
   async rejectJoinRequest(
@@ -1373,7 +1448,9 @@ export class GroupsService {
 
     const targets = activeIds.filter((id) => id !== applicantId);
     if (targets.length === 0) {
-      throw new BadRequestException('This group has no active members to vouch for you');
+      throw new BadRequestException(
+        'This group has no active members to vouch for you',
+      );
     }
 
     for (const tid of targets) {
@@ -1398,7 +1475,7 @@ export class GroupsService {
       }
       return a.userId.localeCompare(b.userId);
     });
-    return sorted[0]!;
+    return sorted[0];
   }
 
   private async publishSystemMessages(
@@ -1474,7 +1551,7 @@ export class GroupsService {
       return 'new members';
     }
     if (n.length === 1) {
-      return n[0]!;
+      return n[0];
     }
     if (n.length === 2) {
       return `${n[0]} and ${n[1]}`;

@@ -1,4 +1,8 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { ConversationMember, Prisma } from '@prisma/client';
 import { ConversationMemberStatus, ConversationType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -53,7 +57,9 @@ export class ConversationMembershipService {
       member.conversation.type === ConversationType.group &&
       member.status !== ConversationMemberStatus.active
     ) {
-      throw new ForbiddenException('Your membership in this group is not active yet');
+      throw new ForbiddenException(
+        'Your membership in this group is not active yet',
+      );
     }
     return member;
   }
@@ -69,8 +75,13 @@ export class ConversationMembershipService {
       select: { type: true, dissolvedAt: true },
     });
     this.assertGroupNotDissolved(conv);
-    if (conv?.type === ConversationType.group && member.status !== ConversationMemberStatus.active) {
-      throw new ForbiddenException('Your membership in this group is not active yet');
+    if (
+      conv?.type === ConversationType.group &&
+      member.status !== ConversationMemberStatus.active
+    ) {
+      throw new ForbiddenException(
+        'Your membership in this group is not active yet',
+      );
     }
     return member;
   }
@@ -101,7 +112,9 @@ export class ConversationMembershipService {
   /**
    * Used when the caller is not yet a member (e.g. self-join request) but must not target a dead group.
    */
-  async assertGroupConversationNotDissolved(conversationId: string): Promise<void> {
+  async assertGroupConversationNotDissolved(
+    conversationId: string,
+  ): Promise<void> {
     const conv = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
       select: { type: true, dissolvedAt: true },

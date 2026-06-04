@@ -64,7 +64,9 @@ export class UploadRulesService {
     }
     switch (messageType) {
       case MessageType.system:
-        throw new BadRequestException('System messages cannot have attachments');
+        throw new BadRequestException(
+          'System messages cannot have attachments',
+        );
       case MessageType.sticker:
         throw new BadRequestException(
           'Use POST /messages/sticker for sticker messages',
@@ -114,24 +116,30 @@ export class UploadRulesService {
 
   assertVoiceDurationSeconds(durationSeconds: number | null | undefined): void {
     if (durationSeconds === null || durationSeconds === undefined) {
-      throw new BadRequestException('Voice upload must provide durationSeconds metadata');
+      throw new BadRequestException(
+        'Voice upload must provide durationSeconds metadata',
+      );
     }
     if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
-      throw new BadRequestException('Voice durationSeconds must be a positive number');
+      throw new BadRequestException(
+        'Voice durationSeconds must be a positive number',
+      );
     }
     if (durationSeconds > 60 * 10) {
-      throw new BadRequestException('Voice duration exceeds max allowed (600s)');
+      throw new BadRequestException(
+        'Voice duration exceeds max allowed (600s)',
+      );
     }
   }
 }
 
 function messageTypeToMediaKind(t: MessageType): MediaKind | null {
-    switch (t) {
-      case MessageType.system:
-        return null;
-      case MessageType.sticker:
-        return null;
-      case MessageType.image:
+  switch (t) {
+    case MessageType.system:
+      return null;
+    case MessageType.sticker:
+      return null;
+    case MessageType.image:
       return MediaKind.image;
     case MessageType.file:
       return MediaKind.file;

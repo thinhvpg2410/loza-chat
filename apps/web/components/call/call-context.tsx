@@ -97,8 +97,8 @@ export function CallProvider({
   children,
   socketRef,
   viewerUserId,
-  viewerDisplayName,
-  viewerAvatarUrl,
+  viewerDisplayName: _viewerDisplayName,
+  viewerAvatarUrl: _viewerAvatarUrl,
 }: Props) {
   const [callState, setCallState] = useState<CallState>({ phase: "idle" });
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -108,7 +108,9 @@ export function CallProvider({
 
   const mgrRef = useRef<WebRTCManager | null>(null);
   const stateRef = useRef<CallState>({ phase: "idle" });
-  stateRef.current = callState;
+  useEffect(() => {
+    stateRef.current = callState;
+  }, [callState]);
 
   const teardown = useCallback(() => {
     mgrRef.current?.destroy();

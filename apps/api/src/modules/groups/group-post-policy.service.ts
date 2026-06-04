@@ -20,7 +20,10 @@ export class GroupPostPolicyService {
     userId: string,
     conversationId: string,
   ): Promise<void> {
-    const member = await this.membership.requireActiveMember(userId, conversationId);
+    const member = await this.membership.requireActiveMember(
+      userId,
+      conversationId,
+    );
     const conv = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
       select: { type: true, groupSettingsJson: true, dissolvedAt: true },

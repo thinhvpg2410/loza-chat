@@ -24,10 +24,7 @@ export function messageContentPreview(
   switch (type) {
     case MessageType.system:
       return content && content.trim().length > 0
-        ? truncate(
-            content.replace(/\s+/g, ' ').trim(),
-            MAX_PREVIEW_LEN,
-          )
+        ? truncate(content.replace(/\s+/g, ' ').trim(), MAX_PREVIEW_LEN)
         : '[Update]';
     case MessageType.image:
       return '[Image]';
@@ -42,7 +39,9 @@ export function messageContentPreview(
     case MessageType.sticker:
       return '[Sticker]';
     case MessageType.call:
-      return content && content.trim().length > 0 ? truncate(content.trim(), MAX_PREVIEW_LEN) : '[Call]';
+      return content && content.trim().length > 0
+        ? truncate(content.trim(), MAX_PREVIEW_LEN)
+        : '[Call]';
     case MessageType.text:
     default:
       return null;

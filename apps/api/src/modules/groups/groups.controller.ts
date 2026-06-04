@@ -78,7 +78,11 @@ export class GroupsController {
     summary:
       'Create a self-service join request (requires joinApprovalRequired; you must be friends with an active member)',
   })
-  @ApiParam({ name: 'id', format: 'uuid', description: 'Group conversation id' })
+  @ApiParam({
+    name: 'id',
+    format: 'uuid',
+    description: 'Group conversation id',
+  })
   @ApiOkResponse({
     schema: {
       type: 'object',
@@ -101,7 +105,11 @@ export class GroupsController {
     summary:
       'List pending self-join requests and admin-invited pending members (owner/admin only)',
   })
-  @ApiParam({ name: 'id', format: 'uuid', description: 'Group conversation id' })
+  @ApiParam({
+    name: 'id',
+    format: 'uuid',
+    description: 'Group conversation id',
+  })
   @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
   @ApiResponse({ status: 403, type: ApiErrorEnvelopeDto })
   @ApiResponse({ status: 404, type: ApiErrorEnvelopeDto })
@@ -113,8 +121,14 @@ export class GroupsController {
   }
 
   @Post(':id/join-requests/:userId/approve')
-  @ApiOperation({ summary: 'Approve a pending self-join request (owner/admin)' })
-  @ApiParam({ name: 'id', format: 'uuid', description: 'Group conversation id' })
+  @ApiOperation({
+    summary: 'Approve a pending self-join request (owner/admin)',
+  })
+  @ApiParam({
+    name: 'id',
+    format: 'uuid',
+    description: 'Group conversation id',
+  })
   @ApiParam({ name: 'userId', format: 'uuid' })
   @ApiOkResponse({ type: GroupDetailWrapperOpenApiDto })
   @ApiResponse({ status: 401, type: ApiErrorEnvelopeDto })
@@ -123,7 +137,8 @@ export class GroupsController {
   async approveJoinRequest(
     @GetUser('id') userId: string,
     @Param('id', new ParseUUIDPipe({ version: '4' })) conversationId: string,
-    @Param('userId', new ParseUUIDPipe({ version: '4' })) applicantUserId: string,
+    @Param('userId', new ParseUUIDPipe({ version: '4' }))
+    applicantUserId: string,
   ) {
     return this.groupsService.approveJoinRequest(
       userId,
@@ -134,7 +149,11 @@ export class GroupsController {
 
   @Post(':id/join-requests/:userId/reject')
   @ApiOperation({ summary: 'Reject a pending self-join request (owner/admin)' })
-  @ApiParam({ name: 'id', format: 'uuid', description: 'Group conversation id' })
+  @ApiParam({
+    name: 'id',
+    format: 'uuid',
+    description: 'Group conversation id',
+  })
   @ApiParam({ name: 'userId', format: 'uuid' })
   @ApiOkResponse({
     schema: {
@@ -148,7 +167,8 @@ export class GroupsController {
   async rejectJoinRequest(
     @GetUser('id') userId: string,
     @Param('id', new ParseUUIDPipe({ version: '4' })) conversationId: string,
-    @Param('userId', new ParseUUIDPipe({ version: '4' })) applicantUserId: string,
+    @Param('userId', new ParseUUIDPipe({ version: '4' }))
+    applicantUserId: string,
   ) {
     return this.groupsService.rejectJoinRequest(
       userId,
@@ -158,7 +178,9 @@ export class GroupsController {
   }
 
   @Patch(':id/settings')
-  @ApiOperation({ summary: 'Update group permission settings (owner or admin)' })
+  @ApiOperation({
+    summary: 'Update group permission settings (owner or admin)',
+  })
   @ApiParam({
     name: 'id',
     format: 'uuid',
@@ -280,7 +302,11 @@ export class GroupsController {
     @Param('id', new ParseUUIDPipe({ version: '4' })) conversationId: string,
     @Param('userId', new ParseUUIDPipe({ version: '4' })) targetUserId: string,
   ) {
-    return this.groupsService.approveMember(userId, conversationId, targetUserId);
+    return this.groupsService.approveMember(
+      userId,
+      conversationId,
+      targetUserId,
+    );
   }
 
   @Post(':id/members/:userId/reject')
@@ -300,7 +326,11 @@ export class GroupsController {
     @Param('id', new ParseUUIDPipe({ version: '4' })) conversationId: string,
     @Param('userId', new ParseUUIDPipe({ version: '4' })) targetUserId: string,
   ) {
-    return this.groupsService.rejectMember(userId, conversationId, targetUserId);
+    return this.groupsService.rejectMember(
+      userId,
+      conversationId,
+      targetUserId,
+    );
   }
 
   @Patch(':id/members/:userId/role')

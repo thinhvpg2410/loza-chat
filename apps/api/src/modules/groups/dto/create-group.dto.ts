@@ -22,7 +22,8 @@ export class CreateGroupDto {
   title!: string;
 
   @ApiProperty({
-    description: 'Additional members (friends of the creator). Duplicates are ignored.',
+    description:
+      'Additional members (friends of the creator). Duplicates are ignored.',
     type: [String],
   })
   @IsArray()

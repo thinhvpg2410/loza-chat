@@ -17,7 +17,10 @@ export function compareMessageTimeline(
 }
 
 /** True if `a` is strictly after `b` in conversation timeline (newer). */
-export function isMessageAfter(a: MessageTimelineRef, b: MessageTimelineRef): boolean {
+export function isMessageAfter(
+  a: MessageTimelineRef,
+  b: MessageTimelineRef,
+): boolean {
   return compareMessageTimeline(a, b) > 0;
 }
 

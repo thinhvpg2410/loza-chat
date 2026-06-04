@@ -22,6 +22,17 @@ export function getApiBaseUrl(): string | undefined {
   return u && u.length > 0 ? u.replace(/\/$/, "") : undefined;
 }
 
+/**
+ * Public-facing API URL that browsers can reach (for Socket.IO, media URLs, etc.).
+ * Falls back to LOZA_API_BASE_URL if LOZA_API_PUBLIC_URL is not set (works in local dev
+ * where both are the same, but on Docker/server they differ).
+ */
+export function getApiPublicUrl(): string | undefined {
+  const pub = process.env.LOZA_API_PUBLIC_URL?.trim();
+  if (pub && pub.length > 0) return pub.replace(/\/$/, "");
+  return getApiBaseUrl();
+}
+
 /** Unauthenticated JSON request (auth registration / forgot-password flows). */
 export async function apiFetchPublicJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   const base = getApiBaseUrl();

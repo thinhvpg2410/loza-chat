@@ -24,8 +24,10 @@ export function AttachmentPanel({ open, onClose, onPick }: AttachmentPanelProps)
 
   useEffect(() => {
     if (!open) return;
-    setActiveIndex(0);
-    queueMicrotask(() => itemRefs.current[0]?.focus());
+    queueMicrotask(() => {
+      setActiveIndex(0);
+      itemRefs.current[0]?.focus();
+    });
   }, [open]);
 
   if (!open) return null;

@@ -2,14 +2,23 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Avatar } from "@/components/common/Avatar";
-import { useCall, type ParticipantInfo, type RemoteStream } from "@/components/call/call-context";
+import { useCall, type ParticipantInfo } from "@/components/call/call-context";
 
 // ── Duration timer ────────────────────────────────────────────────────────────
 
 function useTimer(startedAt: Date | null): string {
   const [s, setS] = useState(0);
+  const [prevStartedAt, setPrevStartedAt] = useState(startedAt);
+
+  if (startedAt !== prevStartedAt) {
+    setPrevStartedAt(startedAt);
+    if (!startedAt) {
+      setS(0);
+    }
+  }
+
   useEffect(() => {
-    if (!startedAt) { setS(0); return; }
+    if (!startedAt) return;
     const tick = () => setS(Math.floor((Date.now() - startedAt.getTime()) / 1000));
     tick();
     const id = setInterval(tick, 1000);
@@ -178,7 +187,7 @@ export function CallScreen() {
   }, [callState]);
 
   useEffect(() => {
-    resetHideTimer();
+    queueMicrotask(() => resetHideTimer());
     return () => { if (hideTimer.current) clearTimeout(hideTimer.current); };
   }, [resetHideTimer]);
 

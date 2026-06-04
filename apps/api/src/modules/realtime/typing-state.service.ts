@@ -46,7 +46,9 @@ export class TypingStateService {
   /**
    * Clears stale typing markers and returns rows that changed to not typing.
    */
-  reapExpired(nowMs = Date.now()): { conversationId: string; userId: string }[] {
+  reapExpired(
+    nowMs = Date.now(),
+  ): { conversationId: string; userId: string }[] {
     const out: { conversationId: string; userId: string }[] = [];
     const threshold = nowMs - TypingStateService.TYPING_STALE_AFTER_MS;
 

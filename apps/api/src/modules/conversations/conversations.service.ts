@@ -34,16 +34,16 @@ export class ConversationsService {
   ) {}
 
   /** Block-only guard: non-friends may still open chat and send (client shows a warning banner). */
-  private assertNotBlockedForDirectPair(relationship: RelationshipStatus): void {
+  private assertNotBlockedForDirectPair(
+    relationship: RelationshipStatus,
+  ): void {
     if (relationship === 'blocked_by_me') {
       throw new ForbiddenException(
         'Bạn đã chặn người này. Không thể nhắn tin.',
       );
     }
     if (relationship === 'blocked_me') {
-      throw new ForbiddenException(
-        'Bạn không thể nhắn tin vì đã bị chặn.',
-      );
+      throw new ForbiddenException('Bạn không thể nhắn tin vì đã bị chặn.');
     }
   }
 
@@ -271,8 +271,9 @@ export class ConversationsService {
       items.push({
         conversationId: c.id,
         type: c.type,
-        title: c.type === ConversationType.group ? c.title ?? null : null,
-        avatarUrl: c.type === ConversationType.group ? c.avatarUrl ?? null : null,
+        title: c.type === ConversationType.group ? (c.title ?? null) : null,
+        avatarUrl:
+          c.type === ConversationType.group ? (c.avatarUrl ?? null) : null,
         memberCount: c._count.members,
         updatedAt: c.updatedAt,
         mutedUntil: row.mutedUntil,
@@ -299,8 +300,7 @@ export class ConversationsService {
     const directPeerIds = items
       .filter(
         (row) =>
-          row.type === ConversationType.direct &&
-          row.otherParticipant !== null,
+          row.type === ConversationType.direct && row.otherParticipant !== null,
       )
       .map((row) => row.otherParticipant!.id);
     const relMap = await this.friends.getRelationshipStatusesForTargets(
@@ -373,11 +373,11 @@ export class ConversationsService {
       updatedAt: conversation.updatedAt,
       title:
         conversation.type === ConversationType.group
-          ? conversation.title ?? null
+          ? (conversation.title ?? null)
           : null,
       avatarUrl:
         conversation.type === ConversationType.group
-          ? conversation.avatarUrl ?? null
+          ? (conversation.avatarUrl ?? null)
           : null,
       memberCount: conversation._count.members,
       otherParticipant:
