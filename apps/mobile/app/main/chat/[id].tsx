@@ -1490,7 +1490,7 @@ export default function ChatRoomScreen() {
                 </AppText>
               </View>
             ) : null}
-            {!USE_API_MOCK && socketStatus.state !== "connected" ? (
+            {/* {!USE_API_MOCK && socketStatus.state !== "connected" ? (
               <View style={styles.bannerOffline}>
                 <AppText variant="caption" style={[styles.bannerText, { color: colors.offlineText }]}>
                   {socketStatus.state === "reconnecting" || socketStatus.state === "connecting"
@@ -1505,7 +1505,7 @@ export default function ChatRoomScreen() {
                   {voiceDraftNotice}
                 </AppText>
               </View>
-            ) : null}
+            ) : null} */}
             <MessageList
               ref={messageListRef}
               threadKey={id}
