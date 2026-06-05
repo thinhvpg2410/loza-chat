@@ -168,13 +168,13 @@ export function CallProvider({
         conversationTitle: opts.conversationTitle,
         conversationAvatarUrl: opts.conversationAvatarUrl,
       });
-      const mgr = getOrBuildManager(opts.callId);
-      await mgr.initLocalStream(opts.callType);
       socketRef.current?.emit("call:initiate", {
         callId: opts.callId,
         conversationId: opts.conversationId,
         callType: opts.callType,
       });
+      const mgr = getOrBuildManager(opts.callId);
+      await mgr.initLocalStream(opts.callType);
     },
     [teardown, getOrBuildManager, socketRef],
   );

@@ -208,14 +208,16 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         conversationTitle: opts.conversationTitle,
         conversationAvatarUrl: opts.conversationAvatarUrl,
       });
-      await setAudioModeForCall(true);
-      const mgr = getOrBuildManager(opts.callId);
-      await mgr.initLocalStream(opts.callType);
+      // Signal the call intent first so the server/callee are notified
+      // regardless of whether local media initialization succeeds.
       emitCallInitiate({
         callId: opts.callId,
         conversationId: opts.conversationId,
         callType: opts.callType,
       });
+      await setAudioModeForCall(true);
+      const mgr = getOrBuildManager(opts.callId);
+      await mgr.initLocalStream(opts.callType);
     },
     [teardown, getOrBuildManager],
   );
