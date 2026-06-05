@@ -12,7 +12,7 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Ứng dụng cần camera để quét mã QR đăng nhập web và gọi video.",
-      "NSMicrophoneUsageDescription": "Ứng dụng cần micro để gọi thoại và gọi video."
+        "NSMicrophoneUsageDescription": "Ứng dụng cần micro để gọi thoại và gọi video."
       }
     },
     "android": {
@@ -22,7 +22,14 @@
         "foregroundImage": "./assets/images/loza-logo.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA"
+      ],
+      "package": "com.anonymous.mobile"
     },
     "web": {
       "bundler": "metro",

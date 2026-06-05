@@ -47,6 +47,7 @@ import { PresenceService } from './presence.service';
 import { conversationRoomId, userDirectRoomId } from './realtime.constants';
 import { SocketAuthService } from './socket-auth.service';
 import type { ChatSocketData } from './types/chat-socket-data';
+import { PushNotificationService } from './push-notification.service';
 import { TypingStateService } from './typing-state.service';
 import { WsPayloadValidationError, parseWsPayload } from './ws-payload.util';
 
@@ -99,6 +100,7 @@ export class ChatGateway
     private readonly groupDomainEvents: GroupDomainEventsService,
     private readonly messageDomainEvents: MessageDomainEventsService,
     private readonly calls: CallService,
+    private readonly pushNotifications: PushNotificationService,
   ) {}
 
   onModuleInit(): void {
@@ -529,6 +531,17 @@ export class ChatGateway
       for (const uid of invitedIds) {
         this.server.to(userDirectRoomId(uid)).emit('call:incoming', payload);
       }
+
+      // Send push notification to offline/background devices
+      void this.pushNotifications.sendCallNotification(invitedIds, {
+        callId: dto.callId,
+        callType: dto.callType,
+        callerId: user.id,
+        callerName: user.displayName || user.username || '',
+        callerAvatarUrl: user.avatarUrl ?? null,
+        conversationId: dto.conversationId,
+        isGroup,
+      });
 
       return { ok: true };
     } catch (err) {

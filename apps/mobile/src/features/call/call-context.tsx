@@ -9,9 +9,16 @@ import {
   useState,
 } from "react";
 import { Alert } from "react-native";
-import { type MediaStream } from "react-native-webrtc";
 
-import { WebRTCManager } from "@/lib/webrtc/webrtc-manager";
+import {
+  startIncomingRingtone,
+  stopIncomingRingtone,
+  startOutgoingRingback,
+  stopOutgoingRingback,
+  stopAllCallSounds,
+} from "@/lib/call-sounds";
+
+import { WebRTCManager, type MediaStream } from "@/lib/webrtc/webrtc-manager";
 import {
   emitCallAnswer,
   emitCallAnswerSdp,
@@ -134,6 +141,20 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const stateRef = useRef<CallState>({ phase: "idle" });
   stateRef.current = callState;
 
+  // ── Ringtone / ringback ───────────────────────────────────────────────────
+  useEffect(() => {
+    if (callState.phase === "incoming") {
+      void startIncomingRingtone();
+    } else if (callState.phase === "outgoing") {
+      void startOutgoingRingback();
+    } else {
+      void stopAllCallSounds();
+    }
+    return () => {
+      void stopAllCallSounds();
+    };
+  }, [callState.phase]);
+
   const teardown = useCallback(() => {
     mgrRef.current?.destroy();
     mgrRef.current = null;
@@ -141,6 +162,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     setRemoteStreams([]);
     setIsMuted(false);
     setIsCameraOff(false);
+    void stopAllCallSounds();
     void Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: false }).catch(() => {});
   }, []);
 

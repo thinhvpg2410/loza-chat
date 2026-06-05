@@ -70,10 +70,12 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error: unknown) => {
     if (isAxiosError(error)) {
-      trackClientError("chat", "http_response_error", error, {
-        status: error.response?.status ?? null,
-        url: error.config?.url ?? "",
-      });
+      const status = error.response?.status ?? null;
+      const url = error.config?.url ?? "";
+      const isExpected409 = status === 409 && url.includes("/auth/");
+      if (!isExpected409) {
+        trackClientError("chat", "http_response_error", error, { status, url });
+      }
     }
     if (!isAxiosError(error) || error.response?.status !== 401) {
       return Promise.reject(error);

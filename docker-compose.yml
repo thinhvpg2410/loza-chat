@@ -26,12 +26,12 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://loza:loza@postgres:5432/loza_chat?schema=public
-      NODE_ENV: production
+      NODE_ENV: development
       PORT: 3000
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-change-me-access-secret-min-32-chars-dev}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-me-refresh-secret-min-32-chars-dev}
       API_PUBLIC_BASE_URL: ${API_PUBLIC_BASE_URL:-http://localhost}
-      STORAGE_MOCK: ${STORAGE_MOCK:-true}
+      STORAGE_MOCK: "true"
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
       TURN_SERVER_URL: ${TURN_SERVER_URL:-}
       TURN_USERNAME: ${TURN_USERNAME:-}
@@ -60,8 +60,10 @@ services:
         condition: service_healthy
     volumes:
       - ./nginx/loza-chat.conf:/etc/nginx/conf.d/default.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     ports:
       - "80:80"
+      - "443:443"
 
 volumes:
   postgres_data:

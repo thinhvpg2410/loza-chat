@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
@@ -6,8 +7,10 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
+  Post,
   UseGuards,
 } from '@nestjs/common';
+import { IsIn, IsString, MinLength } from 'class-validator';
 import {
   ApiBearerAuth,
   ApiNoContentResponse,
@@ -23,13 +26,30 @@ import { GetUser } from '../auth/decorators/get-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { DevicesService } from '../devices/devices.service';
+import { PushNotificationService } from '../realtime/push-notification.service';
+
+class RegisterPushTokenDto {
+  @IsString()
+  @MinLength(1)
+  deviceId!: string;
+
+  @IsString()
+  @MinLength(1)
+  pushToken!: string;
+
+  @IsIn(['ios', 'android'])
+  platform!: 'ios' | 'android';
+}
 
 @ApiTags('sessions')
 @ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard)
 @Controller('sessions')
 export class SessionsController {
-  constructor(private readonly devices: DevicesService) {}
+  constructor(
+    private readonly devices: DevicesService,
+    private readonly pushNotifications: PushNotificationService,
+  ) {}
 
   @Get()
   @ApiOperation({
@@ -45,6 +65,35 @@ export class SessionsController {
       user.tokenDeviceId,
     );
     return { sessions };
+  }
+
+  @Post('push-token')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Register or update push token for the current device' })
+  @ApiNoContentResponse({ description: 'Push token registered' })
+  async registerPushToken(
+    @GetUser('id') userId: string,
+    @Body() dto: RegisterPushTokenDto,
+  ): Promise<void> {
+    await this.pushNotifications.registerPushToken(
+      userId,
+      dto.deviceId,
+      dto.pushToken,
+      dto.platform,
+    );
+  }
+
+  @Delete('push-token')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Clear push token for the current device (on logout)' })
+  @ApiNoContentResponse({ description: 'Push token cleared' })
+  async clearPushToken(
+    @GetUser() user: AuthenticatedUser,
+    @Body('deviceId') deviceId: string,
+  ): Promise<void> {
+    if (deviceId) {
+      await this.pushNotifications.clearPushToken(user.id, deviceId);
+    }
   }
 
   @Delete(':id')

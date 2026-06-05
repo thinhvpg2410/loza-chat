@@ -7,15 +7,17 @@
  * - Existing participant creates the offer; new joiner answers.
  */
 
-import {
-  mediaDevices,
-  RTCIceCandidate,
-  RTCPeerConnection,
-  RTCSessionDescription,
-  type MediaStream,
-} from "react-native-webrtc";
-
 import { TURN_USERNAME, TURN_CREDENTIAL } from "@/constants/webrtcEnv";
+
+// Lazily resolved on first use — avoids crashing Expo Go on module import.
+type RNWebRTC = typeof import("react-native-webrtc");
+let _rtc: RNWebRTC | null = null;
+async function getRtc(): Promise<RNWebRTC> {
+  if (!_rtc) {
+    _rtc = await import("react-native-webrtc");
+  }
+  return _rtc;
+}
 
 export type RtcIceCandidateInit = {
   candidate: string;
@@ -28,6 +30,9 @@ export type RtcSessionDescriptionInit = {
   sdp?: string;
 };
 
+// Keep MediaStream as an opaque type so callers don't need to import react-native-webrtc.
+export type { MediaStream } from "react-native-webrtc";
+
 const ICE_SERVERS = [
   { urls: "stun:stun.relay.metered.ca:80" },
   { urls: "turn:global.relay.metered.ca:80", username: TURN_USERNAME, credential: TURN_CREDENTIAL },
@@ -37,15 +42,15 @@ const ICE_SERVERS = [
 ];
 
 export type WebRTCCallbacks = {
-  onLocalStream: (stream: MediaStream) => void;
-  onRemoteStream: (peerId: string, stream: MediaStream) => void;
+  onLocalStream: (stream: import("react-native-webrtc").MediaStream) => void;
+  onRemoteStream: (peerId: string, stream: import("react-native-webrtc").MediaStream) => void;
   onRemoteStreamRemoved: (peerId: string) => void;
   onIceCandidate: (peerId: string, candidate: RtcIceCandidateInit) => void;
 };
 
 export class WebRTCManager {
-  private localStream: MediaStream | null = null;
-  private readonly peers = new Map<string, RTCPeerConnection>();
+  private localStream: import("react-native-webrtc").MediaStream | null = null;
+  private readonly peers = new Map<string, any>();
   private readonly iceBuf = new Map<string, RtcIceCandidateInit[]>();
   private readonly cbs: WebRTCCallbacks;
 
@@ -55,18 +60,19 @@ export class WebRTCManager {
 
   // ── Local stream ─────────────────────────────────────────────────────────
 
-  async initLocalStream(callType: "voice" | "video"): Promise<MediaStream> {
+  async initLocalStream(callType: "voice" | "video"): Promise<import("react-native-webrtc").MediaStream> {
     this.stopLocalStream();
+    const { mediaDevices } = await getRtc();
     const stream = (await mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       video: callType === "video" ? { facingMode: "user", width: 1280, height: 720 } : false,
-    })) as MediaStream;
+    })) as import("react-native-webrtc").MediaStream;
     this.localStream = stream;
     this.cbs.onLocalStream(stream);
     return stream;
   }
 
-  getLocalStream(): MediaStream | null {
+  getLocalStream(): import("react-native-webrtc").MediaStream | null {
     return this.localStream;
   }
 
@@ -96,10 +102,11 @@ export class WebRTCManager {
 
   // ── Peer connections ──────────────────────────────────────────────────────
 
-  private buildPc(peerId: string): RTCPeerConnection {
+  private async buildPc(peerId: string): Promise<any> {
     const existing = this.peers.get(peerId);
     if (existing) existing.close();
 
+    const { RTCPeerConnection } = await getRtc();
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
     this.peers.set(peerId, pc);
 
@@ -110,7 +117,7 @@ export class WebRTCManager {
     });
 
     pc.addEventListener("track", (e: any) => {
-      const stream: MediaStream | undefined = e.streams?.[0];
+      const stream: import("react-native-webrtc").MediaStream | undefined = e.streams?.[0];
       if (stream) this.cbs.onRemoteStream(peerId, stream);
     });
 
@@ -133,7 +140,7 @@ export class WebRTCManager {
   }
 
   async createOffer(peerId: string): Promise<RtcSessionDescriptionInit> {
-    const pc = this.buildPc(peerId);
+    const pc = await this.buildPc(peerId);
     const offer = await pc.createOffer({});
     await pc.setLocalDescription(offer as any);
     return { type: (offer as any).type, sdp: (offer as any).sdp };
@@ -143,7 +150,8 @@ export class WebRTCManager {
     peerId: string,
     sdp: RtcSessionDescriptionInit,
   ): Promise<RtcSessionDescriptionInit> {
-    const pc = this.buildPc(peerId);
+    const { RTCSessionDescription } = await getRtc();
+    const pc = await this.buildPc(peerId);
     await pc.setRemoteDescription(new RTCSessionDescription(sdp as any) as any);
     await this._flushIceBuf(peerId, pc);
     const answer = await pc.createAnswer();
@@ -152,6 +160,7 @@ export class WebRTCManager {
   }
 
   async handleAnswer(peerId: string, sdp: RtcSessionDescriptionInit): Promise<void> {
+    const { RTCSessionDescription } = await getRtc();
     const pc = this.peers.get(peerId);
     if (!pc) return;
     await pc.setRemoteDescription(new RTCSessionDescription(sdp as any) as any);
@@ -167,13 +176,15 @@ export class WebRTCManager {
       return;
     }
     try {
+      const { RTCIceCandidate } = await getRtc();
       await pc.addIceCandidate(new RTCIceCandidate(candidate as any) as any);
     } catch {
       /* stale candidate */
     }
   }
 
-  private async _flushIceBuf(peerId: string, pc: RTCPeerConnection): Promise<void> {
+  private async _flushIceBuf(peerId: string, pc: any): Promise<void> {
+    const { RTCIceCandidate } = await getRtc();
     const buf = this.iceBuf.get(peerId) ?? [];
     this.iceBuf.delete(peerId);
     for (const c of buf) {

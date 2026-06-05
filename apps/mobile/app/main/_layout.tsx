@@ -7,6 +7,10 @@ import { CallProvider } from "@/features/call/call-context";
 import { CallScreen } from "@components/call/CallScreen";
 import { IncomingCallModal } from "@components/call/IncomingCallModal";
 import { connectChatSocket, isChatSocketConfigured } from "@/services/socket/socket";
+import {
+  registerForPushNotifications,
+  unregisterPushNotifications,
+} from "@/services/notifications/pushNotifications";
 import { useAuthStore } from "@/store/authStore";
 import { useChatStore } from "@/store/chatStore";
 import { colors } from "@theme";
@@ -50,6 +54,16 @@ export default function MainLayout() {
     }
     return connectChatSocket(accessToken);
   }, [ready, isAuthenticated, accessToken]);
+
+  // Register push token when authenticated, clear on logout
+  useEffect(() => {
+    if (!ready) return;
+    if (isAuthenticated && !USE_API_MOCK) {
+      void registerForPushNotifications();
+    } else if (!isAuthenticated) {
+      void unregisterPushNotifications();
+    }
+  }, [ready, isAuthenticated]);
 
   if (!ready) {
     return (
