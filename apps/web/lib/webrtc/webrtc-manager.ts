@@ -8,8 +8,9 @@
  *   This avoids SDP glare in group scenarios.
  */
 
-const TURN_USER = process.env.NEXT_PUBLIC_TURN_USERNAME ?? "0646bc697c8d494f4aac97fd";
-const TURN_CRED = process.env.NEXT_PUBLIC_TURN_CREDENTIAL ?? "uueIw+M9v8Vtg9Q8";
+// Use || instead of ?? so empty string "" also falls back to the default
+const TURN_USER = process.env.NEXT_PUBLIC_TURN_USERNAME || "0646bc697c8d494f4aac97fd";
+const TURN_CRED = process.env.NEXT_PUBLIC_TURN_CREDENTIAL || "uueIw+M9v8Vtg9Q8";
 
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun.relay.metered.ca:80" },
