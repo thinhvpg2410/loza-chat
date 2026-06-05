@@ -176,6 +176,50 @@ export function CallScreen() {
   const [showControls, setShowControls] = useState(true);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Ringback tone while waiting for the remote party to answer
+  useEffect(() => {
+    if (callState.phase !== "outgoing") return;
+
+    let stopped = false;
+    let ctx: AudioContext | null = null;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+
+    const beep = (freq: number, duration: number, delay: number) => {
+      if (stopped || !ctx) return;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.15, ctx.currentTime + delay);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + duration);
+      osc.start(ctx.currentTime + delay);
+      osc.stop(ctx.currentTime + delay + duration);
+    };
+
+    const playRingback = () => {
+      if (stopped || !ctx) return;
+      // Two-tone ringback: 440 Hz + 480 Hz, 2 s on / 4 s off
+      beep(440, 2.0, 0);
+      beep(480, 2.0, 0);
+      timerId = setTimeout(playRingback, 6000);
+    };
+
+    try {
+      ctx = new AudioContext();
+      playRingback();
+    } catch {
+      /* ignore — browser blocked audio */
+    }
+
+    return () => {
+      stopped = true;
+      if (timerId) clearTimeout(timerId);
+      void ctx?.close();
+    };
+  }, [callState.phase]);
+
   // Auto-hide controls after 4 s of inactivity (video mode)
   const resetHideTimer = useCallback(() => {
     setShowControls(true);

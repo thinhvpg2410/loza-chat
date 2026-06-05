@@ -88,6 +88,8 @@ const CallContext = createContext<CallContextValue | null>(null);
 type Props = {
   children: React.ReactNode;
   socketRef: RefObject<Socket | null>;
+  /** Pass realtime.socketConnected so the effect re-runs when socket connects. */
+  socketConnected: boolean;
   viewerUserId: string;
   viewerDisplayName: string;
   viewerAvatarUrl?: string | null;
@@ -96,6 +98,7 @@ type Props = {
 export function CallProvider({
   children,
   socketRef,
+  socketConnected,
   viewerUserId,
   viewerDisplayName: _viewerDisplayName,
   viewerAvatarUrl: _viewerAvatarUrl,
@@ -427,7 +430,10 @@ export function CallProvider({
       socket.off("call:ended", onEnded);
       socket.off("call:busy", onEnded);
     };
-  }, [socketRef, teardown, getOrBuildManager]);
+  // socketConnected is used as a dep so the effect re-runs when the socket
+  // connects (socketRef.current was null on first mount when session loads async).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socketRef, socketConnected, teardown, getOrBuildManager]);
 
   return (
     <CallContext.Provider

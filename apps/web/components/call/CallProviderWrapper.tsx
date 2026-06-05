@@ -14,6 +14,7 @@ export function CallProviderWrapper({ children }: { children: ReactNode }) {
   return (
     <CallProvider
       socketRef={realtime.socketRef}
+      socketConnected={realtime.socketConnected}
       viewerUserId={realtime.viewerUserId}
       viewerDisplayName={realtime.viewerDisplayName}
       viewerAvatarUrl={realtime.viewerAvatarUrl}
