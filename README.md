@@ -1,81 +1,161 @@
 # Loza Chat
 
-Monorepo for Loza Chat with:
+A production-grade, full-stack real-time messaging platform built with modern web and mobile technologies.
 
-- `apps/api`: NestJS + Prisma + PostgreSQL + Socket.IO backend
-- `apps/web`: Next.js web client
-- `apps/mobile`: Expo React Native mobile client
+| Layer | Stack |
+|---|---|
+| **Backend** | NestJS · Prisma · PostgreSQL · Socket.IO · Firebase Admin |
+| **Web** | Next.js 14 (App Router) · TypeScript |
+| **Mobile** | Expo · React Native · Nativewind · Zustand · React Hook Form |
+| **Infrastructure** | Docker · Nginx · GitHub Actions CI/CD |
 
-## What This Project Covers
+## Codebase Metrics
 
-Loza Chat is a full-stack messaging system with:
+| | Count |
+|---|---|
+| Backend source files | 161 |
+| Mobile source files | 182 |
+| Web source files | 153 |
+| REST API endpoints | ~144 |
+| WebSocket events | 14 |
+| Database models | 22 |
+| NestJS services | 31 |
+| NestJS controllers | 12 |
+| Mobile screens | 34 |
+| Web pages | 14 |
 
-- Account authentication with OTP/device verification
-- 1:1 and group conversations
-- Real-time messaging, typing, delivery/read receipts
-- Media uploads (mock mode or S3-compatible object storage)
-- Friend requests, block list, profile management
-- Sticker packs, reactions, and mention tracking
+## Features
+
+**Messaging**
+- 1:1 and group conversations with real-time delivery
+- Typing indicators, delivery receipts, read receipts
+- Message reactions, mentions, sticker packs
+- Media/file attachments (S3-compatible or mock storage)
+- Spam rate limiting per conversation
+
+**Calls**
+- WebRTC peer-to-peer voice/video calls with TURN server support
+- Full signaling lifecycle: initiate → offer/answer → ICE candidates → end
+- Push notifications for incoming calls when app is backgrounded (Firebase FCM)
+- Call message recorded with duration and final status
+
+**Auth & Security**
+- Phone number registration with OTP verification
+- JWT access/refresh tokens with device/session tracking
+- QR code web login flow approved from a trusted mobile device
+- Rate-limited OTP, throttled API endpoints
+
+**Social**
+- Friend requests, friendships, block list
+- Group lifecycle: creation, member roles, join requests, audit logs
+- User search and profile management
 
 ## High-Level Architecture
 
-- **API (`apps/api`)**
-  - NestJS REST API for business logic
-  - Socket.IO gateway for real-time events
-  - Prisma ORM over PostgreSQL
-  - JWT access/refresh tokens with device/session management
-- **Web (`apps/web`)**
-  - Next.js App Router frontend
-  - Cookie-based session usage for authenticated pages
-  - Integrates API for auth/chat/friends/groups
-- **Mobile (`apps/mobile`)**
-  - Expo Router React Native app
-  - Uses same API and socket backend
-  - Includes QR login scan + approval flow
+```
+Mobile (React Native/Expo)
+Web (Next.js)
+        │
+        ├── REST API ──── NestJS (apps/api)
+        │                     ├── 13 domain modules
+        │                     ├── Prisma ORM → PostgreSQL
+        │                     ├── JWT Auth (Passport)
+        │                     └── AWS S3 / mock storage
+        │
+        └── WebSocket ─── Socket.IO Gateway
+                              ├── Real-time messaging
+                              ├── Presence & typing
+                              └── WebRTC call signaling
+```
 
-## Core Backend Domains (`apps/api/src/modules`)
+## WebSocket Events (14)
 
-- `auth`: register/login, forgot-password, OTP verification, QR web login
-- `users`: user profile/search/avatar update
-- `friends`: request/accept/reject/cancel friend relationships
-- `blocks`: block/unblock users
-- `conversations`: direct/group conversation listing and state
-- `messages`: send/history/reactions/mentions/read-delivered pointers
-- `groups`: group lifecycle, member roles, join requests, settings
-- `uploads`: upload session init/complete and upload constraints
-- `storage`: mock storage + S3-compatible integration
-- `realtime`: socket authentication, room join, typing/message events
-- `sessions` + `devices`: active device/session controls
-- `stickers`: sticker packs/recent usage
+| Direction | Event | Description |
+|---|---|---|
+| Client → Server | `conversation:join` | Join a conversation room |
+| Client → Server | `message:send` | Send a message |
+| Client → Server | `message:seen` | Mark message as read |
+| Client → Server | `message:delivered` | Acknowledge delivery |
+| Client → Server | `typing:start` / `typing:stop` | Typing indicator |
+| Client → Server | `presence:heartbeat` | Online presence ping |
+| Client → Server | `call:initiate` / `call:offer` | Start a call |
+| Client → Server | `call:answer` / `call:answer_sdp` | Accept call + SDP exchange |
+| Client → Server | `call:ice_candidate` | ICE negotiation |
+| Client → Server | `call:end` / `call:leave` | Terminate call |
 
-## Main User Flows
+## Database Schema (22 Models)
 
-### Auth Flow
+`User` · `UserDevice` · `RefreshToken` · `OtpRequest` · `QrLoginSession`
+`Friendship` · `FriendRequest` · `Block`
+`Conversation` · `ConversationMember` · `ConversationSpamRateLimit`
+`Message` · `MessageMention` · `MessageReaction` · `MessageUserHidden`
+`Attachment` · `UploadSession`
+`GroupJoinRequest` · `GroupAuditLog`
+`StickerPack` · `Sticker` · `UserRecentSticker`
 
-- User logs in/registers from mobile or web
-- API returns JWT tokens and tracks device session
-- For unknown device, OTP challenge is required before trust
-- Web can also login via QR session approved by mobile
+## Backend Modules (`apps/api/src/modules`)
 
-### Chat Flow
+| Module | Responsibility |
+|---|---|
+| `auth` | Register/login, OTP, forgot-password, QR web login |
+| `users` | Profile, search, avatar upload |
+| `friends` | Request/accept/reject/cancel |
+| `blocks` | Block/unblock users |
+| `conversations` | Direct/group listing, spam rate limiting |
+| `messages` | Send, history, reactions, mentions, read/delivered, call messages |
+| `groups` | Lifecycle, roles, join requests, audit logs |
+| `realtime` | Socket auth, room management, typing/message/call events |
+| `uploads` | Upload session init/complete, constraints |
+| `storage` | Mock storage + S3-compatible (AWS SDK) |
+| `sessions` + `devices` | Active session control, FCM push token management |
+| `stickers` | Packs, recent usage |
 
-- Client loads conversation list and history through REST
-- Client connects Socket.IO with access token
-- Client joins conversation room, sends message/typing events
-- Server persists message and emits room events
-- Read and delivered states sync through REST + socket events
+## Mobile Stack (`apps/mobile`)
 
-### Upload Flow
+| Concern | Library |
+|---|---|
+| Routing | Expo Router (file-based) |
+| State | Zustand |
+| Styling | Nativewind (Tailwind for RN) |
+| Forms | React Hook Form + Yup |
+| Animations | React Native Reanimated |
+| Real-time | socket.io-client |
+| Calls | react-native-webrtc |
+| Notifications | expo-notifications |
+| Media | expo-image, expo-av, expo-camera, expo-image-picker |
+| HTTP | Axios |
 
-- Client requests upload session (`/uploads/init`)
-- Client uploads file directly to storage using presigned URL
-- Client finalizes upload (`/uploads/:id/complete`) then sends message with attachment metadata
+## User Flows
+
+### Auth
+1. Phone number login/register → OTP verification
+2. JWT tokens issued, device session tracked
+3. New device requires OTP before trust
+4. Web supports QR login approved from a trusted mobile device
+
+### Chat
+1. REST: load conversation list + message history
+2. Socket.IO: join room, send/receive messages and typing events
+3. Server persists and emits room-scoped events
+4. Read/delivered state synced via REST + socket
+
+### Call
+1. Caller sends `call:initiate` via Socket.IO
+2. Server pushes FCM notification if callee is backgrounded
+3. WebRTC offer/answer + ICE candidates exchanged through signaling
+4. On hang-up, call duration and status saved as a message
+
+### Upload
+1. `POST /uploads/init` → presigned URL returned
+2. Client uploads directly to storage
+3. `PATCH /uploads/:id/complete` → message sent with attachment metadata
 
 ## Prerequisites
 
 - Node.js 20+
 - npm
-- PostgreSQL 15+ (for `apps/api`)
+- PostgreSQL 15+
+- Docker + Docker Compose (optional)
 
 ## Project Structure
 
@@ -83,7 +163,7 @@ Loza Chat is a full-stack messaging system with:
 apps/
   api/      # NestJS backend
   web/      # Next.js frontend
-  mobile/   # Expo mobile app
+  mobile/   # Expo React Native app
 ```
 
 ## 1) Run API (`apps/api`)
@@ -91,21 +171,19 @@ apps/
 ```bash
 cd apps/api
 npm install
-```
-
-Create environment file:
-
-```bash
 cp .env.example .env
 ```
 
-Update required values in `.env`:
+Required `.env` values:
 
-- `DATABASE_URL`
-- `JWT_ACCESS_SECRET`
-- `JWT_REFRESH_SECRET`
-
-Prepare database and run:
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `JWT_ACCESS_SECRET` | Min 32-char secret |
+| `JWT_REFRESH_SECRET` | Min 32-char secret |
+| `TURN_SERVER_URL` | TURN server for WebRTC (optional) |
+| `TURN_USERNAME` | TURN credentials (optional) |
+| `TURN_CREDENTIAL` | TURN credentials (optional) |
 
 ```bash
 npm run prisma:generate
@@ -113,8 +191,9 @@ npm run prisma:migrate
 npm run start:dev
 ```
 
-API default URL: `http://localhost:3000`  
-Swagger docs: `http://localhost:3000/docs`
+- API: `http://localhost:3000`
+- Swagger: `http://localhost:3000/docs`
+- OpenAPI JSON: `http://localhost:3000/docs/json`
 
 ## 2) Run Web (`apps/web`)
 
@@ -123,40 +202,28 @@ cd apps/web
 npm install
 ```
 
-Create `.env.local`:
+`.env.local`:
 
 ```env
 LOZA_API_BASE_URL=http://localhost:3000
 NEXT_PUBLIC_QR_LOGIN_URL_PREFIX=mobile://qr-login?session=
 ```
 
-Start dev server:
-
 ```bash
 npm run dev
 ```
 
-Web app default URL: `http://localhost:3000` (or Next.js selected port if 3000 is busy)
-
-Optional web envs:
-
-- `LOZA_AUTH_BYPASS=1` (dev-only bypass for route auth guard)
-- `NEXT_PUBLIC_QR_LOGIN_URL_PREFIX` (custom mobile deep-link prefix)
+Optional: `LOZA_AUTH_BYPASS=1` for dev-only auth guard bypass.
 
 ## 3) Run Mobile (`apps/mobile`)
 
 ```bash
 cd apps/mobile
 npm install
-```
-
-Create environment file:
-
-```bash
 cp .env.example .env
 ```
 
-Recommended local values:
+`.env`:
 
 ```env
 EXPO_PUBLIC_USE_API_MOCK=false
@@ -164,66 +231,56 @@ EXPO_PUBLIC_API_URL=http://localhost:3000
 EXPO_PUBLIC_SOCKET_URL=http://localhost:3000
 ```
 
-Start Expo:
-
 ```bash
 npm run start
 ```
 
-For real devices, replace `localhost` with your machine LAN IP.
-
 Notes:
+- For real devices, replace `localhost` with your machine's LAN IP.
+- `EXPO_PUBLIC_SOCKET_URL` defaults to `EXPO_PUBLIC_API_URL` when empty.
+- Mock mode disables QR login, calls, and push notifications.
 
-- If mobile uses API mock, QR web login features requiring real backend are disabled.
-- Socket URL defaults to API URL when `EXPO_PUBLIC_SOCKET_URL` is empty.
+## 4) Run with Docker Compose
 
-## Database Overview
+```bash
+docker compose up -d
+```
 
-Database uses PostgreSQL with Prisma schema in `apps/api/prisma/schema.prisma`.
+Starts: `postgres`, `api`, `nginx` (ports 80/443).
 
-Main entities include:
+Override via environment or `.env`:
 
-- Users, devices, refresh tokens, OTP requests
-- Friend requests, friendships, blocks
-- Conversations, members, messages, mentions, reactions
-- Attachments, upload sessions
-- Sticker packs, stickers, recent sticker usage
-- Group join requests and group audit logs
+```env
+JWT_ACCESS_SECRET=...
+JWT_REFRESH_SECRET=...
+TURN_SERVER_URL=...
+CORS_ORIGIN=https://yourdomain.com
+```
+
+## Deployment
+
+Automated via GitHub Actions on push to `main`:
+
+1. SSH into production server
+2. `git pull origin main`
+3. `docker compose up -d --build --remove-orphans api nginx`
+
+Required GitHub secrets: `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`, `SSH_PORT`.
 
 ## Useful Commands
 
-### API
-
 ```bash
+# API
 cd apps/api
 npm run lint
 npm run test
 npm run test:e2e
-```
-
-Extra:
-
-```bash
 npm run build
 npm run start:prod
+
+# Web
+cd apps/web && npm run lint
+
+# Mobile
+cd apps/mobile && npm run lint
 ```
-
-### Web
-
-```bash
-cd apps/web
-npm run lint
-```
-
-### Mobile
-
-```bash
-cd apps/mobile
-npm run lint
-```
-
-## API Docs and Realtime
-
-- Swagger/OpenAPI: `http://localhost:3000/docs`
-- OpenAPI JSON: `http://localhost:3000/docs/json`
-- Socket.IO server runs on same host/port as API.
